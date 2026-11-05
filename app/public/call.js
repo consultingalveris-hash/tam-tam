@@ -164,10 +164,19 @@ const Call = {
   /* ---------- sonnerie (sons générés, aucun fichier) ---------- */
   tone(kind) {
     clearInterval(this.toneT); this.toneT = null; if (!kind) return;
-    let ctx; try { ctx = this.ctx || (this.ctx = new (window.AudioContext || window.webkitAudioContext)()); ctx.resume && ctx.resume(); } catch { return; }
-    const beep = (f, d, at = 0) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f; g.gain.setValueAtTime(0.0001, ctx.currentTime + at); g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + at + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + d); o.connect(g).connect(ctx.destination); o.start(ctx.currentTime + at); o.stop(ctx.currentTime + at + d + 0.05); };
-    const play = kind === 'ring' ? () => { beep(880, .18); beep(660, .18, .22); beep(880, .18, .6); beep(660, .18, .82); if (navigator.vibrate) navigator.vibrate([300, 200, 300]); } : () => beep(425, 1.0);
-    play(); this.toneT = setInterval(play, kind === 'ring' ? 2400 : 4000);
+    Sound.unlock(); const ctx = Sound.ctx; if (!ctx) return;
+    const T = (dt, f0, f1, d, v) => Sound.drum(ctx.currentTime + .02 + dt, f0, f1, d, v);
+    // sonnerie d'appel : un rythme de tam-tam (grave, aigu, grave-grave, aigu, roulement)
+    const ring = () => {
+      T(0, 150, 75, .42, .7); T(.24, 320, 170, .16, .45); T(.40, 300, 160, .14, .4);
+      T(.62, 150, 75, .42, .7); T(.86, 150, 78, .30, .55); T(1.06, 330, 175, .16, .45);
+      T(1.30, 240, 120, .12, .35); T(1.40, 250, 125, .12, .38); T(1.50, 260, 130, .12, .42); T(1.62, 160, 80, .5, .75);
+      if (navigator.vibrate) try { navigator.vibrate([400, 250, 400]); } catch {}
+    };
+    // tonalité côté appelant : deux coups doux, comme un tam-tam au loin
+    const back = () => { T(0, 140, 80, .5, .28); T(.35, 140, 80, .5, .22); };
+    const play = kind === 'ring' ? ring : back;
+    play(); this.toneT = setInterval(play, kind === 'ring' ? 2800 : 3200);
   },
   notify(ev) {
     if (!document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
