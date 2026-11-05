@@ -26,7 +26,7 @@ const Store = {
 
 /* ---------- chiffrement de bout en bout ---------- */
 const E2E = {
-  priv: null, pubJwk: null, shared: new Map(), plain: new Map(), imgs: new Map(),
+  priv: null, pubJwk: null, shared: new Map(), plain: new Map(), imgs: new Map(), auds: new Map(),
   ready() { return !!this.priv; },
   async load(uid) {
     const k = await Store.get('key:' + uid); if (!k) return false;

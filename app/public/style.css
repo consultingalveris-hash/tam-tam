@@ -525,3 +525,29 @@ mark{background:#ffe08a;color:inherit;border-radius:3px;padding:0 1px}
 .once-view .stage{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:12px}
 .once-view img{max-width:100%;max-height:75vh;border-radius:8px;pointer-events:none}
 .once-txt{max-width:560px;font-size:18px;line-height:1.5;white-space:pre-wrap;text-align:center}
+/* disponibilité : hors ligne (blanc), occupé (rouge), en ligne (vert) */
+.dot-on.busy{background:#e5484d}
+.chat-id small.busy{color:#e5484d;font-weight:600}
+.avail{display:flex;gap:6px}
+.av-opt{display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 6px;border:0;border-radius:10px;background:none;color:var(--fg-2);font:inherit;font-size:11px;cursor:pointer;min-width:52px}
+.av-opt i{width:18px;height:18px;border-radius:50%;border:2px solid var(--line);box-sizing:border-box}
+.av-opt.off i{background:#fff;border-color:#9aa5ad}
+.av-opt.busy i{background:#e5484d;border-color:#e5484d}
+.av-opt.on i{background:#2fbf5a;border-color:#2fbf5a}
+.av-opt[aria-checked="true"]{background:var(--surface-2);color:var(--fg);font-weight:700}
+.av-opt[aria-checked="true"] i{box-shadow:0 0 0 3px var(--accent-soft)}
+/* messages vocaux */
+.voice{display:flex;align-items:center;gap:8px;min-width:220px}
+.voice>svg{width:20px;height:20px;flex:none;opacity:.8}
+.voice audio{height:36px;max-width:230px;flex:1;min-width:0}
+.voice small{opacity:.7;font-size:12px}
+.recbar{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface)}
+.rec-dot{width:12px;height:12px;border-radius:50%;background:#e5484d;animation:recblink 1s infinite}
+@keyframes recblink{50%{opacity:.25}}
+.rec-t{font-variant-numeric:tabular-nums;font-weight:700}
+.once-aud{display:flex;align-items:center;gap:10px}
+.once-aud svg{width:28px;height:28px}
+/* filigrane sur les contenus protégés */
+.wmark{position:absolute;inset:0;pointer-events:none;z-index:2;background-repeat:repeat}
+.once-view{isolation:isolate}
+.sv-box{position:relative}

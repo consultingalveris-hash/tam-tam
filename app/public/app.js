@@ -72,7 +72,8 @@ function avatar(u, cls = '') {
   if (u.photo) return `<span class="av ${cls}"><img src="${esc(u.photo)}" alt=""></span>`;
   return `<span class="av ${cls}" aria-hidden="true">${avFace(u.avatar)}</span>`;
 }
-const avOn = (u, cls) => `<span class="avw">${avatar(u, cls)}${u && u.online ? '<span class="dot-on" aria-label="en ligne"></span>' : ''}</span>`;
+const avOn = (u, cls) => `<span class="avw">${avatar(u, cls)}${u && u.busy ? '<span class="dot-on busy" aria-label="occupé"></span>' : u && u.online ? '<span class="dot-on" aria-label="en ligne"></span>' : ''}</span>`;
+const presLabel = u => u.busy ? 'occupé' : u.online ? 'en ligne' : seenLabel(u.lastSeen);
 const grpAv = (c, cls = '') => `<span class="av grp ${cls}" style="--h:${(c.id * 47) % 360}" aria-hidden="true">${I.users}</span>`;
 function avGallery(sel, who) {
   const a = avNorm(sel), mini = st => avFace(Object.assign({}, a, {st, f: FEM.includes(st) ? true : a.f}));
@@ -183,7 +184,7 @@ function onEvent(ev) {
   else if (ev.t === 'contacts') { loadContacts().then(() => { renderTabs(); if (S.tab !== 'chats') renderBody(); }); loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }); }
   else if (ev.t === 'chats') loadChats().then(() => { if (S.tab === 'chats') renderBody(); });
   else if (ev.t === 'statuses') loadStatuses().then(renderStories);
-  else if (ev.t === 'presence') { const u = S.users.get(ev.id); if (u) { u.online = ev.online; u.lastSeen = ev.lastSeen; } if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }
+  else if (ev.t === 'presence') { const u = S.users.get(ev.id); if (u) { u.online = ev.online; u.busy = ev.busy; u.lastSeen = ev.lastSeen; } if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }
   else if (ev.t === 'read' && ev.user === S.me.id) Device.badge();
   else if (ev.t === 'gcall') GCall.onEvent(ev).catch(e => { console.error(e); toast('Problème pendant l’appel de groupe.'); });
   else if (ev.t === 'call') Call.onSignal(ev).catch(e => { console.error(e); toast('Problème pendant l’appel.'); Call.hangup(); });
@@ -199,7 +200,7 @@ async function reveal(m) {
   const r = await E2E.open(m.enc, S.me.id);
   if (r.err === 'absent') { m.text = '🔒 Message chiffré avant votre arrivée, ou pour une ancienne clé'; m.locked = true; }
   else if (r.err) { m.text = '🔒 Message illisible sur cet appareil'; m.locked = true; }
-  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; }
+  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; }
   return m;
 }
 async function loadChats() { const r = await api('/api/chats'); const map = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); await reveal(c.last); map.set(c.id, c); } S.chats = map; }
@@ -228,7 +229,7 @@ function renderHead() {
       <label class="search">${I.search}<span class="sr">Rechercher</span><input id="q" type="search" placeholder="Rechercher une discussion" value="${esc(S.q)}" autocomplete="off"></label>
       <div class="chips filt" id="filts" role="group" aria-label="Filtrer les discussions">${filtChips()}</div>`;
     renderStories();
-  } else h.innerHTML = `<div class="title"><h1>${{contacts: 'Contacts', calls: 'Appels', settings: 'Réglages'}[S.tab]}</h1><span class="grow"></span>${S.tab !== 'settings' ? `<button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button>` : ''}</div>`;
+  } else h.innerHTML = `<div class="title"><h1>${{contacts: 'Contacts', calls: 'Appels', settings: 'Réglages'}[S.tab]}</h1><span class="grow"></span>${S.tab === 'settings' ? availPicker() : ''}${S.tab !== 'settings' ? `<button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button>` : ''}</div>`;
 }
 function renderBody() {
   const b = $('#body'); if (!b) return;
@@ -240,7 +241,7 @@ function renderBody() {
 const chatTitle = c => c.type === 'group' ? c.name : uOf(c.peer).name;
 function snippet(m) {
   if (!m) return 'Aucun message';
-  if (m.deleted) return 'Message supprimé'; if (m.kind === 'sys') return m.text; if (m.once) return m.media ? '① Photo à vue unique' : '① Message à vue unique'; if (m.locked) return m.text;
+  if (m.deleted) return 'Message supprimé'; if (m.kind === 'sys') return m.text; if (m.once) return m.kind === 'audio' ? '① Vocal à vue unique' : m.media ? '① Photo à vue unique' : '① Message à vue unique'; if (m.kind === 'audio') return '🎤 Message vocal'; if (m.locked) return m.text;
   return (m.media ? '📷 Photo' + (m.text ? ' · ' : '') : '') + (m.text || '');
 }
 function readState(c, m) {
@@ -338,7 +339,7 @@ async function profSheet(id) {
   let u = uOf(id);
   try { const r = await api('/api/users/' + id); u = r.user; keepUsers([u]); } catch (e) { return toast(e.message); }
   const p = u.pub || {}, bd = p.bd && p.bm ? `${p.bd} ${MOIS[p.bm - 1]}` : '';
-  sheet(`${head('Profil')}<div class="sheet-body"><div class="prof">${avatar(u, 'xl')}<b>${esc(u.name)}</b><span>@${esc(u.handle)}</span>${u.rel === 'contact' ? `<small>${u.online ? 'En ligne' : seenLabel(u.lastSeen)}</small>` : ''}${u.mutual ? `<small>${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun</small>` : ''}</div>
+  sheet(`${head('Profil')}<div class="sheet-body"><div class="prof">${avatar(u, 'xl')}<b>${esc(u.name)}</b><span>@${esc(u.handle)}</span>${u.rel === 'contact' ? `<small>${presLabel(u).replace(/^./, x => x.toUpperCase())}</small>` : ''}${u.mutual ? `<small>${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun</small>` : ''}</div>
     ${dl(PUB_L.map(([k, l]) => [l, p[k]]).concat([['Anniversaire', bd]])) || '<p class="hint" style="text-align:center">Profil public encore vide.</p>'}
     ${u.rel === 'contact' && u.pubkey ? `<p class="hint">${I.shield} Code de sécurité de ${esc(first(u.name))} : <b class="fp" id="peerFp">…</b></p>` : ''}
     ${u.limTheirs ? `<p class="hint">${I.lock} Ajouté par code QR : vous voyez seulement son profil public.</p>` : ''}
@@ -382,7 +383,7 @@ function renderChatHead() {
   const c = S.chats.get(S.chatId), h = $('#chatHead'); if (!c || !h) return;
   const tu = typingIn(c.id); let sub;
   if (c.type === 'group') sub = tu ? `<small class="on">${esc(first(uOf(tu).name))} écrit…</small>` : `<small>${c.members.map(m => m.id === S.me.id ? 'Vous' : first(uOf(m.id).name)).join(', ')}</small>`;
-  else { const u = uOf(c.peer); sub = tu ? '<small class="on">écrit…</small>' : `<small${u.online ? ' class="on"' : ''}>${u.online ? 'en ligne' : seenLabel(u.lastSeen)}</small>`; }
+  else { const u = uOf(c.peer); sub = tu ? '<small class="on">écrit…</small>' : `<small class="${u.busy ? 'busy' : u.online ? 'on' : ''}">${presLabel(u)}</small>`; }
   h.innerHTML = `<button class="ib back" type="button" data-act="back" aria-label="Retour">${I.back}</button>
     <button class="chat-id" type="button" data-act="chatInfo">${c.type === 'group' ? grpAv(c, 'sm') : avatar(uOf(c.peer), 'sm')}<span style="min-width:0"><b>${esc(chatTitle(c))}</b>${sub}</span></button>
     ${c.type === 'direct' && !c.blocked ? `<button class="ib" type="button" data-act="callVideo" aria-label="Appel vidéo">${I.video}</button><button class="ib" type="button" data-act="callAudio" aria-label="Appel vocal">${I.phone}</button>` : ''}
@@ -398,17 +399,60 @@ function renderComposer() {
   el.innerHTML = `<form class="composer" data-form="send" autocomplete="off"><div class="inwrap"><textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
     <button class="ib" type="button" data-act="attach" aria-label="Joindre une photo">${I.clip}</button><button class="ib" type="button" data-act="camera" aria-label="Prendre une photo">${I.camera}</button><button class="ib once-tog" type="button" data-act="onceTog" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique : le message ne peut être ouvert qu’une fois"><span class="one" aria-hidden="true">1</span></button></div>
     <input type="file" id="fileIn" accept="image/*" hidden><input type="file" id="camIn" accept="image/*" capture="environment" hidden>
-    <button class="send" type="submit" aria-label="Envoyer">${I.send}</button></form>`;
+    <button class="send" id="sendBtn" type="button" data-act="recStart" aria-label="Enregistrer un message vocal">${I.mic}</button></form>`;
+}
+// Le bouton rond est un micro tant que rien n'est écrit ; il devient « Envoyer » dès qu'on écrit.
+function syncSend() {
+  const b = $('#sendBtn'), i = $('#msgIn'); if (!b || !i) return; const has = !!i.value.trim();
+  if (has && b.type !== 'submit') { b.type = 'submit'; delete b.dataset.act; b.setAttribute('aria-label', 'Envoyer'); b.innerHTML = I.send; }
+  else if (!has && b.type === 'submit') { b.type = 'button'; b.dataset.act = 'recStart'; b.setAttribute('aria-label', 'Enregistrer un message vocal'); b.innerHTML = I.mic; }
+}
+/* ---------- messages vocaux ---------- */
+const Rec = {
+  async start() {
+    if (!navigator.mediaDevices || !window.MediaRecorder) return toast('Ce navigateur ne permet pas d’enregistrer la voix.');
+    let stream; try { stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}}); } catch { return toast('Autorisez le micro pour envoyer un message vocal.'); }
+    const mime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported(t)) || '';
+    const mr = new MediaRecorder(stream, mime ? {mimeType: mime, audioBitsPerSecond: 32000} : undefined), chunks = [];
+    mr.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    this.cur = {mr, stream, chunks, t0: Date.now(), mime: mr.mimeType || mime || 'audio/webm', chat: S.chatId};
+    mr.start(500);
+    const el = $('#compose'); el.innerHTML = `<div class="recbar" role="group" aria-label="Enregistrement d’un message vocal"><button class="ib" type="button" data-act="recCancel" aria-label="Annuler l’enregistrement">${I.trash}</button><span class="rec-dot" aria-hidden="true"></span><span class="rec-t" id="recT">0:00</span><span class="grow hint">${S.once ? 'Vocal à vue unique · ' : ''}Enregistrement…</span><button class="send" type="button" data-act="recSend" aria-label="Envoyer le message vocal">${I.send}</button></div>`;
+    this.tick = setInterval(() => { const s = Math.floor((Date.now() - this.cur.t0) / 1000), t = $('#recT'); if (t) t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; if (s >= 300) this.send(); }, 250);
+  },
+  stop() { const c = this.cur; this.cur = null; clearInterval(this.tick); if (!c) return null; return new Promise(res => { c.mr.onstop = () => { c.stream.getTracks().forEach(t => t.stop()); res(c); }; try { c.mr.stop(); } catch { res(c); } }); },
+  async cancel() { await this.stop(); renderComposer(); },
+  async send() {
+    const c = await this.stop(); renderComposer(); if (!c) return;
+    const dur = Math.round((Date.now() - c.t0) / 1000); if (dur < 1 || !c.chunks.length) return toast('Message trop court : gardez le micro un peu plus longtemps.');
+    const chat = S.chats.get(c.chat); if (!chat) return;
+    try {
+      const blob = new Blob(c.chunks, {type: c.mime}), once = !!S.once; S.once = false;
+      const sealed = await E2E.seal({t: '', mime: c.mime.split(';')[0], dur}, recipients(chat), await blob.arrayBuffer());
+      const up = await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'});
+      const r = await api(`/api/chats/${chat.id}/messages`, {media: up.id, enc: sealed.env, kind: 'audio', once});
+      if (!once) E2E.auds.set(r.msg.id, URL.createObjectURL(blob)); renderComposer(); onMsg(r.msg);
+    } catch (e) { toast(e.message); }
+  },
+};
+async function hydrateAuds(chatId) {
+  const list = S.msgs.get(chatId) || [];
+  for (const el of document.querySelectorAll('#msgs audio[data-aud]:not([src])')) {
+    const id = +el.dataset.aud; if (E2E.auds.has(id)) { el.src = E2E.auds.get(id); continue; }
+    const m = list.find(x => x.id === id); if (!m || !m._key || !m.miv) continue;
+    try { const r = await fetch(m.media, {credentials: 'same-origin'}); const url = URL.createObjectURL(new Blob([await E2E.decBytes(m._key, m.miv, await r.arrayBuffer())], {type: m.amime || 'audio/webm'})); E2E.auds.set(id, url); el.src = url; }
+    catch { const w = el.closest('.voice'); if (w) w.insertAdjacentHTML('beforeend', '<small class="hint">Message vocal illisible sur cet appareil</small>'); }
+  }
 }
 function quoteHtml(c, id) {
   const q = (S.msgs.get(c.id) || []).find(x => x.id === id); if (!q) return '';
   return `<span class="quote" data-act="jump" data-id="${q.id}"><b>${esc(q.from === S.me.id ? 'Vous' : uOf(q.from).name)}</b><span>${esc(snippet(q))}</span></span>`;
 }
 function onceBubble(m, out) {
-  const what = m.media ? 'Photo' : 'Message', mine = (m.opened || []).includes(S.me.id);
+  const what = m.kind === 'audio' ? 'Vocal' : m.media ? 'Photo' : 'Message', mine = (m.opened || []).includes(S.me.id);
   if (out) return `<span class="once-b"><span class="one" aria-hidden="true">1</span><span>${what} à vue unique<small>${(m.opened || []).length ? 'Ouvert' : 'Envoyé'}</small></span></span>`;
   if (mine) return `<span class="once-b done"><span class="one" aria-hidden="true">1</span><span>${what} à vue unique<small>Ouvert</small></span></span>`;
-  return `<button class="once-b go" type="button" data-act="onceOpen" data-id="${m.id}"><span class="one" aria-hidden="true">1</span><span>${what} à vue unique<small>Touchez pour ${m.media ? 'voir' : 'lire'} · une seule fois</small></span></button>`;
+  return `<button class="once-b go" type="button" data-act="onceOpen" data-id="${m.id}"><span class="one" aria-hidden="true">1</span><span>${what} à vue unique<small>Touchez pour ${m.kind === 'audio' ? 'écouter' : m.media ? 'voir' : 'lire'} · une seule fois</small></span></button>`;
 }
 function renderMessages(keep) {
   const c = S.chats.get(S.chatId), box = $('#msgs'); if (!c || !box) return;
@@ -425,6 +469,7 @@ function renderMessages(keep) {
     let body;
     if (m.deleted) body = `<span class="txt gone">${out ? 'Vous avez supprimé ce message' : 'Ce message a été supprimé'}</span>`;
     else if (m.once) body = onceBubble(m, out);
+    else if (m.kind === 'audio') body = `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
     else body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? `<span class="txt">${esc(m.text)}</span>` : '');
     h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble">
       ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${body}<span class="meta">${hm(m.at)}${out && !m.deleted ? tick(readState(c, m)) : ''}</span>
@@ -433,7 +478,7 @@ function renderMessages(keep) {
   const tu = typingIn(c.id); if (tu) h += `<div class="msg in first typing-b"><div class="bubble" aria-label="En train d’écrire"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
   box.innerHTML = h;
   if (!keep || atBottom) box.scrollTop = box.scrollHeight;
-  hydrateImgs(c.id);
+  hydrateImgs(c.id); hydrateAuds(c.id);
 }
 function onMsg(m, update) { reveal(m).then(() => onMsgIn(m, update)); }
 async function hydrateImgs(chatId) {
@@ -519,12 +564,12 @@ function recipients(c) {
 }
 async function sendText() {
   const i = $('#msgIn'), t = i.value.trim(), c = S.chats.get(S.chatId); if (!t || !c) return;
-  i.value = ''; autoGrow(i); const reply = S.replyTo; S.replyTo = null; renderReplyBar();
+  i.value = ''; autoGrow(i); syncSend(); const reply = S.replyTo; S.replyTo = null; renderReplyBar();
   try {
     const {env} = await E2E.seal({t}, recipients(c));
     const body = {enc: env}; if (reply) body.replyTo = reply; if (S.once) { body.once = true; S.once = false; renderComposer(); }
     const r = await api(`/api/chats/${c.id}/messages`, body); onMsg(r.msg);
-  } catch (e) { toast(e.message); i.value = t; }
+  } catch (e) { toast(e.message); i.value = t; syncSend(); }
 }
 function autoGrow(t) { t.style.height = '42px'; t.style.height = Math.min(130, t.scrollHeight) + 'px'; }
 function renderReplyBar() {
@@ -567,6 +612,12 @@ function sheet(html, label, focus) {
   layer.innerHTML = `<div class="layer" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(label)}">${html}</div></div>`;
   const f = layer.querySelector(focus || '.sheet button, .sheet input'); if (f) f.focus({preventScroll: true});
 }
+// Filigrane au nom de la personne qui regarde : une capture faite malgré tout montre qui l'a prise.
+function watermark() {
+  const t = `@${S.me.handle} · ${new Date().toLocaleDateString('fr-FR')} ${hm(Date.now())}`.replace(/[<>&"']/g, '');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="260" height="150"><text x="10" y="90" transform="rotate(-24 130 75)" fill="white" fill-opacity="0.22" font-family="sans-serif" font-size="15">${t}</text></svg>`;
+  return `<div class="wmark" aria-hidden="true" style="background-image:url('data:image/svg+xml;utf8,${encodeURIComponent(svg)}')"></div>`;
+}
 function onceDone() {
   const id = S.onceMsg; if (!id) return; S.onceMsg = null; if (S.onceUrl) { URL.revokeObjectURL(S.onceUrl); S.onceUrl = null; }
   layer.innerHTML = '';
@@ -576,7 +627,7 @@ function onceDone() {
 document.addEventListener('visibilitychange', () => { if (document.hidden && S.onceMsg) onceDone(); });
 // Capture d'écran repérée au clavier (ordinateur) : l'autre personne est prévenue.
 document.addEventListener('keyup', e => { if (e.key === 'PrintScreen' && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
-document.addEventListener('keydown', e => { if (e.metaKey && e.shiftKey && ['3', '4', '5'].includes(e.key) && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
+document.addEventListener('keydown', e => { if (((e.metaKey && e.shiftKey && ['3', '4', '5', 's', 'S'].includes(e.key)) || e.key === 'PrintScreen') && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
 function closeLayer() { if (S.onceMsg) return onceDone(); clearTimeout(svT); layer.innerHTML = ''; S.sv = null; if (S.pend) { URL.revokeObjectURL(S.pend.url); S.pend = null; } }
 function confirmSheet(title, text, yes, act, id) {
   sheet(`${head(title)}<div class="sheet-body"><p>${text}</p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="button" data-act="${act}" data-id="${id || ''}">${yes}</button></div></div>`, title);
@@ -660,7 +711,7 @@ function renderSV() {
   layer.innerHTML = `<div class="sv" style="--h:${it.bg || 170}" role="dialog" aria-modal="true" aria-label="Statut"><div class="sv-bars">${g.items.map((_, k) => `<i class="${k < v.i ? 'done' : k === v.i ? 'run' : ''}"><b${k === v.i ? ` style="animation-duration:${dur / 1000}s"` : ''}></b></i>`).join('')}</div>
     <div class="sv-head">${avatar(g.user, 'sm')}<div class="grow"><b>${esc(mine ? 'Mon statut' : g.user.name)}</b><small>${dayLabel(it.at)}, ${hm(it.at)} · ${it.aud === 'private' ? 'Privé' : 'Public'}</small></div><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>
     <div class="sv-stage"><div class="sv-box">${it.media ? `<img src="${esc(it.media)}" alt="">` : `<div class="sv-text">${esc(it.text)}</div>`}${it.media && it.text ? `<div class="sv-cap">${esc(it.text)}</div>` : ''}
-      <button class="sv-nav prev" type="button" data-act="svPrev" aria-label="Précédent"></button><button class="sv-nav next" type="button" data-act="svNext" aria-label="Suivant"></button></div></div>
+      ${it.aud === 'private' && !mine ? watermark() : ''}<button class="sv-nav prev" type="button" data-act="svPrev" aria-label="Précédent"></button><button class="sv-nav next" type="button" data-act="svNext" aria-label="Suivant"></button></div></div>
     ${mine ? `<div class="sv-foot"><button class="btn sm ghost" type="button" data-act="svViews">${I.eye}${(it.views || []).length} vue${(it.views || []).length > 1 ? 's' : ''}</button><button class="btn sm ghost" type="button" data-act="stNew">${I.plus}Ajouter</button><button class="btn sm ghost" type="button" data-act="stDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}</div>`;
   clearTimeout(svT); svT = setTimeout(() => svStep(1), dur);
 }
@@ -750,6 +801,10 @@ function picsView(list, title) {
   const l = (list || []).filter(Boolean); if (!l.length) return '';
   return `<span class="lbl">${title}</span><div class="ph3">${l.map((u, i) => `<button class="ph3-img" type="button" data-act="picView" data-src="${esc(u)}" aria-label="Agrandir la photo ${i + 1}"><img src="${esc(u)}" alt=""></button>`).join('')}</div>`;
 }
+function availPicker() {
+  const a = (S.me && S.me.avail) || 'on';
+  return `<div class="avail" role="radiogroup" aria-label="Ma disponibilité">${[['off', 'Hors ligne'], ['busy', 'Occupé'], ['on', 'En ligne']].map(([v, l]) => `<button type="button" role="radio" class="av-opt ${v}" data-act="availSet" data-v="${v}" aria-checked="${a === v}"><i aria-hidden="true"></i><span>${l}</span></button>`).join('')}</div>`;
+}
 function settingsBody() {
   const me = S.me, p = me.pub || {}, pv = me.priv || {};
   const f = (set, k, l, ph = '', type = 'text', max = 80) => `<div class="field"><label for="p-${k}">${l}</label>${k === 'bio' ? `<textarea id="p-${k}" data-set="${set}" data-k="${k}" rows="2" maxlength="200" placeholder="${ph}">${esc((set === 'pub' ? p : pv)[k] || '')}</textarea>` : `<input id="p-${k}" data-set="${set}" data-k="${k}" type="${type}" maxlength="${max}" placeholder="${ph}" value="${esc((set === 'pub' ? p : pv)[k] || '')}">`}</div>`;
@@ -775,7 +830,7 @@ function settingsBody() {
     ${me.admin ? mailBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.13</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.14</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -851,18 +906,21 @@ const ACT = {
   attach() { $('#fileIn').click(); },
   camera() { $('#camIn').click(); },
   phCancel() { S.once = false; closeLayer(); renderComposer(); },
+  recStart() { Rec.start(); }, recCancel() { Rec.cancel(); }, recSend() { Rec.send(); },
+  availSet(d) { if (S.me.avail === d.v) return; saveNow({avail: d.v}, {on: 'Vous apparaissez en ligne', busy: 'Vous apparaissez occupé', off: 'Vous apparaissez hors ligne'}[d.v]).then(() => renderHead()); },
   onceTog(d, el) { S.once = !S.once; document.querySelectorAll('.once-tog').forEach(b => b.setAttribute('aria-pressed', S.once)); const i = $('#msgIn'); if (i) i.placeholder = S.once ? 'Message à vue unique' : 'Message'; toast(S.once ? 'Vue unique activée : le prochain message ne pourra être ouvert qu’une fois.' : 'Vue unique désactivée'); },
   async onceOpen(d) {
     const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +d.id); if (!m) return;
     let inner = '';
     if (m.locked) return toast('Ce message ne peut pas être lu sur cet appareil.');
     if (m.media) {
-      try { const r = await fetch(m.media, {credentials: 'same-origin'}); if (!r.ok) throw 0; const url = URL.createObjectURL(new Blob([await E2E.decBytes(m._key, m.miv, await r.arrayBuffer())], {type: 'image/jpeg'})); S.onceUrl = url; inner = `<img src="${url}" alt="Photo à vue unique" draggable="false">`; }
+      try { const r = await fetch(m.media, {credentials: 'same-origin'}); if (!r.ok) throw 0; const aud = m.kind === 'audio'; const url = URL.createObjectURL(new Blob([await E2E.decBytes(m._key, m.miv, await r.arrayBuffer())], {type: aud ? (m.amime || 'audio/webm') : 'image/jpeg'})); S.onceUrl = url;
+        inner = aud ? `<div class="once-aud">${I.mic}<audio src="${url}" controls autoplay controlslist="nodownload"></audio></div>` : `<img src="${url}" alt="Photo à vue unique" draggable="false">`; }
       catch { return toast('Cette photo n’est plus disponible.'); }
     }
     S.onceMsg = m.id;
     layer.innerHTML = `<div class="once-view" role="dialog" aria-modal="true" aria-label="Vue unique"><div class="bar"><button class="ib" type="button" data-act="onceClose" aria-label="Fermer">${I.close}</button><b>Vue unique</b><small>Se ferme et s’efface quand vous quittez</small></div>
-      <div class="stage">${inner}${m.text ? `<p class="once-txt">${esc(m.text)}</p>` : ''}</div></div>`;
+      <div class="stage">${inner}${m.text ? `<p class="once-txt">${esc(m.text)}</p>` : ''}</div>${watermark()}</div>`;
   },
   onceClose() { onceDone(); },
   zoom(d, el) { layer.innerHTML = `<div class="zoom" data-act="close"><img src="${esc(el.src)}" alt="Photo"><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>`; },
@@ -991,7 +1049,7 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'q') { S.q = t.value; renderBody(); }
   else if (t.id === 'fq') searchPeople(t.value);
-  else if (t.id === 'msgIn') { autoGrow(t); const n = Date.now(); if (n - typT > 2500 && t.value.trim()) { typT = n; api(`/api/chats/${S.chatId}/typing`, {}).catch(() => {}); } }
+  else if (t.id === 'msgIn') { autoGrow(t); syncSend(); const n = Date.now(); if (n - typT > 2500 && t.value.trim()) { typT = n; api(`/api/chats/${S.chatId}/typing`, {}).catch(() => {}); } }
   else if (t.dataset && (t.dataset.set === 'pub' || t.dataset.set === 'priv') && t.tagName !== 'SELECT') queueSave({[t.dataset.set]: {[t.dataset.k]: t.value}});
 });
 document.addEventListener('change', async e => {
