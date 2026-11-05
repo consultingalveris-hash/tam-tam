@@ -23,7 +23,7 @@ echo "Caddy du CRM : $C — réseau : $NET"
 
 # Relais d'appels (TURN) : aide les appels à passer quand les réseaux mobiles bloquent la connexion directe.
 SECRET_TURN_F=/root/.tam-tam-turn
-[ -s "$SECRET_TURN_F" ] || { tr -dc 'a-f0-9' </dev/urandom | head -c 48 > "$SECRET_TURN_F"; chmod 600 "$SECRET_TURN_F"; }
+[ -s "$SECRET_TURN_F" ] || { head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$SECRET_TURN_F"; chmod 600 "$SECRET_TURN_F"; }
 SECRET_TURN=$(cat "$SECRET_TURN_F")
 IP_PUB=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -n1)
 docker rm -f tam-tam-turn >/dev/null 2>&1 || true
