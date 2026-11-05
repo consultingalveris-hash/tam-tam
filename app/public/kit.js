@@ -85,3 +85,55 @@ function avSvg(d, b, h) {
   return `<svg viewBox="0 0 40 40" aria-hidden="true">${inner}</svg>`;
 }
 const colOf = k => AV_COLORS.find(c => c[0] === k) || AV_COLORS[0];
+
+/* ---------- avatars illustrés (version 2) ---------- */
+const SKIN = {a:'#4a2c1d',b:'#6b3e26',c:'#8d5524',d:'#a0673c',e:'#c68642',f:'#e0ac69'};
+function shade(hex, k){ const n=parseInt(hex.slice(1),16); let r=n>>16,g=n>>8&255,b=n&255; r=Math.round(r*k);g=Math.round(g*k);b=Math.round(b*k); return '#'+((1<<24)+(Math.min(255,r)<<16)+(Math.min(255,g)<<8)+Math.min(255,b)).toString(16).slice(1); }
+/* p : {skin, hair, style, shirt, f} — style : afro, tresses, foulard, court, chauve, locks, chignon, carre ; f : traits féminins */
+function face(p){
+  const s=SKIN[p.skin], sd=shade(s,.82), h=p.hair||'#1b1210', sh=p.shirt, fem=p.f;
+  let back='', front='', extra='';
+  if(p.style==='afro') back=`<circle cx="32" cy="24" r="17" fill="${h}"/><circle cx="20" cy="18" r="8" fill="${h}"/><circle cx="44" cy="18" r="8" fill="${h}"/>`;
+  if(p.style==='tresses') back=`<path d="M17 26c0-10 6-17 15-17s15 7 15 17v20h-5V30H22v16h-5z" fill="${h}"/>`+[19,23,41,45].map(x=>`<rect x="${x-1.6}" y="28" width="3.2" height="${x<30?22:22}" rx="1.6" fill="${h}"/>`).join('');
+  if(p.style==='locks') back=[18,22,26,38,42,46].map(x=>`<rect x="${x-1.8}" y="16" width="3.6" height="${30-(Math.abs(x-32)>12?0:4)}" rx="1.8" fill="${h}"/>`).join('');
+  if(p.style==='chignon') back=`<circle cx="32" cy="9.5" r="6" fill="${h}"/>`;
+  if(p.style==='carre') back=`<path d="M18 30c-1-13 5-21 14-21s15 8 14 21c0 4-1.5 7-3.5 8H21.5c-2-1-3.5-4-3.5-8z" fill="${h}"/>`;
+  // épaules et tenue
+  const body=`<path d="M8 64c1.5-11 10.5-17 24-17s22.5 6 24 17z" fill="${sh}"/><path d="M26 47.5c1.8 3.6 3.8 5.2 6 5.2s4.2-1.6 6-5.2" fill="none" stroke="${shade(sh,.7)}" stroke-width="2"/><rect x="28.3" y="38" width="7.4" height="10" rx="3" fill="${sd}"/>`;
+  const head=`<ellipse cx="18.6" cy="29" rx="2.6" ry="3.4" fill="${sd}"/><ellipse cx="45.4" cy="29" rx="2.6" ry="3.4" fill="${sd}"/><ellipse cx="32" cy="27" rx="13" ry="14.6" fill="${s}"/>`;
+  // coiffure avant
+  if(p.style==='afro') front=`<path d="M19.5 22c2-7 7.4-10.5 12.5-10.5S42.5 15 44.5 22c-3.5-3-7.5-4.3-12.5-4.3S23 19 19.5 22z" fill="${h}"/>`;
+  if(p.style==='tresses'||p.style==='chignon'||p.style==='court'||p.style==='locks') front=`<path d="M19 24c.4-9 5.9-13.8 13-13.8S44.6 15 45 24c-3.6-4-8-5.6-13-5.6S22.6 20 19 24z" fill="${h}"/>`;
+  if(p.style==='carre') front=`<path d="M19.4 25c1-8.4 6-12.6 12.6-12.6S43.6 16.6 44.6 25c-4.6-2-8.6-5.4-12.6-6.2-4 .8-8 4.2-12.6 6.2z" fill="${h}"/>`;
+  if(p.style==='foulard') front=`<path d="M17.5 25c-1.5-11 5-17.5 14.5-17.5S48 14 46.5 25c-4-3.6-8.8-5-14.5-5s-10.5 1.4-14.5 5z" fill="${p.wrap}"/><path d="M24 9c6-5 15-4 19 2-5-1.4-11-1.6-19-2z" fill="${shade(p.wrap,.8)}"/><circle cx="41" cy="8.5" r="4.5" fill="${p.wrap}"/><path d="M19 17c8-3 18-3 26 0" stroke="${shade(p.wrap,1.25)}" stroke-width="1.6" fill="none"/>`;
+  if(p.style==='chauve') front='';
+  // visage : sourcils, yeux, nez, bouche, joues
+  const brow=fem?1.2:1.8;
+  const eyes=`<path d="M23.5 23.2q3-1.6 5.6 0M34.9 23.2q2.6-1.6 5.6 0" stroke="${shade(h,.9)}" stroke-width="${brow}" fill="none" stroke-linecap="round"/>
+    <ellipse cx="26.4" cy="27.3" rx="1.7" ry="${fem?2.1:1.9}" fill="#1a1110"/><ellipse cx="37.6" cy="27.3" rx="1.7" ry="${fem?2.1:1.9}" fill="#1a1110"/>
+    <circle cx="27" cy="26.6" r=".55" fill="#fff"/><circle cx="38.2" cy="26.6" r=".55" fill="#fff"/>${fem?`<path d="M24.3 25.4l-1.4-.9M39.7 25.4l1.4-.9" stroke="#1a1110" stroke-width=".9" stroke-linecap="round"/>`:''}`;
+  const nose=`<path d="M30.2 30.8q1.8 1.6 3.6 0" stroke="${shade(s,.62)}" stroke-width="1.3" fill="none" stroke-linecap="round"/>`;
+  const mouth=`<path d="M27.4 34.4q4.6 3.6 9.2 0" stroke="${fem?'#7a2632':shade(s,.45)}" stroke-width="${fem?1.9:1.6}" fill="${fem?'#b2404f':'none'}" stroke-linecap="round"/>`;
+  const cheeks=`<ellipse cx="23" cy="31.6" rx="2.6" ry="1.6" fill="#e85a6b" opacity=".18"/><ellipse cx="41" cy="31.6" rx="2.6" ry="1.6" fill="#e85a6b" opacity=".18"/>`;
+  if(p.beard) extra=`<path d="M19.6 29c.5 9.4 5.6 13.8 12.4 13.8S44 38.4 44.4 29c-1.4 4.2-3.4 6.4-5.4 7.2-1.6-2-4-2.6-7-2.6s-5.4.6-7 2.6c-2-.8-4-3-5.4-7.2z" fill="${h}"/>`;
+  if(p.glasses) extra+=`<g fill="none" stroke="#141414" stroke-width="1.3"><circle cx="26.4" cy="27.4" r="4"/><circle cx="37.6" cy="27.4" r="4"/><path d="M30.4 27.2h3.2"/></g>`;
+  if(p.earring) extra+=`<circle cx="18.6" cy="33.6" r="1.6" fill="#f2b705"/><circle cx="45.4" cy="33.6" r="1.6" fill="#f2b705"/>`;
+  return `<svg viewBox="0 0 64 64" aria-hidden="true">${back}${body}${head}${front}${cheeks}${eyes}${nose}${mouth}${extra}</svg>`;
+}
+const AV2 = {
+  styles: [['court', 'Court'], ['afro', 'Afro'], ['tresses', 'Tresses'], ['foulard', 'Foulard'], ['locks', 'Locks'], ['chignon', 'Chignon'], ['carre', 'Carré'], ['chauve', 'Crâne rasé']],
+  skins: ['a', 'b', 'c', 'd', 'e', 'f'],
+  shirts: ['#14b8c9', '#1d4e89', '#2f9e66', '#f2b705', '#e2531f', '#c8102e', '#7b2cbf', '#db2777', '#475569'],
+};
+const FEM = ['tresses', 'foulard', 'chignon', 'carre'];
+/* ancien format {d,c} vers le nouveau */
+function avNorm(a) {
+  if (a && a.v === 2) return a;
+  const d = (a && a.d) || 'm2', c = colOf(a && a.c)[2];
+  const map = {f1: 'carre', f2: 'afro', f3: 'foulard', f4: 'tresses', f5: 'chignon', f6: 'carre', m1: 'court', m2: 'chauve', m3: 'court', m4: 'locks', m5: 'court', m6: 'court'};
+  return {v: 2, st: map[d] || 'court', sk: 'c', sh: c, b: d === 'm3', g: d === 'm6', e: false, f: d[0] === 'f'};
+}
+function avFace(a) {
+  const n = avNorm(a), foul = n.st === 'foulard';
+  return face({skin: n.sk, hair: '#1b1210', style: n.st, shirt: foul ? shade(n.sh, .75) : n.sh, wrap: n.sh, f: n.f, beard: n.b, glasses: n.g, earring: n.e});
+}

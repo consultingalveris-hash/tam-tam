@@ -72,6 +72,12 @@ const clean = (s, max = 200) => String(s ?? '').trim().slice(0, max);
 const pair = (x, y) => x < y ? [x, y] : [y, x];
 const J = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 const AV_D = /^[fm][1-6]$/, AV_C = ['turq', 'bleu', 'violet', 'rouge', 'orange', 'vert', 'rose', 'brun', 'noir'];
+const AV_ST = ['court', 'afro', 'tresses', 'foulard', 'locks', 'chignon', 'carre', 'chauve'], AV_SH = ['#14b8c9', '#1d4e89', '#2f9e66', '#f2b705', '#e2531f', '#c8102e', '#7b2cbf', '#db2777', '#475569'];
+function avatarJson(a) {
+  if (a && a.v === 2) { if (!AV_ST.includes(a.st) || !/^[a-f]$/.test(a.sk) || !AV_SH.includes(a.sh)) return null; return JSON.stringify({ v: 2, st: a.st, sk: a.sk, sh: a.sh, f: !!a.f, b: !!a.b, g: !!a.g, e: !!a.e }); }
+  if (a && AV_D.test(a.d) && AV_C.includes(a.c)) return JSON.stringify({ d: a.d, c: a.c });
+  return null;
+}
 const PUB_K = ['bio', 'metier', 'ville', 'langues', 'interets', 'bd', 'bm'];
 const PRIV_K = ['tel', 'annee', 'mail', 'adresse', 'travail', 'famille'];
 function slugHandle(name) {
@@ -241,7 +247,7 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   if (first) { if (OWNER && email !== OWNER) E(403, 'Le premier compte est réservé au propriétaire de tam-tam.'); }
   else { inv = inviteValid(clean(body.invite, 60)); if (!inv) E(403, 'Il faut un lien d’invitation valide pour s’inscrire.'); }
   if (q1(`SELECT 1 FROM users WHERE email=?`, email)) E(409, 'Un compte existe déjà avec cette adresse. Connectez-vous.');
-  const av = body.avatar && AV_D.test(body.avatar.d) && AV_C.includes(body.avatar.c) ? JSON.stringify({ d: body.avatar.d, c: body.avatar.c }) : JSON.stringify({ d: 'm2', c: 'turq' });
+  const av = avatarJson(body.avatar) || JSON.stringify({ v: 2, st: 'court', sk: 'c', sh: '#14b8c9' });
   const id = run(`INSERT INTO users(email,pass,name,handle,avatar,admin,invited_by,cgu_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
     email, hashPass(pass), name, slugHandle(name), av, first ? 1 : 0, inv ? inv.by_user : null, now(), now()).lastInsertRowid;
   if (inv) {
@@ -285,7 +291,7 @@ R('POST', /^\/api\/me$/, async ({ me, body }) => {
     if (q1(`SELECT 1 FROM users WHERE handle=? AND id<>?`, h, me.id)) E(409, 'Ce pseudo est déjà pris.');
     run(`UPDATE users SET handle=? WHERE id=?`, h, me.id);
   }
-  if (body.avatar) { if (!AV_D.test(body.avatar.d) || !AV_C.includes(body.avatar.c)) E(400, 'Avatar inconnu.'); run(`UPDATE users SET avatar=? WHERE id=?`, JSON.stringify({ d: body.avatar.d, c: body.avatar.c }), me.id); }
+  if (body.avatar) { const aj = avatarJson(body.avatar); if (!aj) E(400, 'Avatar inconnu.'); run(`UPDATE users SET avatar=? WHERE id=?`, aj, me.id); }
   if (body.photo === null) { if (me.photo) dropMedia(me.photo); run(`UPDATE users SET photo=NULL WHERE id=?`, me.id); }
   else if (body.photo) {
     const m = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.photo), me.id); if (!m) E(400, 'Photo introuvable.');

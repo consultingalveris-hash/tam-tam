@@ -45,20 +45,21 @@ function toast(t) { let el = $('.toast'); if (!el) { el = document.createElement
 function avatar(u, cls = '') {
   if (!u) return `<span class="av ${cls}"></span>`;
   if (u.photo) return `<span class="av ${cls}"><img src="${esc(u.photo)}" alt=""></span>`;
-  const a = u.avatar || {d: 'm2', c: 'turq'}, c = colOf(a.c);
-  return `<span class="av ${cls}" aria-hidden="true">${avSvg(a.d, c[2], c[3])}</span>`;
+  return `<span class="av ${cls}" aria-hidden="true">${avFace(u.avatar)}</span>`;
 }
 const avOn = (u, cls) => `<span class="avw">${avatar(u, cls)}${u && u.online ? '<span class="dot-on" aria-label="en ligne"></span>' : ''}</span>`;
 const grpAv = (c, cls = '') => `<span class="av grp ${cls}" style="--h:${(c.id * 47) % 360}" aria-hidden="true">${I.users}</span>`;
 function avGallery(sel, who) {
-  const d = sel.d, c = colOf(sel.c);
-  const row = g => Object.entries(AV_DESIGNS).filter(([, v]) => v[0] === g).map(([k, v]) => `<button class="avg-b" type="button" data-act="avPick" data-who="${who}" data-d="${k}" aria-pressed="${k === d}" aria-label="${v[1]}" title="${v[1]}">${avSvg(k, c[2], c[3])}</button>`).join('');
-  return `<div class="avg" id="avg-${who}"><span class="lbl">Féminins</span><div class="avg-row">${row('f')}</div><span class="lbl">Masculins</span><div class="avg-row">${row('m')}</div>
-    <span class="lbl">Couleur</span><div class="avg-sw">${AV_COLORS.map(x => `<button class="sw" type="button" data-act="avCol" data-who="${who}" data-c="${x[0]}" style="--c:${x[2]}" aria-pressed="${x[0] === sel.c}" aria-label="${x[1]}" title="${x[1]}"></button>`).join('')}</div></div>`;
+  const a = avNorm(sel), mini = st => avFace(Object.assign({}, a, {st, f: FEM.includes(st) ? true : a.f}));
+  return `<div class="avb" id="avg-${who}"><div class="avb-top"><span class="av">${avFace(a)}</span><span class="hint">Composez votre avatar : coiffure, teint, couleur de la tenue et détails.</span></div>
+    <span class="lbl">Coiffure</span><div class="avb-row">${AV2.styles.map(([k, l]) => `<button class="avb-st" type="button" data-act="avSet" data-who="${who}" data-k="st" data-v="${k}" aria-pressed="${a.st === k}"><span class="av">${mini(k)}</span>${l}</button>`).join('')}</div>
+    <span class="lbl">Teint</span><div class="avg-sw">${AV2.skins.map(k => `<button class="skin" type="button" data-act="avSet" data-who="${who}" data-k="sk" data-v="${k}" style="--c:${SKIN[k]}" aria-pressed="${a.sk === k}" aria-label="Teint ${k.toUpperCase()}"></button>`).join('')}</div>
+    <span class="lbl">Couleur de la tenue${a.st === 'foulard' ? ' et du foulard' : ''}</span><div class="avg-sw">${AV2.shirts.map(c => `<button class="sw" type="button" data-act="avSet" data-who="${who}" data-k="sh" data-v="${c}" style="--c:${c}" aria-pressed="${a.sh === c}" aria-label="Couleur ${c}"></button>`).join('')}</div>
+    <span class="lbl">Détails</span><div class="chips">${[['f', 'Traits féminins'], ['b', 'Barbe'], ['g', 'Lunettes'], ['e', 'Boucles d’oreilles']].map(([k, l]) => `<button class="chip" type="button" data-act="avSet" data-who="${who}" data-k="${k}" data-v="t" aria-pressed="${!!a[k]}">${l}</button>`).join('')}</div></div>`;
 }
 
 /* ---------- connexion et inscription ---------- */
-const A = {mode: 'login', avatar: {d: 'm1', c: 'turq'}};
+const A = {mode: 'login', avatar: {v: 2, st: 'court', sk: 'c', sh: '#14b8c9', f: false, b: false, g: false, e: false}};
 async function boot() {
   const p = location.pathname, inv = (p.match(/^\/invite\/([A-Za-z0-9_-]+)$/) || [])[1], rst = (p.match(/^\/reset\/([A-Za-z0-9_-]+)$/) || [])[1];
   if (inv) S.invite = inv;
@@ -570,7 +571,7 @@ function settingsBody() {
   const cs = S.contacts.contacts, close = new Set(me.close || []);
   return `<div class="set">
     <div class="set-top">${avatar(me, 'lg')}<div><b>${esc(me.name)}</b><span>@${esc(me.handle)} · ${esc(me.email)}</span></div></div>
-    <div class="set-block"><h2>Photo ou avatar</h2>${avGallery(me.avatar || {d: 'm2', c: 'turq'}, 'me')}
+    <div class="set-block"><h2>Photo ou avatar</h2>${avGallery(me.avatar, 'me')}
       <div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="mePhoto">${I.camera}${me.photo ? 'Changer la photo' : 'Mettre une photo'}</button>${me.photo ? '<button class="btn sm ghost" type="button" data-act="meNoPhoto">Utiliser l’avatar</button>' : ''}<input type="file" id="meIn" accept="image/*" hidden></div></div>
     <div class="set-block"><h2>${I.globe} Profil public</h2><p class="hint">Visible par les membres de tam-tam, notamment quand quelqu’un veut vous ajouter.</p>
       <div class="field"><label for="p-name">Nom</label><input id="p-name" data-set="name" maxlength="40" value="${esc(me.name)}"></div>
@@ -633,8 +634,13 @@ const ACT = {
   async mailLoad() { try { const m = await api('/api/admin/mail'); S.mail = m; const el = $('#mailBox'); if (el) el.outerHTML = mailBox(); } catch (e) { toast(e.message); } },
   authMode(d) { A.mode = d.m; renderAuth(); },
   pwShow(d, el) { const i = el.parentNode.querySelector('input'); i.type = i.type === 'password' ? 'text' : 'password'; el.textContent = i.type === 'password' ? 'Voir' : 'Masquer'; },
-  avPick(d) { if (d.who === 'auth') { A.avatar.d = d.d; $('#avg-auth').outerHTML = avGallery(A.avatar, 'auth'); } else { const a = Object.assign({}, S.me.avatar, {d: d.d}); saveNow({avatar: a, photo: S.me.photo ? null : undefined}, 'Avatar enregistré'); } },
-  avCol(d) { if (d.who === 'auth') { A.avatar.c = d.c; $('#avg-auth').outerHTML = avGallery(A.avatar, 'auth'); } else saveNow({avatar: Object.assign({}, S.me.avatar, {c: d.c})}); },
+  avSet(d) {
+    const base = avNorm(d.who === 'auth' ? A.avatar : S.me.avatar), a = Object.assign({}, base);
+    if (d.v === 't') a[d.k] = !a[d.k]; else a[d.k] = d.v;
+    if (d.k === 'st' && FEM.includes(d.v) && !base.f) a.f = true;
+    if (d.who === 'auth') { A.avatar = a; $('#avg-auth').outerHTML = avGallery(a, 'auth'); }
+    else { S.me.avatar = a; const g = $('#avg-me'); if (g) g.outerHTML = avGallery(a, 'me'); clearTimeout(S.avT); S.avT = setTimeout(() => saveNow({avatar: a, photo: S.me.photo ? null : undefined}, 'Avatar enregistré'), 600); }
+  },
   tab(d) { S.tab = d.t; closeLayer(); renderAll(); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
   fab() { newChatSheet(); },
   open(d) { openChat(+d.id); },
