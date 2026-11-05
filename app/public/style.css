@@ -463,3 +463,17 @@ mark{background:#ffe08a;color:inherit;border-radius:3px;padding:0 1px}
 .chips.filt .chip{flex:none}
 #addSheet .row{padding-left:0;padding-right:0}
 .ib.dotted{position:relative}.ib.dotted .badge{position:absolute;top:2px;right:0;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:#ff7a59;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+
+/* ---------- Mon profil, compteur, glisser ---------- */
+.chip .cnt{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:var(--accent);color:#fff;font-size:11px;font-weight:700}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;margin:4px 0 10px;border-radius:14px;background:var(--surface-2)}
+.seg button{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border:0;border-radius:11px;background:none;color:var(--fg-2);font-weight:600}
+.seg button svg{width:18px;height:18px}
+.seg button[aria-selected="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 4px var(--shadow)}
+.note{display:flex;gap:10px;align-items:flex-start;margin:0 0 8px;padding:12px 14px;border-radius:12px;background:var(--accent-soft);font-size:14px;line-height:1.45}
+.note svg{flex:none;width:18px;height:18px;margin-top:1px}
+.myprof .set-block{border:0;padding:0;background:none}
+.opt{display:flex;flex-direction:column;gap:6px;padding:12px 0;border-bottom:1px solid var(--line);font-size:14px}.opt span{color:var(--fg-2);line-height:1.45}
+@keyframes slideL{from{transform:translateX(24px);opacity:.4}to{transform:none;opacity:1}}
+@keyframes slideR{from{transform:translateX(-24px);opacity:.4}to{transform:none;opacity:1}}
+#body.slide-l{animation:slideL .2s ease-out}#body.slide-r{animation:slideR .2s ease-out}

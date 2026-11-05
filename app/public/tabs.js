@@ -219,14 +219,39 @@ const Book = {
     catch (e) { toast(e.message); }
     if (S.tab === 'contacts') renderBody();
   },
+  async addMany(items) {
+    const seen = new Set(this.list.map(c => this.norm(c.tel))); let n = 0;
+    for (const it of items) { const k = this.norm(it.tel); if (k.length < 6 || seen.has(k)) continue; seen.add(k); this.list.push({name: it.name || it.tel, tel: it.tel}); n++; }
+    this.list.sort((a, b) => a.name.localeCompare(b.name, 'fr')); await this.save();
+    toast(n ? `${n} contact${n > 1 ? 's' : ''} ajouté${n > 1 ? 's' : ''}.` : 'Aucun nouveau numéro trouvé.'); this.refresh();
+  },
   async pick() {
-    if (!this.canPick()) return this.manual();
+    if (!this.canPick()) return this.choices();
     try {
-      const got = await navigator.contacts.select(['name', 'tel'], {multiple: true}); if (!got || !got.length) return;
-      const seen = new Set(this.list.map(c => this.norm(c.tel)));
-      for (const c of got) for (const tel of (c.tel || []).slice(0, 2)) { const n = this.norm(tel); if (n.length < 6 || seen.has(n)) continue; seen.add(n); this.list.push({name: (c.name && c.name[0]) || tel, tel}); }
-      this.list.sort((a, b) => a.name.localeCompare(b.name, 'fr')); await this.save(); toast(`${got.length} contact${got.length > 1 ? 's' : ''} ajouté${got.length > 1 ? 's' : ''}.`); this.refresh();
-    } catch { toast('Le répertoire n’a pas pu être ouvert.'); }
+      const props = navigator.contacts.getProperties ? await navigator.contacts.getProperties() : ['name', 'tel'];
+      if (!props.includes('tel')) return this.choices('Ce navigateur ne donne pas accès aux numéros du répertoire.');
+      const got = await navigator.contacts.select(props.includes('name') ? ['name', 'tel'] : ['tel'], {multiple: true}); if (!got || !got.length) return;
+      const items = []; for (const c of got) for (const tel of (c.tel || []).slice(0, 2)) items.push({name: (c.name && c.name[0]) || '', tel});
+      this.addMany(items);
+    } catch (e) { this.choices(/brave/i.test(navigator.userAgent) || navigator.brave ? 'Le navigateur Brave bloque l’accès au répertoire.' : 'Le navigateur n’a pas ouvert le répertoire.'); }
+  },
+  // autres façons d'ajouter ses contacts quand le navigateur bloque le répertoire
+  choices(why) {
+    sheet(`${head('Ajouter vos contacts')}<div class="sheet-body">${why ? `<p class="note">${I.info}${esc(why)}</p>` : ''}
+      <div class="opt"><b>1. Ouvrir Tam-Tam dans Google Chrome</b><span>Sur Android, Chrome sait ouvrir le répertoire. Ouvrez <b>${esc(location.host)}</b> dans Chrome, puis revenez ici.</span></div>
+      <div class="opt"><b>2. Importer le fichier de vos contacts</b><span>Dans l’application <b>Contacts</b> du téléphone : menu ⋮ → <b>Exporter</b> (ou Gérer les contacts → Exporter) → fichier « .vcf ». Puis choisissez ce fichier ici.</span>
+        <div><button class="btn sm" type="button" data-act="bookVcf">${I.users}Choisir le fichier .vcf</button><input type="file" id="vcfIn" accept=".vcf,text/vcard,text/x-vcard" hidden></div></div>
+      <div class="opt"><b>3. Ajouter un contact à la main</b><span>Son nom et son numéro.</span><div><button class="btn sm ghost" type="button" data-act="bookManual">Saisir un numéro</button></div></div></div>`, 'Ajouter vos contacts');
+  },
+  parseVcf(text) {
+    const out = []; const blocks = String(text).replace(/\r?\n[ \t]/g, '').split(/BEGIN:VCARD/i).slice(1);
+    for (const b of blocks) {
+      const lines = b.split(/\r?\n/); let name = '';
+      const fn = lines.find(l => /^FN[:;]/i.test(l)); if (fn) name = fn.slice(fn.indexOf(':') + 1).trim();
+      if (!name) { const n = lines.find(l => /^N[:;]/i.test(l)); if (n) name = n.slice(n.indexOf(':') + 1).split(';').filter(Boolean).reverse().join(' ').trim(); }
+      for (const l of lines.filter(l => /^(item\d+\.)?TEL[:;]/i.test(l)).slice(0, 2)) out.push({name: name.replace(/\\,/g, ','), tel: l.slice(l.indexOf(':') + 1).replace(/^tel:/i, '').trim()});
+    }
+    return out;
   },
   manual() {
     sheet(`${head('Ajouter un contact du téléphone')}<form class="sheet-body" data-form="bookAdd">
@@ -250,13 +275,13 @@ const Book = {
     list = list.slice().sort((a, b) => (this.match[this.norm(b.tel)] ? 1 : 0) - (this.match[this.norm(a.tel)] ? 1 : 0));
     const on = list.filter(c => this.match[this.norm(c.tel)]).length;
     const noTel = !((S.me.priv || {}).tel);
-    return `${noTel ? `<div class="qrnote" style="margin:8px 12px"><span>📱 Ajoutez votre numéro pour que vos proches vous retrouvent sur Tam-Tam.</span><button class="btn sm" type="button" data-act="tab" data-t="settings">Ajouter mon numéro</button></div>` : ''}
+    return `${noTel ? `<div class="qrnote" style="margin:8px 12px"><span>📱 Ajoutez votre numéro pour que vos proches vous retrouvent sur Tam-Tam.</span><button class="btn sm" type="button" data-act="goPhone">Ajouter mon numéro</button></div>` : ''}
       ${this.list.length ? `<div style="padding:6px 16px 4px"><label class="search">${I.search}<span class="sr">Chercher</span><input id="bq" type="search" placeholder="Chercher un nom ou un numéro" autocomplete="off" value="${esc(this.q)}"></label></div>
       <div class="sec">${on ? `${on} sur Tam-Tam · ` : ''}${this.list.length} contact${this.list.length > 1 ? 's' : ''}</div>
       <div id="bkList">${list.map(c => this.row(c)).join('') || '<p class="empty">Aucun contact ne correspond.</p>'}</div>
-      <div class="actions" style="justify-content:center;padding:12px 16px 24px"><button class="btn sm ghost" type="button" data-act="bookPick">${I.userplus}${this.canPick() ? 'Ajouter depuis mon répertoire' : 'Ajouter un contact'}</button>${this.canPick() ? '<button class="btn sm ghost" type="button" data-act="bookManual">Saisir un numéro</button>' : ''}</div>`
+      <div class="actions" style="justify-content:center;padding:12px 16px 24px"><button class="btn sm ghost" type="button" data-act="bookPick">${I.userplus}Ajouter depuis mon répertoire</button><button class="btn sm ghost" type="button" data-act="bookMore">Autres façons</button></div>`
       : `<div class="empty"><p><b>Retrouvez vos proches</b></p><p>Choisissez les contacts de votre téléphone : ceux qui ont déjà Tam-Tam s’affichent avec <b>Discuter</b>, les autres avec <b>Inviter</b>.</p>
-        <button class="btn" type="button" data-act="bookPick">${I.users}${this.canPick() ? 'Choisir dans mon répertoire' : 'Ajouter un contact'}</button>
+        <button class="btn" type="button" data-act="bookPick">${I.users}Choisir dans mon répertoire</button><button class="linkb" type="button" data-act="bookMore">Autres façons d’ajouter mes contacts</button>
         <p class="hint">Vos contacts restent sur ce téléphone. Tam-Tam reçoit seulement une empreinte des numéros, jamais votre répertoire en clair.</p></div>`}`;
   },
   after() {},
@@ -293,7 +318,8 @@ const Add = {
 };
 Object.assign(ACT, {
   addOpen() { Add.open(); },
-  bookPick() { Book.pick(); }, bookManual() { Book.manual(); },
+  goPhone() { S.profTab = 'priv'; ACT.goProfile(); setTimeout(() => { const i = $('#p-tel'); if (i) { i.scrollIntoView({block: 'center'}); i.focus(); } }, 80); },
+  bookPick() { Book.pick(); }, bookManual() { Book.manual(); }, bookMore() { Book.choices(); }, bookVcf() { $('#vcfIn').click(); },
   async bookChat(d) {
     const id = +d.id, u = uOf(id), rel = (Object.values(Book.match).find(x => x.id === id) || {}).rel || u.rel;
     if (rel === 'contact') return ACT.write({id});
@@ -305,3 +331,29 @@ Object.assign(ACT, {
   filt(d) { S.filt = d.f; renderHead(); renderBody(); },
   async favToggle() { const c = S.chats.get(S.chatId); if (!c) return; try { await api(`/api/chats/${c.id}/fav`, {fav: !c.fav}); c.fav = !c.fav; closeLayer(); renderBody(); toast(c.fav ? 'Ajoutée aux favoris.' : 'Retirée des favoris.'); } catch (e) { toast(e.message); } },
 });
+
+document.addEventListener('change', async e => {
+  if (e.target.id !== 'vcfIn') return; const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try { const items = Book.parseVcf(await f.text()); closeLayer(); if (!items.length) return toast('Aucun numéro trouvé dans ce fichier.'); await Book.addMany(items); }
+  catch { toast('Ce fichier n’a pas pu être lu.'); }
+});
+
+/* ---------- glisser pour changer d'onglet ---------- */
+(() => {
+  const ORDER = ['chats', 'contacts', 'calls']; let x0 = 0, y0 = 0, t0 = 0, ok = false;
+  document.addEventListener('touchstart', e => {
+    const tg = e.target, app = document.querySelector('.app');
+    ok = !!(app && app.dataset.view !== 'chat' && tg.closest('#side') && !tg.closest('.chips,.stories,input,textarea,select,.dial,.sheet,.lock-screen,.pad,.call,#gcall,.avb'));
+    if (!ok || e.touches.length !== 1) { ok = false; return; }
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now();
+  }, {passive: true});
+  document.addEventListener('touchend', e => {
+    if (!ok) return; ok = false;
+    const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+    if (Date.now() - t0 > 700 || Math.abs(dx) < 70 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
+    let i = ORDER.indexOf(S.tab); if (i < 0) i = 0;
+    const next = dx < 0 ? Math.min(ORDER.length - 1, i + 1) : Math.max(0, i - 1);
+    if (S.tab === 'settings' && dx > 0) return ACT.tab({t: 'chats'});
+    if (ORDER[next] !== S.tab) { ACT.tab({t: ORDER[next]}); const b = $('#body'); if (b) { b.classList.remove('slide-l', 'slide-r'); void b.offsetWidth; b.classList.add(dx < 0 ? 'slide-l' : 'slide-r'); } }
+  }, {passive: true});
+})();

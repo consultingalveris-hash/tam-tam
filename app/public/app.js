@@ -213,8 +213,12 @@ const TABS = [['chats', 'Discussions', I.chats], ['contacts', 'Contacts', I.user
 function renderTabs() {
   const unread = [...S.chats.values()].filter(c => c.unread > 0 && (!c.hidden || S.showHidden)).length, inc = S.contacts.incoming.length;
   $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${id === 'chats' && unread ? `<span class="badge" aria-label="${unread} non lues">${unread}</span>` : ''}</button>`).join('');
-  $('#fab').hidden = S.tab !== 'chats'; Device.badge();
+  $('#fab').hidden = S.tab !== 'chats'; Device.badge(); const fc = $('#filts'); if (fc) fc.innerHTML = filtChips();
   const n = [...S.chats.values()].reduce((a, c) => a + (c.unread || 0), 0); document.title = n ? `(${n}) tam-tam` : 'tam-tam';
+}
+function filtChips() {
+  const n = [...S.chats.values()].filter(c => c.unread > 0 && (!c.hidden || S.showHidden)).length;
+  return [['all', 'Toutes'], ['unread', 'Non lues'], ['group', 'Groupes'], ['me', 'Mon profil']].map(([k, l]) => `<button class="chip" type="button" data-act="filt" data-f="${k}" aria-pressed="${(S.filt || 'all') === k}">${l}${k === 'unread' && n ? ` <span class="cnt">${n}</span>` : ''}</button>`).join('');
 }
 function renderHead() {
   const h = $('#head');
@@ -222,7 +226,7 @@ function renderHead() {
     h.innerHTML = `<div class="title"><h1 class="brand">${WORD}</h1><span class="grow"></span><button class="ib dotted" type="button" data-act="addOpen" aria-label="Ajouter des amis${S.contacts.incoming.length ? ` (${S.contacts.incoming.length} demande${S.contacts.incoming.length > 1 ? 's' : ''})` : ''}" title="Ajouter des amis">${I.userplus}${S.contacts.incoming.length ? `<span class="badge">${S.contacts.incoming.length}</span>` : ''}</button><button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button></div>
       <div class="stories" id="stories" aria-label="Statuts"></div>
       <label class="search">${I.search}<span class="sr">Rechercher</span><input id="q" type="search" placeholder="Rechercher une discussion" value="${esc(S.q)}" autocomplete="off"></label>
-      <div class="chips filt" role="group" aria-label="Filtrer les discussions">${[['all', 'Toutes'], ['unread', 'Non lues'], ['fav', 'Favoris'], ['group', 'Groupes']].map(([k, l]) => `<button class="chip" type="button" data-act="filt" data-f="${k}" aria-pressed="${(S.filt || 'all') === k}">${l}</button>`).join('')}<button class="chip" type="button" data-act="prof" data-id="${S.me.id}">Mon profil</button></div>`;
+      <div class="chips filt" id="filts" role="group" aria-label="Filtrer les discussions">${filtChips()}</div>`;
     renderStories();
   } else h.innerHTML = `<div class="title"><h1>${{contacts: 'Contacts', calls: 'Appels', settings: 'Réglages'}[S.tab]}</h1><span class="grow"></span>${S.tab !== 'settings' ? `<button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button>` : ''}</div>`;
 }
@@ -251,7 +255,8 @@ function chatRows() {
   let list = [...S.chats.values()].filter(c => (c.last || c.type === 'group' || c.id === S.chatId) && (!c.hidden || S.showHidden));
   Priv.watch(q);
   const fl = S.filt || 'all';
-  if (fl === 'unread') list = list.filter(c => c.unread > 0); else if (fl === 'fav') list = list.filter(c => c.fav); else if (fl === 'group') list = list.filter(c => c.type === 'group');
+  if (fl === 'me') return profileEditor();
+  if (fl === 'unread') list = list.filter(c => c.unread > 0); else if (fl === 'group') list = list.filter(c => c.type === 'group');
   const hitMsg = {};
   if (q && !(S.showHidden && Priv.isCode(q))) {
     Find.preload(q);
@@ -262,7 +267,7 @@ function chatRows() {
   if (S.showHidden) list.sort((a, b) => (b.hidden ? 1 : 0) - (a.hidden ? 1 : 0));
   list.sort((a, b) => (b.last?.at || b.createdAt) - (a.last?.at || a.createdAt));
   const privBar = S.showHidden ? `<div class="privbar">${I.lock}<span>Discussions privées affichées</span><button class="btn sm ghost" type="button" data-act="privHide">Masquer</button></div>` : '';
-  if (!list.length && fl !== 'all' && !q) return privBar + `<p class="empty">${{unread: 'Aucune discussion non lue.', fav: 'Aucun favori. Dans une discussion, touchez ⋮ puis « Ajouter aux favoris ».', group: 'Aucun groupe. Créez-en un avec le bouton turquoise.'}[fl]}</p>`;
+  if (!list.length && fl !== 'all' && !q) return privBar + `<p class="empty">${{unread: 'Aucune discussion non lue.', group: 'Aucun groupe. Créez-en un avec le bouton turquoise.'}[fl]}</p>`;
   if (!list.length) return privBar + (q ? `<p class="empty">Aucune discussion ne correspond.</p>`
     : `<div class="empty"><p>Aucune discussion pour l’instant.</p><p>Invitez vos proches depuis l’onglet <b>Contacts</b>, puis appuyez sur le bouton turquoise pour leur écrire.</p><button class="btn" type="button" data-act="tab" data-t="contacts">${I.userplus}Inviter mes proches</button></div>`);
   return privBar + list.map(c => {
@@ -574,7 +579,6 @@ function chatMenu() {
   sheet(`${head(esc(chatTitle(c)))}<div class="menu">
     ${c.type === 'group' ? `<button type="button" data-act="chatInfo">${I.info}Infos du groupe</button><button type="button" data-act="groupAddOpen">${I.userplus}Ajouter des membres</button><button type="button" class="danger" data-act="leaveAsk">${I.back}Quitter le groupe</button>`
     : `<button type="button" data-act="prof" data-id="${u.id}">${I.info}Voir le profil</button>`}
-    <button type="button" data-act="favToggle">${I.star}${c.fav ? 'Retirer des favoris' : 'Ajouter aux favoris'}</button>
     <button type="button" data-act="privToggle">${I.lock}${c.hidden ? 'Ne plus rendre privée' : 'Rendre la discussion privée'}</button>
     <button type="button" class="danger" data-act="reportAsk" data-id="${u ? u.id : ''}" data-chat="${c.id}">${I.flag}Signaler</button>
     ${u ? `<button type="button" class="danger" data-act="${blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${I.block}${blocked ? 'Débloquer ' : 'Bloquer '}${esc(first(u.name))}</button>` : ''}</div>`, 'Options');
@@ -676,6 +680,26 @@ function googleBox() {
     <p class="err" id="gErr" role="alert" hidden></p><p class="hint" id="gOk" role="status" hidden></p>
     <div class="actions" style="justify-content:flex-start"><button class="btn sm" type="submit">Enregistrer</button>${g.id ? '<button class="btn sm ghost" type="button" data-act="gOff">Désactiver</button>' : ''}</div></form>`;
 }
+function profileEditor() {
+  const me = S.me, p = me.pub || {}, pv = me.priv || {}, t = S.profTab || 'pub';
+  const f = (set, k, l, ph = '', type = 'text', max = 80) => `<div class="field"><label for="p-${k}">${l}</label>${k === 'bio' ? `<textarea id="p-${k}" data-set="${set}" data-k="${k}" rows="2" maxlength="200" placeholder="${ph}">${esc((set === 'pub' ? p : pv)[k] || '')}</textarea>` : `<input id="p-${k}" data-set="${set}" data-k="${k}" type="${type}" maxlength="${max}" placeholder="${ph}" value="${esc((set === 'pub' ? p : pv)[k] || '')}">`}</div>`;
+  return `<div class="set myprof">
+    <div class="set-top">${avatar(me, 'lg')}<div><b>${esc(me.name)}</b><span>@${esc(me.handle)}</span></div></div>
+    <div class="seg" role="tablist"><button type="button" role="tab" data-act="profTab" data-t="pub" aria-selected="${t === 'pub'}">${I.globe}Profil public</button><button type="button" role="tab" data-act="profTab" data-t="priv" aria-selected="${t === 'priv'}">${I.lock}Profil privé</button></div>
+    ${t === 'pub' ? `<p class="note">${I.globe}Visible par tous les membres de Tam-Tam, notamment quand quelqu’un veut vous ajouter. Il l’aide à savoir qui vous êtes.</p>
+    <div class="set-block">
+      <div class="field"><label for="p-name">Nom</label><input id="p-name" data-set="name" maxlength="40" value="${esc(me.name)}"></div>
+      <div class="field"><label for="p-handle">Pseudo</label><input id="p-handle" data-set="handle" maxlength="24" value="${esc(me.handle)}"></div>
+      ${f('pub', 'bio', 'Qui suis-je', 'Quelques mots sur vous')}${f('pub', 'metier', 'Métier ou études')}${f('pub', 'ville', 'Ville', 'Ex. : Dakar, Sénégal')}${f('pub', 'langues', 'Langues parlées', 'Ex. : Français, Wolof')}${f('pub', 'interets', 'Centres d’intérêt')}
+      <div class="field"><span class="lbl">Jour et mois de naissance</span><div class="bd-row"><select id="p-bd" data-set="pub" data-k="bd" aria-label="Jour"><option value="">Jour</option>${Array.from({length: 31}, (_, i) => `<option value="${i + 1}"${+p.bd === i + 1 ? ' selected' : ''}>${i + 1}</option>`).join('')}</select><select id="p-bm" data-set="pub" data-k="bm" aria-label="Mois"><option value="">Mois</option>${MOIS.map((m, i) => `<option value="${i + 1}"${+p.bm === i + 1 ? ' selected' : ''}>${m}</option>`).join('')}</select></div></div>
+      <div><button class="btn sm ghost" type="button" data-act="prof" data-id="${me.id}">${I.eye}Voir mon profil comme les autres</button></div></div>
+` : `<p class="note">${I.lock}Visible seulement par les personnes que vous choisissez. Votre numéro sert aussi à ce que vos proches vous retrouvent dans leur répertoire.</p>
+    <div class="set-block">
+      <span class="lbl">Qui peut le voir</span><div class="chips">${[['me', 'Moi uniquement'], ['contacts', 'Tous mes contacts'], ['grp', 'Mon groupe privé']].map(([v, l]) => `<button class="chip" type="button" data-act="privTo" data-v="${v}" aria-pressed="${me.privTo === v}">${l}</button>`).join('')}</div>
+      ${f('priv', 'tel', 'Téléphone', '+221 …', 'tel')}${f('priv', 'annee', 'Année de naissance', 'Ex. : 1985', 'number')}${f('priv', 'mail', 'E-mail de contact', '', 'email')}${f('priv', 'adresse', 'Quartier ou adresse')}${f('priv', 'travail', 'Lieu de travail')}${f('priv', 'famille', 'Famille')}</div>
+`}
+  </div>`;
+}
 function settingsBody() {
   const me = S.me, p = me.pub || {}, pv = me.priv || {};
   const f = (set, k, l, ph = '', type = 'text', max = 80) => `<div class="field"><label for="p-${k}">${l}</label>${k === 'bio' ? `<textarea id="p-${k}" data-set="${set}" data-k="${k}" rows="2" maxlength="200" placeholder="${ph}">${esc((set === 'pub' ? p : pv)[k] || '')}</textarea>` : `<input id="p-${k}" data-set="${set}" data-k="${k}" type="${type}" maxlength="${max}" placeholder="${ph}" value="${esc((set === 'pub' ? p : pv)[k] || '')}">`}</div>`;
@@ -683,17 +707,9 @@ function settingsBody() {
   return `<div class="set">
     <div class="set-top">${avatar(me, 'lg')}<div><b>${esc(me.name)}</b><span>@${esc(me.handle)} · ${esc(me.email)}</span></div></div>
     <div class="set-block"><h2>Photo ou avatar</h2>
-      <div class="actions" style="justify-content:flex-start"><button class="btn sm" type="button" data-act="mePhoto">${I.camera}${me.photo ? 'Changer la photo' : 'Mettre une photo'}</button>${me.photo ? '<button class="btn sm ghost" type="button" data-act="meNoPhoto">Utiliser l’avatar</button>' : ''}<input type="file" id="meIn" accept="image/*" hidden></div>
-      <p class="hint">${me.photo ? 'Votre photo est affichée. Préférez-vous un avatar dessiné ? Composez-le ci-dessous, puis touchez « Utiliser l’avatar ».' : 'Ou composez un avatar dessiné :'}</p>${avGallery(me.avatar, 'me')}</div>
-    <div class="set-block"><h2>${I.globe} Profil public</h2><p class="hint">Visible par les membres de tam-tam, notamment quand quelqu’un veut vous ajouter.</p>
-      <div class="field"><label for="p-name">Nom</label><input id="p-name" data-set="name" maxlength="40" value="${esc(me.name)}"></div>
-      <div class="field"><label for="p-handle">Pseudo</label><input id="p-handle" data-set="handle" maxlength="24" value="${esc(me.handle)}"></div>
-      ${f('pub', 'bio', 'Qui suis-je', 'Quelques mots sur vous')}${f('pub', 'metier', 'Métier ou études')}${f('pub', 'ville', 'Ville', 'Ex. : Dakar, Sénégal')}${f('pub', 'langues', 'Langues parlées', 'Ex. : Français, Wolof')}${f('pub', 'interets', 'Centres d’intérêt')}
-      <div class="field"><span class="lbl">Jour et mois de naissance</span><div class="bd-row"><select id="p-bd" data-set="pub" data-k="bd" aria-label="Jour"><option value="">Jour</option>${Array.from({length: 31}, (_, i) => `<option value="${i + 1}"${+p.bd === i + 1 ? ' selected' : ''}>${i + 1}</option>`).join('')}</select><select id="p-bm" data-set="pub" data-k="bm" aria-label="Mois"><option value="">Mois</option>${MOIS.map((m, i) => `<option value="${i + 1}"${+p.bm === i + 1 ? ' selected' : ''}>${m}</option>`).join('')}</select></div></div>
-      <div><button class="btn sm ghost" type="button" data-act="prof" data-id="${me.id}">${I.eye}Voir mon profil comme les autres</button></div></div>
-    <div class="set-block"><h2>${I.lock} Profil privé</h2>
-      <span class="lbl">Qui peut le voir</span><div class="chips">${[['me', 'Moi uniquement'], ['contacts', 'Tous mes contacts'], ['grp', 'Mon groupe privé']].map(([v, l]) => `<button class="chip" type="button" data-act="privTo" data-v="${v}" aria-pressed="${me.privTo === v}">${l}</button>`).join('')}</div>
-      ${f('priv', 'tel', 'Téléphone', '+221 …', 'tel')}${f('priv', 'annee', 'Année de naissance', 'Ex. : 1985', 'number')}${f('priv', 'mail', 'E-mail de contact', '', 'email')}${f('priv', 'adresse', 'Quartier ou adresse')}${f('priv', 'travail', 'Lieu de travail')}${f('priv', 'famille', 'Famille')}</div>
+      <div class="actions" style="justify-content:flex-start"><button class="btn sm" type="button" data-act="mePhoto">${I.camera}${me.photo ? 'Changer la photo' : 'Mettre une photo'}</button>${S.showAv ? '' : `<button class="btn sm ghost" type="button" data-act="avShow">${me.photo ? 'Utiliser l’avatar' : 'Modifier mon avatar'}</button>`}<input type="file" id="meIn" accept="image/*" hidden></div>
+      ${S.showAv ? `<p class="hint">Composez votre avatar dessiné :</p>${avGallery(me.avatar, 'me')}<div><button class="btn sm ghost" type="button" data-act="avHide">Masquer les avatars</button></div>` : ''}</div>
+    <div class="set-block"><h2>${I.globe} Profil public et privé</h2><p class="hint">Ils se règlent dans <b>Discussions → Mon profil</b>.</p><div><button class="btn sm ghost" type="button" data-act="goProfile">Ouvrir mon profil</button></div></div>
     <div class="set-block"><h2>Groupe privé</h2><p class="hint">Ces contacts voient vos statuts privés${me.privTo === 'grp' ? ' et votre profil privé' : ''}.</p>
       ${cs.length ? `<div class="picks">${cs.map(u => `<label class="pick"><input type="checkbox" name="close" value="${u.id}"${close.has(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint">Ajoutez d’abord des contacts.</p>'}</div>
     <div class="set-block"><h2>${I.shield} Chiffrement de bout en bout</h2><p class="hint">Vos messages et vos photos sont chiffrés sur votre appareil : seules les personnes de la discussion peuvent les lire, pas même le serveur.</p>
@@ -708,7 +724,7 @@ function settingsBody() {
     ${me.admin ? mailBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.10</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.11</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -820,6 +836,10 @@ const ACT = {
   },
   soundToggle() { Sound.set(!Sound.on()); renderBody(); if (Sound.on()) Sound.msg(true); },
   meNoPhoto() { saveNow({photo: null}, 'Avatar rétabli'); },
+  avShow() { S.showAv = true; if (S.me.photo) saveNow({photo: null}, 'Avatar affiché à la place de la photo'); else renderBody(); },
+  avHide() { S.showAv = false; renderBody(); },
+  profTab(d) { S.profTab = d.t; renderBody(); },
+  goProfile() { S.tab = 'chats'; S.filt = 'me'; renderAll(); },
   notif() { if (!('Notification' in window)) return toast('Votre navigateur ne permet pas les notifications.'); Notification.requestPermission().then(p => { renderBody(); toast(p === 'granted' ? 'Notifications activées' : 'Notifications refusées dans le navigateur'); }); },
   pwSheet() { sheet(`${head('Changer le mot de passe')}<form data-form="pw"><div class="sheet-body"><div class="field"><label for="pwOld">Mot de passe actuel</label><input id="pwOld" type="password" autocomplete="current-password"></div><div class="field"><label for="pwNew">Nouveau mot de passe (8 caractères minimum)</label><input id="pwNew" type="password" autocomplete="new-password"></div><p class="err" id="pwErr" role="alert" hidden></p><div class="actions"><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Mot de passe', '#pwOld'); },
   delSheet() { sheet(`${head('Supprimer mon compte')}<form data-form="del"><div class="sheet-body"><p>Votre compte, votre profil, vos photos et vos statuts seront effacés. Vos messages seront remplacés par « Ce message a été supprimé ». C’est définitif.</p><div class="field"><label for="delPw">Votre mot de passe pour confirmer</label><input id="delPw" type="password" autocomplete="current-password"></div><p class="err" id="delErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="submit">Supprimer définitivement</button></div></div></form>`, 'Supprimer', '#delPw'); },
