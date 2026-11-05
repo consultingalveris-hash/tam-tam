@@ -50,9 +50,10 @@ CREATE TABLE IF NOT EXISTS status_views(status_id INTEGER NOT NULL REFERENCES st
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, target_user INTEGER, chat_id INTEGER, reason TEXT NOT NULL, note TEXT,
   created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0);
 `);
-for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`]) { try { db.exec(sql); } catch {} }
+for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`]) { try { db.exec(sql); } catch {} }
 db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);`);
+CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS gpending(token TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, sub TEXT NOT NULL, invite TEXT, expires INTEGER NOT NULL);`);
 const q1 = (sql, ...a) => db.prepare(sql).get(...a);
 const qa = (sql, ...a) => db.prepare(sql).all(...a);
 const run = (sql, ...a) => db.prepare(sql).run(...a);
@@ -230,13 +231,16 @@ const R = (method, re, fn, auth = true) => routes.push({ method, re, fn, auth })
 R('GET', /^\/api\/meta$/, async ({ req, url }) => {
   const code = url.searchParams.get('invite'), inv = inviteValid(code);
   const n = q1(`SELECT COUNT(*) n FROM users`).n;
-  return { mail: !!getTransport(), ownerSetup: n === 0, ownerEmail: n === 0 && OWNER ? OWNER.replace(/^(.).*(@.*)$/, '$1•••$2') : null,
+  return { mail: !!getTransport(), google: !!googleSettings(), ownerSetup: n === 0, ownerEmail: n === 0 && OWNER ? OWNER.replace(/^(.).*(@.*)$/, '$1•••$2') : null,
     invite: inv ? { by: getUser(inv.by_user)?.name || '' } : null };
 }, false);
 
 R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   if (tooMany('reg:' + ipOf(req), 8, 60 * 60_000)) E(429, 'Trop de tentatives. Réessayez plus tard.');
-  const email = clean(body.email, 120).toLowerCase(), name = clean(body.name, 40), pass = String(body.pass || '');
+  const gp = body.gtok ? q1(`SELECT * FROM gpending WHERE token=? AND expires>?`, sha(String(body.gtok)), now()) : null;
+  if (body.gtok && !gp) E(400, 'La connexion Google a expiré. Recommencez avec « Continuer avec Google ».');
+  const email = gp ? gp.email : clean(body.email, 120).toLowerCase(), name = clean(body.name, 40), pass = gp ? rnd(24) : String(body.pass || '');
+  if (gp && !body.invite && gp.invite) body.invite = gp.invite;
   if (!name) E(400, 'Indiquez votre nom.');
   if (!isEmail(email)) E(400, 'Adresse e-mail invalide.');
   if (pass.length < 8) E(400, 'Le mot de passe doit contenir au moins 8 caractères.');
@@ -250,6 +254,7 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   const av = avatarJson(body.avatar) || JSON.stringify({ v: 2, st: 'court', sk: 'c', sh: '#14b8c9' });
   const id = run(`INSERT INTO users(email,pass,name,handle,avatar,admin,invited_by,cgu_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
     email, hashPass(pass), name, slugHandle(name), av, first ? 1 : 0, inv ? inv.by_user : null, now(), now()).lastInsertRowid;
+  if (gp) { run(`UPDATE users SET google_sub=? WHERE id=?`, gp.sub, Number(id)); run(`DELETE FROM gpending WHERE token=?`, gp.token); }
   if (inv) {
     run(`UPDATE invites SET uses=uses+1 WHERE code=?`, inv.code);
     // La personne qui invite et l'invité deviennent contacts directement : l'invitation vaut acceptation.
@@ -583,7 +588,56 @@ R('POST', /^\/api\/forgot\/verify$/, async ({ req, res, body }) => {
 }, false);
 
 /* administration (propriétaire) */
+/* ---------- connexion avec Google ---------- */
+function googleSettings() { const r = q1(`SELECT v FROM settings WHERE k='google'`); const g = r ? J(r.v, null) : null; return g && g.id && g.secret ? g : null; }
+const G_REDIRECT = () => `${BASE_URL}/api/oauth/google/callback`;
+function redirect(res, to, cookie) { const h = { Location: to, 'Cache-Control': 'no-store' }; if (cookie) h['Set-Cookie'] = cookie; res.writeHead(302, h); res.end(); return null; }
+R('GET', /^\/api\/oauth\/google\/start$/, async ({ req, res, url }) => {
+  const g = googleSettings(); if (!g) return redirect(res, '/?g_err=' + encodeURIComponent('La connexion Google n’est pas encore activée.'));
+  if (tooMany('gstart:' + ipOf(req), 30)) return redirect(res, '/?g_err=' + encodeURIComponent('Trop de tentatives. Réessayez plus tard.'));
+  const state = rnd(24), invite = clean(url.searchParams.get('invite'), 60).replace(/[^A-Za-z0-9_-]/g, '');
+  const q = new URLSearchParams({ client_id: g.id, redirect_uri: G_REDIRECT(), response_type: 'code', scope: 'openid email profile', state, prompt: 'select_account' });
+  return redirect(res, 'https://accounts.google.com/o/oauth2/v2/auth?' + q, `tt_g=${state}.${invite}; Path=/api/oauth/google; HttpOnly; SameSite=Lax; Max-Age=600${secure ? '; Secure' : ''}`);
+}, false);
+R('GET', /^\/api\/oauth\/google\/callback$/, async ({ req, res, url }) => {
+  const bad = msg => redirect(res, '/?g_err=' + encodeURIComponent(msg), 'tt_g=; Path=/api/oauth/google; Max-Age=0');
+  const g = googleSettings(); if (!g) return bad('La connexion Google n’est pas encore activée.');
+  const [state, invite] = String(cookies(req).tt_g || '').split('.');
+  if (!state || state !== url.searchParams.get('state')) return bad('La connexion Google a expiré. Réessayez.');
+  if (url.searchParams.get('error') || !url.searchParams.get('code')) return bad('Connexion Google annulée.');
+  let info;
+  try {
+    const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ code: url.searchParams.get('code'), client_id: g.id, client_secret: g.secret, redirect_uri: G_REDIRECT(), grant_type: 'authorization_code' }) });
+    const t = await r.json(); if (!r.ok || !t.id_token) throw new Error(t.error_description || t.error || 'réponse vide');
+    info = JSON.parse(Buffer.from(t.id_token.split('.')[1], 'base64url').toString('utf8'));
+    if (info.aud !== g.id || !/^(https:\/\/)?accounts\.google\.com$/.test(info.iss) || info.exp * 1000 < now()) throw new Error('jeton refusé');
+  } catch (e) { console.error('google', e.message); return bad('Google n’a pas pu confirmer votre compte. Réessayez.'); }
+  const email = String(info.email || '').toLowerCase(), sub = String(info.sub || '');
+  if (!email || !sub || info.email_verified === false) return bad('Ce compte Google n’a pas d’adresse e-mail confirmée.');
+  let u = q1(`SELECT * FROM users WHERE google_sub=?`, sub) || q1(`SELECT * FROM users WHERE email=?`, email);
+  if (u) { if (!u.google_sub) run(`UPDATE users SET google_sub=? WHERE id=?`, sub, u.id); setSession(res, u.id); const c = res.getHeader('Set-Cookie'); return redirect(res, '/', [c, 'tt_g=; Path=/api/oauth/google; Max-Age=0']); }
+  const first = q1(`SELECT COUNT(*) n FROM users`).n === 0;
+  if (first ? (OWNER && email !== OWNER) : !inviteValid(invite)) return bad(first ? 'Le premier compte est réservé au propriétaire de tam-tam.' : 'Aucun compte tam-tam n’existe pour ' + email + '. Pour vous inscrire, ouvrez d’abord le lien d’invitation reçu d’un membre.');
+  const tok = rnd(24); run(`INSERT INTO gpending(token,email,name,sub,invite,expires) VALUES(?,?,?,?,?,?)`, sha(tok), email, clean(info.name || email.split('@')[0], 40), sub, invite || null, now() + 30 * 60_000);
+  return redirect(res, '/?g=' + tok, 'tt_g=; Path=/api/oauth/google; Max-Age=0');
+}, false);
+R('GET', /^\/api\/oauth\/google\/pending$/, async ({ url }) => {
+  const gp = q1(`SELECT email,name,invite FROM gpending WHERE token=? AND expires>?`, sha(String(url.searchParams.get('t') || '')), now()); if (!gp) E(404, 'La connexion Google a expiré. Recommencez.');
+  const inv = inviteValid(gp.invite);
+  return { email: gp.email, name: gp.name, invite: gp.invite, by: inv ? getUser(inv.by_user)?.name || '' : '' };
+}, false);
+
 function adminOnly(me) { if (!me.admin) E(403, 'Réservé au propriétaire.'); }
+R('GET', /^\/api\/admin\/google$/, async ({ me }) => { adminOnly(me); const r = q1(`SELECT v FROM settings WHERE k='google'`), g = r ? J(r.v, {}) : {}; return { id: g.id || '', hasSecret: !!g.secret, redirect: G_REDIRECT(), origin: BASE_URL }; });
+R('POST', /^\/api\/admin\/google$/, async ({ me, body }) => {
+  adminOnly(me); const r = q1(`SELECT v FROM settings WHERE k='google'`), old = r ? J(r.v, {}) : {};
+  if (body.off) { run(`DELETE FROM settings WHERE k='google'`); return { ok: true }; }
+  const g = { id: clean(body.id, 200).replace(/\s/g, ''), secret: body.secret ? String(body.secret).trim().slice(0, 200) : old.secret };
+  if (!/\.apps\.googleusercontent\.com$/.test(g.id)) E(400, 'L’ID client doit se terminer par « .apps.googleusercontent.com ».');
+  if (!g.secret) E(400, 'Collez aussi le code secret du client.');
+  run(`INSERT OR REPLACE INTO settings(k,v) VALUES('google',?)`, JSON.stringify(g)); return { ok: true };
+});
 R('GET', /^\/api\/admin$/, async ({ me }) => {
   adminOnly(me);
   return { users: qa(`SELECT id,name,handle,email,created_at,last_seen FROM users ORDER BY created_at DESC LIMIT 500`).map(u => ({ ...u, online: online(u.id) })),

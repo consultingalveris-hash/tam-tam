@@ -331,3 +331,12 @@ button.row:hover,.row.active{background:var(--surface-2)}
 .avb-st[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent);color:var(--fg);font-weight:600}
 .skin{width:32px;height:32px;padding:0;border:2px solid var(--surface);border-radius:50%;background:var(--c);box-shadow:0 0 0 1px var(--line)}
 .skin[aria-pressed="true"],.sw[aria-pressed="true"]{box-shadow:0 0 0 2.5px var(--fg)}
+
+/* ---------- Google ---------- */
+.gbtn{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--surface);color:var(--fg);border:1px solid var(--line);text-decoration:none;font-weight:600}
+.gbtn:hover{background:var(--surface-2)}
+.or{display:flex;align-items:center;gap:10px;color:var(--fg-2);font-size:13px}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+.g-ok{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:var(--accent-soft);color:var(--fg);font-size:14px;margin:0}
+.g-ok svg{flex:none;margin-top:1px}
+.set-block h2 svg{vertical-align:-4px;margin-right:4px}
