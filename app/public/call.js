@@ -29,7 +29,7 @@ const Call = {
     const r = await api('/api/call/signal', {type: 'ring', callId: this.c.id, chatId: this.c.chatId, to: this.c.peer, video}).catch(e => ({err: e.message}));
     if (!this.c) return;
     if (r.err) { toast(r.err); return this.cleanup(); }
-    if (r.offline) { this.c.state = 'offline'; this.render(); setTimeout(() => this.cleanup(), 2600); return; }
+    this.c.pushed = !!r.pushed;
     this.c.state = 'ringing'; this.render(); this.tone('back');
     this.c.timer = setTimeout(() => { if (this.c && this.c.state === 'ringing') { this.sig('end', {log: {dur: 0}}); this.c.state = 'noanswer'; this.render(); setTimeout(() => this.cleanup(), 2200); } }, 45000);
   },
@@ -131,7 +131,7 @@ const Call = {
   /* ---------- affichage ---------- */
   el() { let e = document.getElementById('call'); if (!e) { e = document.createElement('div'); e.id = 'call'; document.body.appendChild(e); } return e; },
   label() {
-    const c = this.c; return {calling: 'Préparation de l’appel…', ringing: 'Ça sonne…', incoming: c.video ? 'Appel vidéo entrant' : 'Appel vocal entrant', connecting: 'Connexion…',
+    const c = this.c; return {calling: 'Préparation de l’appel…', ringing: c.pushed ? 'Ça sonne sur son téléphone…' : 'Ça sonne…', incoming: c.video ? 'Appel vidéo entrant' : 'Appel vocal entrant', connecting: 'Connexion…',
       reconnecting: 'Connexion perdue, on réessaie…', live: '', declined: 'Appel refusé', busy: 'Déjà en ligne', noanswer: 'Pas de réponse', offline: 'Hors ligne : nous lui signalons votre appel', ended: 'Appel terminé'}[c.state] || '';
   },
   clock() { const c = this.c, el = document.getElementById('callTime'); if (!c || !el || !c.since) return; const s = Math.floor((Date.now() - c.since) / 1000); el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; },
@@ -171,7 +171,7 @@ const Call = {
       T(0, 150, 75, .42, .7); T(.24, 320, 170, .16, .45); T(.40, 300, 160, .14, .4);
       T(.62, 150, 75, .42, .7); T(.86, 150, 78, .30, .55); T(1.06, 330, 175, .16, .45);
       T(1.30, 240, 120, .12, .35); T(1.40, 250, 125, .12, .38); T(1.50, 260, 130, .12, .42); T(1.62, 160, 80, .5, .75);
-      if (navigator.vibrate) try { navigator.vibrate([400, 250, 400]); } catch {}
+      if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) try { navigator.vibrate([400, 250, 400]); } catch {}
     };
     // tonalité côté appelant : deux coups doux, comme un tam-tam au loin
     const back = () => { T(0, 140, 80, .5, .28); T(.35, 140, 80, .5, .22); };
@@ -191,7 +191,9 @@ const Call = {
     this.c = null; this.render();
   },
 };
-window.addEventListener('beforeunload', () => { if (Call.c) Call.hangup(); });
+// ouvert depuis la notification « touchez pour répondre » : on reprend la sonnerie en attente
+Call.checkPending = async function () { if (this.c || GCall.c) return; try { const r = await api('/api/call/pending'); if (r.ev && !this.c) this.onSignal(r.ev); } catch {} };
+window.addEventListener('beforeunload', () => { if (Call.c && Call.c.state !== 'incoming') Call.hangup(); });
 Object.assign(ACT, {
   callAudio() { Call.start(false); }, callVideo() { Call.start(true); },
   callAccept() { Call.accept(); }, callDecline() { Call.decline(); }, callEnd() { Call.hangup(); },

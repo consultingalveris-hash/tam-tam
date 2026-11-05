@@ -427,6 +427,7 @@ R('GET', /^\/api\/call\/ice$/, async ({ me }) => {
   }
   return { ice };
 });
+const pendingRings = new Map(); // personne appelée -> sonnerie en attente (45 s)
 const CALL_T = ['ring', 'accept', 'decline', 'busy', 'end', 'offer', 'answer', 'ice', 'media'];
 R('POST', /^\/api\/call\/signal$/, async ({ me, body }) => {
   const type = String(body.type || ''), callId = clean(body.callId, 40), to = +body.to, cid = +body.chatId;
@@ -436,18 +437,25 @@ R('POST', /^\/api\/call\/signal$/, async ({ me, body }) => {
   if (type === 'ring' && tooMany('call:' + me.id, 20, 10 * 60_000)) E(429, 'Trop d’appels. Patientez quelques minutes.');
   const data = body.data == null ? null : JSON.parse(JSON.stringify(body.data).slice(0, 60_000));
   const ev = { t: 'call', type, callId, chatId: cid, from: me.id, video: !!body.video, data };
-  if (type === 'ring' && !online(to)) {
-    sysMsg(cid, `${body.video ? 'Appel vidéo' : 'Appel vocal'} manqué de ${me.name.split(' ')[0]}`);
-    webPush(to, { title: me.name, body: `${body.video ? 'Appel vidéo' : 'Appel vocal'} manqué`, tag: 'call-' + cid, url: '/?chat=' + cid }, true);
-    return { ok: true, offline: true };
+  const wasOffline = type === 'ring' && !online(to);
+  if (type === 'ring') {
+    // Le téléphone de la personne appelée sonne même si tam-tam est fermé : notification « touchez pour répondre ».
+    pendingRings.set(to, { ev, at: now() });
+    webPush(to, { title: me.name, body: `📞 ${body.video ? 'Appel vidéo' : 'Appel vocal'} entrant · touchez pour répondre`, tag: 'ring-' + callId, url: '/?call=' + callId, ring: true }, true);
   }
+  if (['accept', 'decline', 'busy', 'end'].includes(type)) { const who = type === 'end' ? to : me.id, pr = pendingRings.get(who); if (pr && pr.ev.callId === callId) pendingRings.delete(who); }
+  if (type === 'end') webPush(to, { title: me.name, body: 'Appel terminé', tag: 'ring-' + callId, url: '/?chat=' + cid, close: true }, true);
   push(to, ev);
   if (type === 'accept' || type === 'decline') push(me.id, { ...ev, elsewhere: true }); // arrête la sonnerie sur mes autres appareils
   if (type === 'end' && body.log) {
     const d = Math.max(0, Math.round(+body.log.dur || 0)), v = body.video ? 'Appel vidéo' : 'Appel vocal';
     sysMsg(cid, d > 0 ? `${v} · ${d >= 60 ? Math.floor(d / 60) + ' min ' + String(d % 60).padStart(2, '0') + ' s' : d + ' s'}` : `${v} manqué de ${me.name.split(' ')[0]}`);
   }
-  return { ok: true };
+  return { ok: true, pushed: wasOffline };
+});
+R('GET', /^\/api\/call\/pending$/, async ({ me }) => {
+  const pr = pendingRings.get(me.id); if (!pr || now() - pr.at > 45_000) { pendingRings.delete(me.id); return { ev: null }; }
+  return { ev: pr.ev };
 });
 
 /* ---------- notifications sur le téléphone, même quand tam-tam est fermé ---------- */
@@ -459,8 +467,12 @@ function vapid() {
 const VAPID = vapid();
 webpush.setVapidDetails('mailto:' + (OWNER || 'contact@alveris-consulting.com'), VAPID.publicKey, VAPID.privateKey);
 // Le contenu des messages reste chiffré : la notification dit seulement qui écrit.
+function unreadCount(uid) {
+  return q1(`SELECT COUNT(*) n FROM messages m JOIN members mb ON mb.chat_id=m.chat_id AND mb.user_id=? WHERE m.id>mb.last_read AND m.deleted=0 AND (m.sender IS NULL OR m.sender<>?)`, uid, uid).n;
+}
 function webPush(uid, payload, always = false) {
   if (!always && online(uid)) return;
+  if (payload.badge === undefined) payload.badge = unreadCount(uid);
   for (const sub of qa(`SELECT * FROM push_subs WHERE user_id=?`, uid)) {
     webpush.sendNotification({ endpoint: sub.endpoint, keys: J(sub.keys, {}) }, JSON.stringify(payload), { TTL: 6 * 3600, urgency: 'high' })
       .catch(e => { if (e && (e.statusCode === 404 || e.statusCode === 410)) run(`DELETE FROM push_subs WHERE endpoint=?`, sub.endpoint); });

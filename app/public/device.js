@@ -13,7 +13,9 @@ const Device = {
     // déjà autorisé sur cet appareil : on renouvelle l'abonnement en silence
     if (this.pushOk() && Notification.permission === 'granted') this.subscribe(true);
   },
-  openUrl(url) { const m = /[?&]chat=(\d+)/.exec(url || ''); if (m && S.me && S.chats.has(+m[1])) { S.tab = 'chats'; renderTabs && renderTabs(); openChat(+m[1]); } },
+  badge() { try { const n = [...S.chats.values()].reduce((a, c) => a + (c.unread || 0), 0); if (navigator.setAppBadge) n ? navigator.setAppBadge(n) : navigator.clearAppBadge(); } catch {} },
+  openUrl(url) {
+    if (/[?&]call=/.test(url || '')) return Call.checkPending(); const m = /[?&]chat=(\d+)/.exec(url || ''); if (m && S.me && S.chats.has(+m[1])) { S.tab = 'chats'; renderTabs && renderTabs(); openChat(+m[1]); } },
   key(b64) { const p = '='.repeat((4 - b64.length % 4) % 4), raw = atob((b64 + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(raw, c => c.charCodeAt(0)); },
   async subscribe(silent) {
     try {

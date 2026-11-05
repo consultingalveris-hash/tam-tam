@@ -60,7 +60,7 @@ const Sound = {
     if (!force && (!this.on() || Date.now() - this.last < 1500)) return; this.last = Date.now();
     this.unlock(); const c = this.ctx; if (!c) return; const t = c.currentTime + .02;
     this.drum(t, 190, 95, .32, .55); this.drum(t + .16, 330, 170, .16, .35); this.drum(t + .30, 200, 100, .36, .5);
-    if (navigator.vibrate) try { navigator.vibrate([60, 60, 60]); } catch {}
+    if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) try { navigator.vibrate([60, 60, 60]); } catch {}
   },
 };
 ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => Sound.unlock(), {passive: true}));
@@ -162,7 +162,8 @@ async function startApp() {
   renderMain();
   await Promise.all([loadChats(), loadContacts(), loadStatuses()]).catch(e => toast(e.message));
   renderAll(); connect(); if (S.locked) showLock();
-  GCall.loadActive();
+  GCall.loadActive(); Call.checkPending(); Device.badge();
+  if (S.lock.type === 'off') return requireLock();
   if (S.pendingChat && S.chats.has(S.pendingChat)) openChat(S.pendingChat); S.pendingChat = 0;
 }
 function connect() {
@@ -181,6 +182,7 @@ function onEvent(ev) {
   else if (ev.t === 'chats') loadChats().then(() => { if (S.tab === 'chats') renderBody(); });
   else if (ev.t === 'statuses') loadStatuses().then(renderStories);
   else if (ev.t === 'presence') { const u = S.users.get(ev.id); if (u) { u.online = ev.online; u.lastSeen = ev.lastSeen; } if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }
+  else if (ev.t === 'read' && ev.user === S.me.id) Device.badge();
   else if (ev.t === 'gcall') GCall.onEvent(ev).catch(e => { console.error(e); toast('Problème pendant l’appel de groupe.'); });
   else if (ev.t === 'call') Call.onSignal(ev).catch(e => { console.error(e); toast('Problème pendant l’appel.'); Call.hangup(); });
   else if (ev.t === 'report' && S.me.admin) toast('Nouveau signalement reçu (Réglages, Administration)');
@@ -209,7 +211,7 @@ const TABS = [['chats', 'Discussions', I.chats], ['contacts', 'Contacts', I.user
 function renderTabs() {
   const unread = [...S.chats.values()].filter(c => c.unread > 0).length, inc = S.contacts.incoming.length;
   $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${id === 'chats' && unread ? `<span class="badge" aria-label="${unread} non lues">${unread}</span>` : ''}${id === 'contacts' && inc ? `<span class="badge" aria-label="${inc} demandes">${inc}</span>` : ''}</button>`).join('');
-  $('#fab').hidden = S.tab !== 'chats';
+  $('#fab').hidden = S.tab !== 'chats'; Device.badge();
   const n = [...S.chats.values()].reduce((a, c) => a + (c.unread || 0), 0); document.title = n ? `(${n}) tam-tam` : 'tam-tam';
 }
 function renderHead() {
@@ -678,7 +680,7 @@ function settingsBody() {
     ${me.admin ? mailBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">tam-tam · version 1.6</p></div>`;
+    <p class="hint" style="text-align:center">tam-tam · version 1.7</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -706,7 +708,7 @@ const ACT = {
   lockSetup() { lockSetupSheet(1); },
   async lockDelay(d) { S.lock.delay = +d.v; await Lock.set(S.me.id, S.lock); renderBody(); },
   async lockOff() { S.lock = {type: 'off', delay: 60}; await Lock.set(S.me.id, S.lock); renderBody(); toast('Verrouillage désactivé'); },
-  async bioOn() { if (!await Lock.bioCheck()) return toast('Cet appareil ou ce navigateur ne propose pas l’empreinte ou le visage.'); try { S.lock.bio = await Lock.bioRegister(S.me); await Lock.set(S.me.id, S.lock); renderBody(); toast('Empreinte ou visage activé'); } catch { toast('L’enregistrement de l’empreinte a été annulé.'); } },
+  async bioOn() { if (!await Lock.bioCheck()) return toast('Cet appareil ou ce navigateur ne propose pas l’empreinte ou le visage.'); try { S.lock.bio = await Lock.bioRegister(S.me); await Lock.set(S.me.id, S.lock); closeLayer(); renderBody(); toast('Empreinte ou visage activé'); } catch { toast('L’enregistrement de l’empreinte a été annulé.'); } },
   async bioOff() { delete S.lock.bio; await Lock.set(S.me.id, S.lock); renderBody(); },
   async invShare() { try { await navigator.share({title: 'tam-tam', text: inviteText(), url: S.lastInvite.url}); } catch {} },
   async invContacts() {
@@ -966,7 +968,24 @@ function lockSettingsHtml() {
     ${L.type === 'off' ? `<div><button class="btn sm" type="button" data-act="lockSetup">Choisir un schéma de déverrouillage</button></div>` : `
     <p>${I.check || ''} Verrouillage actif${L.bio ? ' · schéma + empreinte ou visage' : ' · schéma'}</p>
     <span class="lbl">Verrouiller après</span><div class="chips">${[[0, 'Tout de suite'], [60, '1 minute'], [300, '5 minutes'], [1800, '30 minutes']].map(([v, l]) => `<button class="chip" type="button" data-act="lockDelay" data-v="${v}" aria-pressed="${(L.delay || 0) === v}">${l}</button>`).join('')}</div>
-    <div class="actions" style="justify-content:flex-start">${L.bio ? '<button class="btn sm ghost" type="button" data-act="bioOff">Retirer l’empreinte</button>' : `<button class="btn sm ghost" type="button" data-act="bioOn" id="bioBtn">${I.key}Ajouter l’empreinte ou le visage</button>`}<button class="btn sm ghost" type="button" data-act="lockSetup">Changer le schéma</button><button class="btn sm ghost" type="button" data-act="lockOff">Désactiver</button></div>`}</div>`;
+    <div class="actions" style="justify-content:flex-start">${L.bio ? '<button class="btn sm ghost" type="button" data-act="bioOff">Retirer l’empreinte</button>' : `<button class="btn sm ghost" type="button" data-act="bioOn" id="bioBtn">${I.key}Ajouter l’empreinte ou le visage</button>`}<button class="btn sm ghost" type="button" data-act="lockSetup">Changer le schéma</button></div>`}</div>`;
+}
+/* Verrouillage obligatoire : sans lui, une notification ouvrirait les messages à n'importe qui. */
+function requireLock(step, first, msg) {
+  let el = $('#lockScreen'); if (!el) { el = document.createElement('div'); el.id = 'lockScreen'; el.className = 'lock-screen'; document.body.appendChild(el); }
+  el.innerHTML = `<div class="lock-card" role="dialog" aria-modal="true" aria-label="Protéger tam-tam"><div class="auth-top">${LOGO}<h1 class="brand">${WORD}</h1></div>
+    <h2 style="margin:0">${I.lock} Protégez vos messages</h2>
+    <p class="hint">${step === 2 ? 'Dessinez le même schéma pour confirmer.' : 'Choisissez un schéma de déverrouillage : tam-tam le demandera à chaque ouverture, même depuis une notification. Reliez au moins 4 points sans lever le doigt.'}</p>
+    ${patternPad('reqPad')}<p class="err" id="rqErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p></div>`;
+  bindPad('reqPad', async seq => {
+    if (seq.length < 4) return requireLock(step, first, 'Reliez au moins 4 points.');
+    if (step !== 2) return requireLock(2, seq);
+    if (seq.join() !== first.join()) return requireLock(1, null, 'Les deux schémas sont différents. Recommencez.');
+    const salt = b64(crypto.getRandomValues(new Uint8Array(16)));
+    S.lock = {type: 'pattern', delay: 0, salt, hash: await Lock.hashPattern(seq, salt)}; await Lock.set(S.me.id, S.lock);
+    el.remove(); toast('Schéma enregistré : tam-tam se verrouille à chaque ouverture.');
+    if (await Lock.bioCheck()) sheet(`${head('Empreinte ou visage')}<div class="sheet-body"><p class="hint">Voulez-vous aussi déverrouiller tam-tam avec votre empreinte ou votre visage ? C’est plus rapide que le schéma.</p><div class="actions"><button class="btn ghost" type="button" data-act="close">Plus tard</button><button class="btn" type="button" data-act="bioOn">Oui, utiliser mon empreinte</button></div></div>`, 'Empreinte');
+  });
 }
 function lockSetupSheet(step, first, msg) {
   sheet(`${head('Schéma de déverrouillage')}<div class="sheet-body" style="align-items:center"><p class="hint" style="text-align:center">${step === 2 ? 'Dessinez le même schéma pour confirmer.' : 'Reliez au moins 4 points sans lever le doigt.'}</p>${patternPad('setPad')}<p class="err" id="spErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p></div>`, 'Schéma');
@@ -975,7 +994,7 @@ function lockSetupSheet(step, first, msg) {
     if (step !== 2) return lockSetupSheet(2, seq);
     if (seq.join() !== first.join()) return lockSetupSheet(1, null, 'Les deux schémas sont différents. Recommencez.');
     const salt = b64(crypto.getRandomValues(new Uint8Array(16)));
-    S.lock = Object.assign({delay: 60}, S.lock || {}, {type: 'pattern', salt, hash: await Lock.hashPattern(seq, salt)});
+    S.lock = Object.assign({delay: 0}, S.lock || {}, {type: 'pattern', salt, hash: await Lock.hashPattern(seq, salt)});
     await Lock.set(S.me.id, S.lock); closeLayer(); renderBody(); toast('Schéma enregistré : tam-tam se verrouillera automatiquement');
   });
 }

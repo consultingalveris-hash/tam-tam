@@ -1,5 +1,5 @@
 /* tam-tam — travailleur de fond : notifications et ouverture hors connexion. */
-const CACHE = 'tamtam-v1';
+const CACHE = 'tamtam-v2';
 const SHELL = ['/', '/style.css', '/kit.js', '/secure.js', '/app.js', '/call.js', '/icon.svg', '/icon-192.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
@@ -12,11 +12,17 @@ self.addEventListener('fetch', e => {
 });
 self.addEventListener('push', e => {
   let d = {}; try { d = e.data ? e.data.json() : {}; } catch { d = { title: 'tam-tam', body: e.data ? e.data.text() : '' }; }
-  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+  e.waitUntil((async () => {
+    // pastille sur l'icône de l'écran d'accueil (nombre de messages non lus)
+    if (typeof d.badge === 'number' && self.navigator.setAppBadge) { try { d.badge ? await self.navigator.setAppBadge(d.badge) : await self.navigator.clearAppBadge(); } catch {} }
+    if (d.close) { const ns = await self.registration.getNotifications({ tag: d.tag }); ns.forEach(n => n.close()); return; }
+    const list = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     // tam-tam est ouvert et visible : l'application sonne elle-même
     if (list.some(c => c.visibilityState === 'visible') && !/^test/.test(d.tag || '')) return;
-    return self.registration.showNotification(d.title || 'tam-tam', { body: d.body || '', icon: '/icon-192.png', badge: '/badge-96.png', tag: d.tag || 'tamtam', renotify: true, vibrate: [120, 80, 120], data: { url: d.url || '/' } });
-  }));
+    return self.registration.showNotification(d.title || 'tam-tam', { body: d.body || '', icon: '/icon-192.png', badge: '/badge-96.png', tag: d.tag || 'tamtam', renotify: true,
+      requireInteraction: !!d.ring, vibrate: d.ring ? [700, 400, 700, 400, 700, 400, 700] : [120, 80, 120],
+      actions: d.ring ? [{ action: 'answer', title: 'Répondre' }] : [], data: { url: d.url || '/' } });
+  })());
 });
 self.addEventListener('notificationclick', e => {
   e.notification.close(); const url = (e.notification.data && e.notification.data.url) || '/';
