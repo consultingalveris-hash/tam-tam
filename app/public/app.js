@@ -39,6 +39,31 @@ async function api(path, body, opts = {}) {
   return data;
 }
 let toastT;
+/* ---------- son des messages : un petit « tam-tam » joué par le navigateur, sans fichier ---------- */
+const Sound = {
+  ctx: null, last: 0,
+  on() { try { return localStorage.getItem('tt:sound') !== 'off'; } catch { return true; } },
+  set(v) { try { localStorage.setItem('tt:sound', v ? 'on' : 'off'); } catch {} },
+  unlock() { try { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); if (this.ctx.state === 'suspended') this.ctx.resume(); } catch {} },
+  drum(t, f0, f1, dur, vol) {
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur * .8);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur + .05);
+    // la frappe de la main sur la peau
+    const n = c.createBufferSource(), b = c.createBuffer(1, c.sampleRate * .03, c.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const hp = c.createBiquadFilter(), ng = c.createGain(); hp.type = 'bandpass'; hp.frequency.value = f0 * 6; ng.gain.value = vol * .35;
+    n.buffer = b; n.connect(hp).connect(ng).connect(c.destination); n.start(t);
+  },
+  msg(force) {
+    if (!force && (!this.on() || Date.now() - this.last < 1500)) return; this.last = Date.now();
+    this.unlock(); const c = this.ctx; if (!c) return; const t = c.currentTime + .02;
+    this.drum(t, 190, 95, .32, .55); this.drum(t + .16, 330, 170, .16, .35); this.drum(t + .30, 200, 100, .36, .5);
+    if (navigator.vibrate) try { navigator.vibrate([60, 60, 60]); } catch {}
+  },
+};
+['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => Sound.unlock(), {passive: true}));
 function toast(t) { let el = $('.toast'); if (!el) { el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); } el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, 3200); }
 
 /* ---------- avatars ---------- */
@@ -402,7 +427,40 @@ function markRead() {
   renderTabs(); if (S.tab === 'chats') renderBody();
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.chatId) markRead(); });
+/* ---------- recadrer la photo de profil ---------- */
+function cropPhoto(file) {
+  const url = URL.createObjectURL(file), im = new Image();
+  im.onload = () => {
+    S.crop = {im, url, z: 1, x: 0, y: 0, rot: 0};
+    sheet(`${head('Ajuster la photo')}<div class="sheet-body crop-body"><p class="hint">Faites glisser la photo avec le doigt et zoomez pour bien cadrer votre visage.</p>
+      <div class="crop-stage"><canvas id="cropCv" width="560" height="560" aria-label="Aperçu de la photo"></canvas></div>
+      <div class="crop-tools"><span aria-hidden="true">−</span><input id="cropZoom" type="range" min="1" max="4" step="0.01" value="1" aria-label="Zoom"><span aria-hidden="true">+</span><button class="ib" type="button" data-act="cropRot" aria-label="Tourner la photo">${I.rotate || '⟳'}</button></div>
+      <div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="button" data-act="cropOk">Enregistrer la photo</button></div></div>`, 'Ajuster la photo');
+    const cv = $('#cropCv'); let drag = null;
+    cv.addEventListener('pointerdown', e => { drag = {x: e.clientX, y: e.clientY, ox: S.crop.x, oy: S.crop.y}; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener('pointermove', e => { if (!drag) return; const k = cv.width / cv.getBoundingClientRect().width; S.crop.x = drag.ox + (e.clientX - drag.x) * k; S.crop.y = drag.oy + (e.clientY - drag.y) * k; drawCrop(); });
+    cv.addEventListener('pointerup', () => { drag = null; }); cv.addEventListener('pointercancel', () => { drag = null; });
+    cv.addEventListener('wheel', e => { e.preventDefault(); S.crop.z = Math.min(4, Math.max(1, S.crop.z * (e.deltaY < 0 ? 1.08 : 0.93))); $('#cropZoom').value = S.crop.z; drawCrop(); }, {passive: false});
+    drawCrop();
+  };
+  im.onerror = () => { URL.revokeObjectURL(url); toast('Photo illisible.'); };
+  im.src = url;
+}
+function paintCrop(ctx, size, mask) {
+  const c = S.crop, im = c.im, rot = c.rot % 2 === 1, w = rot ? im.height : im.width, h = rot ? im.width : im.height;
+  const base = size / Math.min(w, h), sc = base * c.z, k = size / 560;
+  // empêcher de laisser un bord vide
+  const mx = Math.max(0, (w * sc - size) / 2) / k, my = Math.max(0, (h * sc - size) / 2) / k;
+  c.x = Math.max(-mx, Math.min(mx, c.x)); c.y = Math.max(-my, Math.min(my, c.y));
+  ctx.save(); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, size, size);
+  ctx.translate(size / 2 + c.x * k, size / 2 + c.y * k); ctx.rotate(c.rot * Math.PI / 2); ctx.scale(sc, sc);
+  ctx.drawImage(im, -im.width / 2, -im.height / 2); ctx.restore();
+  if (mask) { ctx.save(); ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.beginPath(); ctx.rect(0, 0, size, size); ctx.arc(size / 2, size / 2, size / 2 - 6, 0, Math.PI * 2, true); ctx.fill('evenodd');
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(size / 2, size / 2, size / 2 - 6, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
+}
+function drawCrop() { const cv = $('#cropCv'); if (cv && S.crop) paintCrop(cv.getContext('2d'), cv.width, true); }
 function notify(c, m) {
+  Sound.msg();
   const who = m.from ? uOf(m.from).name : '', t = c.type === 'group' ? `${c.name} · ${first(who)}` : who;
   if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
     try { const n = new Notification(t, {body: snippet(m).slice(0, 120), tag: 'tt-' + c.id, icon: '/icon.svg'}); n.onclick = () => { window.focus(); openChat(c.id); n.close(); }; } catch {}
@@ -608,14 +666,14 @@ function settingsBody() {
       <p>Votre code de sécurité : <b class="fp" id="myFp">…</b></p><p class="hint">Comparez-le avec celui qu’un proche voit sur votre profil pour vérifier que personne ne s’est glissé entre vous.</p>
       <div><button class="btn sm ghost" type="button" data-act="keyCode">${I.key}Changer le code de sauvegarde</button></div></div>
     ${lockSettingsHtml()}
-    <div class="set-block"><h2>Notifications</h2><p class="hint">Recevez une alerte quand un message arrive alors que tam-tam est ouvert en arrière-plan.</p><div><button class="btn sm ghost" type="button" data-act="notif">${'Notification' in window && Notification.permission === 'granted' ? 'Notifications activées' : 'Activer les notifications'}</button></div></div>
+    <div class="set-block"><h2>Notifications</h2><p class="hint">Recevez une alerte quand un message arrive alors que tam-tam est ouvert en arrière-plan.</p><div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="soundToggle">${Sound.on() ? '🔔 Son des messages : activé' : '🔕 Son des messages : coupé'}</button><button class="btn sm ghost" type="button" data-act="notif">${'Notification' in window && Notification.permission === 'granted' ? 'Notifications activées' : 'Activer les notifications'}</button></div></div>
     <div class="set-block"><h2>Personnes bloquées</h2>${(me.blocked || []).length ? me.blocked.map(u => `<div class="adm-row">${avatar(u, 'xs')}<span>${esc(u.name)}</span><button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button></div>`).join('') : '<p class="hint">Personne n’est bloqué.</p>'}</div>
     <div class="set-block"><h2>Compte</h2><div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="pwSheet">${I.key}Changer le mot de passe</button><a class="btn sm ghost" href="/conditions" target="_blank" rel="noopener">Conditions et confidentialité</a><a class="btn sm ghost" href="/demo/" target="_blank" rel="noopener">Voir la maquette</a></div>
       <div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="logout">Se déconnecter</button><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte</button></div></div>
     ${me.admin ? mailBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">tam-tam · version 1.4</p></div>`;
+    <p class="hint" style="text-align:center">tam-tam · version 1.5</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -717,6 +775,15 @@ const ACT = {
   async stDelYes(d) { closeLayer(); try { await api(`/api/statuses/${d.id}/delete`, {}); await loadStatuses(); renderStories(); toast('Statut supprimé'); } catch (e) { toast(e.message); } },
   privTo(d) { saveNow({privTo: d.v}); },
   mePhoto() { $('#meIn').click(); },
+  cropRot() { if (!S.crop) return; S.crop.rot = (S.crop.rot + 1) % 4; S.crop.x = S.crop.y = 0; drawCrop(); },
+  async cropOk(d, el) {
+    if (!S.crop) return; el.disabled = true;
+    const cv = document.createElement('canvas'); cv.width = cv.height = 640; paintCrop(cv.getContext('2d'), 640, false);
+    try { const b = await new Promise((res, rej) => cv.toBlob(x => x ? res(x) : rej(new Error('Photo illisible.')), 'image/jpeg', .88)); const up = await upload(b);
+      URL.revokeObjectURL(S.crop.url); S.crop = null; closeLayer(); saveNow({photo: up.id}, 'Photo de profil enregistrée'); }
+    catch (e) { el.disabled = false; toast(e.message); }
+  },
+  soundToggle() { Sound.set(!Sound.on()); renderBody(); if (Sound.on()) Sound.msg(true); },
   meNoPhoto() { saveNow({photo: null}, 'Avatar rétabli'); },
   notif() { if (!('Notification' in window)) return toast('Votre navigateur ne permet pas les notifications.'); Notification.requestPermission().then(p => { renderBody(); toast(p === 'granted' ? 'Notifications activées' : 'Notifications refusées dans le navigateur'); }); },
   pwSheet() { sheet(`${head('Changer le mot de passe')}<form data-form="pw"><div class="sheet-body"><div class="field"><label for="pwOld">Mot de passe actuel</label><input id="pwOld" type="password" autocomplete="current-password"></div><div class="field"><label for="pwNew">Nouveau mot de passe (8 caractères minimum)</label><input id="pwNew" type="password" autocomplete="new-password"></div><p class="err" id="pwErr" role="alert" hidden></p><div class="actions"><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Mot de passe', '#pwOld'); },
@@ -786,7 +853,8 @@ document.addEventListener('change', async e => {
   const t = e.target;
   if (t.id === 'fileIn' || t.id === 'camIn') { const f = t.files[0]; t.value = ''; if (f) photoPreview(f); }
   else if (t.id === 'stIn') { const f = t.files[0]; t.value = ''; if (!f) return; try { const b = await shrink(f); S.sc.blob = b; S.sc.url = URL.createObjectURL(b); stComposer(); } catch (er) { toast(er.message); } }
-  else if (t.id === 'meIn') { const f = t.files[0]; t.value = ''; if (!f) return; try { const b = await shrink(f, 800); const up = await upload(b); saveNow({photo: up.id}, 'Photo de profil enregistrée'); } catch (er) { toast(er.message); } }
+  else if (t.id === 'meIn') { const f = t.files[0]; t.value = ''; if (!f) return; cropPhoto(f); }
+  else if (t.id === 'cropZoom') { S.crop.z = +t.value; drawCrop(); }
   else if (t.name === 'close') { const ids = [...document.querySelectorAll('input[name="close"]:checked')].map(i => +i.value); saveNow({close: ids}); }
   else if (t.dataset.set === 'name' || t.dataset.set === 'handle') saveNow({[t.dataset.set]: t.value}, 'Enregistré');
   else if (t.tagName === 'SELECT' && t.dataset.set) queueSave({[t.dataset.set]: {[t.dataset.k]: t.value}});
@@ -824,8 +892,8 @@ function renderKeySetup(msg) {
     ? `<h2>Code oublié</h2><p>Sans le code, les anciens messages chiffrés ne peuvent plus être relus sur cet appareil. Personne ne peut les récupérer, pas même le responsable de tam-tam.</p><p class="hint">Vous pouvez repartir avec une nouvelle clé : vos contacts verront que votre code de sécurité a changé, et les nouveaux messages seront lisibles.</p>
       <div class="actions"><button class="btn ghost" type="button" data-act="ksBack">Réessayer mon code</button><button class="btn danger" type="button" data-act="ksNew">Repartir avec une nouvelle clé</button></div>`
     : `<h2>${I.lock} Protéger vos messages</h2><p class="hint">tam-tam chiffre vos messages et vos photos de bout en bout : seuls les appareils des personnes qui discutent peuvent les lire, pas même le serveur.</p>
-      <p class="hint">Choisissez un <b>code de sauvegarde</b> (au moins 6 chiffres). Il vous servira à retrouver vos messages si vous changez de téléphone. Notez-le en lieu sûr : personne ne pourra le retrouver pour vous.</p>
-      <div class="field"><label for="kCode">Code de sauvegarde</label><input id="kCode" type="password" inputmode="numeric" autocomplete="new-password"></div>
+      <p class="hint">Choisissez un <b>code de sauvegarde</b>. Il vous servira à retrouver vos messages si vous changez de téléphone. Notez-le en lieu sûr : personne ne pourra le retrouver pour vous.</p>
+      <div class="field"><label for="kCode">Code de sauvegarde <span class="req">· au moins 6 chiffres</span></label><input id="kCode" type="password" inputmode="numeric" autocomplete="new-password" placeholder="6 chiffres ou plus"></div>
       <div class="field"><label for="kCode2">Confirmez le code</label><input id="kCode2" type="password" inputmode="numeric" autocomplete="new-password"></div>
       <p class="err" id="kErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Activer le chiffrement</button>`;
   root.innerHTML = `<div class="auth"><form class="auth-card" data-form="keys" novalidate>${top}${h}</form></div>`;

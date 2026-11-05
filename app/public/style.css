@@ -366,3 +366,12 @@ button.row:hover,.row.active{background:var(--surface-2)}
 .cb.green svg{animation:callPulse 1.6s ease-out infinite}
 body.in-call{overflow:hidden}
 @media (min-width:900px){.call-in{max-width:none}.cb svg{padding:19px}}
+
+/* ---------- recadrage photo ---------- */
+.crop-body{display:flex;flex-direction:column;gap:12px}
+.crop-stage{display:flex;justify-content:center}
+.crop-stage canvas{width:min(280px,72vw);height:auto;aspect-ratio:1;border-radius:18px;touch-action:none;cursor:grab;background:#000}
+.crop-stage canvas:active{cursor:grabbing}
+.crop-tools{display:flex;align-items:center;gap:10px;color:var(--fg-2);font-size:20px}
+.crop-tools input{flex:1;accent-color:var(--accent)}
+.req{font-weight:600;color:var(--accent-strong);text-transform:none;letter-spacing:0}
