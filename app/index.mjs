@@ -181,7 +181,8 @@ function chatOut(c, me) {
   const unread = q1(`SELECT COUNT(*) n FROM messages WHERE chat_id=? AND id>? AND (sender IS NULL OR sender<>?)`, c.id, mine ? mine.last_read : 0, me).n;
   const others = mem.filter(x => x.user_id !== me);
   const out = { id: c.id, type: c.type, name: c.name, createdAt: c.created_at, unread, last: msgOut(last), hidden: !!(mine && mine.hidden), fav: !!(mine && mine.fav),
-    members: mem.map(x => ({ id: x.user_id, lastRead: x.last_read, admin: !!x.admin })),
+    // Un membre « hors ligne » ne révèle pas qu'il a lu : ses coches restent grises chez les autres.
+    members: mem.map(x => ({ id: x.user_id, lastRead: x.user_id !== me && availOf(x.user_id) === 'off' ? 0 : x.last_read, admin: !!x.admin })),
     users: Object.fromEntries(mem.map(x => [x.user_id, userCard(getUser(x.user_id), me)])) };
   if (c.type === 'direct') { const o = others[0] && getUser(others[0].user_id); out.peer = o ? o.id : null; out.blocked = o ? blockedEither(me, o.id) : false; }
   return out;
@@ -354,7 +355,7 @@ R('POST', /^\/api\/me$/, async ({ me, body }) => {
   }
   if (body.pub) { const p = J(me.pub, {}); for (const k of PUB_K) if (k in body.pub) p[k] = clean(body.pub[k], k === 'bio' ? 200 : 80); run(`UPDATE users SET pub=? WHERE id=?`, JSON.stringify(p), me.id); }
   if (body.priv) { const p = J(me.priv, {}); for (const k of PRIV_K) if (k in body.priv) p[k] = clean(body.priv[k], 120); run(`UPDATE users SET priv=? WHERE id=?`, JSON.stringify(p), me.id); }
-  if (body.avail && ['on', 'busy', 'off'].includes(body.avail)) { run(`UPDATE users SET avail=? WHERE id=?`, body.avail, me.id); setTimeout(() => presence(me.id), 0); }
+  if (body.avail && ['on', 'busy', 'off'].includes(body.avail)) { run(`UPDATE users SET avail=? WHERE id=?`, body.avail, me.id); setTimeout(() => { presence(me.id); pushMany(contactIds(me.id), { t: 'chats' }); }, 0); }
   if (body.listed != null) run(`UPDATE users SET listed=? WHERE id=?`, body.listed ? 1 : 0, me.id);
   if (body.privTo) { if (!['me', 'contacts', 'grp'].includes(body.privTo)) E(400, 'Choix inconnu.'); run(`UPDATE users SET priv_to=? WHERE id=?`, body.privTo, me.id); }
   if (Array.isArray(body.close)) {
@@ -789,7 +790,7 @@ R('POST', /^\/api\/chats\/(\d+)\/read$/, async ({ me, m, body }) => {
   const c = chatFor(me, +m[1]), up = Math.max(0, +body.upTo || 0);
   const mx = q1(`SELECT MAX(id) x FROM messages WHERE chat_id=?`, c.id).x || 0, v = Math.min(up, mx);
   run(`UPDATE members SET last_read=MAX(last_read,?) WHERE chat_id=? AND user_id=?`, v, c.id, me.id);
-  pushMany(memberIds(c.id), { t: 'read', chatId: c.id, user: me.id, upTo: v });
+  pushMany(me.avail === 'off' ? [me.id] : memberIds(c.id), { t: 'read', chatId: c.id, user: me.id, upTo: v });
   return { ok: true };
 });
 R('POST', /^\/api\/chats\/(\d+)\/typing$/, async ({ me, m }) => {

@@ -182,7 +182,7 @@ function onEvent(ev) {
   else if (ev.t === 'read') { const c = S.chats.get(ev.chatId); if (c) { const m = c.members.find(x => x.id === ev.user); if (m) m.lastRead = Math.max(m.lastRead, ev.upTo); if (S.chatId === ev.chatId) renderMessages(true); if (S.tab === 'chats') renderBody(); } }
   else if (ev.t === 'typing') { const k = ev.chatId; if (Date.now() - (S.lastFrom.get(k + ':' + ev.user) || 0) < 2500) return; S.typing.set(k, {user: ev.user, until: Date.now() + 4000}); refreshTyping(k); setTimeout(() => refreshTyping(k), 4100); }
   else if (ev.t === 'contacts') { loadContacts().then(() => { renderTabs(); if (S.tab !== 'chats') renderBody(); }); loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }); }
-  else if (ev.t === 'chats') loadChats().then(() => { if (S.tab === 'chats') renderBody(); });
+  else if (ev.t === 'chats') loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) renderMessages(true); });
   else if (ev.t === 'statuses') loadStatuses().then(renderStories);
   else if (ev.t === 'presence') { const u = S.users.get(ev.id); if (u) { u.online = ev.online; u.busy = ev.busy; u.lastSeen = ev.lastSeen; } if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }
   else if (ev.t === 'read' && ev.user === S.me.id) Device.badge();
@@ -830,7 +830,7 @@ function settingsBody() {
     ${me.admin ? mailBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.14</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.14.1</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
