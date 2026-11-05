@@ -130,7 +130,7 @@ function renderAuth(msg) {
     <div class="field"><label for="aPass">Mot de passe</label><div class="pw"><input id="aPass" type="password" autocomplete="current-password" required><button type="button" data-act="pwShow">Voir</button></div></div>
     <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Me connecter</button>
     ${m.invite || m.ownerSetup ? '<button class="linkb" type="button" data-act="authMode" data-m="register">Créer un compte</button>' : ''}
-    ${m.mail ? '<button class="linkb" type="button" data-act="forgot">Mot de passe oublié ?</button>' : '<p class="hint">Mot de passe oublié ? Demandez un lien de réinitialisation au responsable de tam-tam.</p>'}`;
+    <button class="linkb" type="button" data-act="forgot">Mot de passe oublié ?</button>`;
   root.innerHTML = `<div class="auth"><form class="auth-card" data-form="auth" novalidate>${top}${h}</form></div>`;
   const f = root.querySelector('input'); if (f) f.focus();
 }
@@ -217,7 +217,7 @@ function renderTabs() {
 function renderHead() {
   const h = $('#head');
   if (S.tab === 'chats') {
-    h.innerHTML = `<div class="title"><button class="me-btn" type="button" data-act="tab" data-t="settings" aria-label="Mon profil">${avatar(S.me, 'xs')}</button>${LOGO}<h1 class="brand">${WORD}</h1><span class="grow"></span><button class="ib" type="button" data-act="tab" data-t="contacts" aria-label="Ajouter des contacts">${I.userplus}</button></div>
+    h.innerHTML = `<div class="title">${LOGO}<h1 class="brand">${WORD}</h1><span class="grow"></span><button class="ib" type="button" data-act="tab" data-t="contacts" aria-label="Ajouter des contacts" title="Ajouter des contacts">${I.userplus}</button><button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button></div>
       <div class="stories" id="stories" aria-label="Statuts"></div>
       <label class="search">${I.search}<span class="sr">Rechercher</span><input id="q" type="search" placeholder="Rechercher une discussion" value="${esc(S.q)}" autocomplete="off"></label>`;
     renderStories();
@@ -716,7 +716,7 @@ const ACT = {
       location.href = `sms:${tel.replace(/\s+/g, '')}?body=${encodeURIComponent(inviteText())}`; } catch { toast('Le choix dans les contacts n’est pas disponible ici. Utilisez « Partager ».'); }
   },
   keyCode() { sheet(`${head('Changer le code de sauvegarde')}<form data-form="rekey"><div class="sheet-body"><p class="hint">Le nouveau code remplace l’ancien pour retrouver vos messages sur un autre appareil.</p><div class="field"><label for="rk1">Nouveau code (6 chiffres minimum)</label><input id="rk1" type="password" inputmode="numeric" autocomplete="new-password"></div><div class="field"><label for="rk2">Confirmez</label><input id="rk2" type="password" inputmode="numeric" autocomplete="new-password"></div><p class="err" id="rkErr" role="alert" hidden></p><div class="actions"><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Code', '#rk1'); },
-  forgot() { A.mode = 'forgot'; A.step = 1; renderAuth(); },
+  forgot() { const em = ($('#aMail') || {}).value; if (em) A.fmail = em.trim(); A.mode = 'forgot'; A.step = 1; renderAuth(); },
   async gLoad() { try { S.gset = await api('/api/admin/google'); const el = $('#gBox'); if (el) el.outerHTML = googleBox(); } catch (e) { toast(e.message); } },
   async gOff() { try { await api('/api/admin/google', {off: true}); S.gset = await api('/api/admin/google'); $('#gBox').outerHTML = googleBox(); toast('Connexion Google désactivée'); } catch (e) { toast(e.message); } },
   async mailLoad() { try { const m = await api('/api/admin/mail'); S.mail = m; const el = $('#mailBox'); if (el) el.outerHTML = mailBox(); } catch (e) { toast(e.message); } },
