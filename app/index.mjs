@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS status_views(status_id INTEGER NOT NULL REFERENCES st
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, target_user INTEGER, chat_id INTEGER, reason TEXT NOT NULL, note TEXT,
   created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0);
 `);
-for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`]) { try { db.exec(sql); } catch {} }
+for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`]) { try { db.exec(sql); } catch {} }
 db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, call_id TEXT NOT NULL, kind TEXT NOT NULL, chat_id INTEGER NOT NULL, caller INTEGER NOT NULL, callee INTEGER, video INTEGER NOT NULL, status TEXT NOT NULL, joined TEXT NOT NULL DEFAULT '[]', started INTEGER NOT NULL, answered INTEGER, ended INTEGER);
@@ -148,12 +148,12 @@ function msgOut(m) {
     media: m.deleted ? null : mediaUrl(m.media), replyTo: m.reply_to, deleted: !!m.deleted, at: m.created_at };
 }
 function chatOut(c, me) {
-  const mem = qa(`SELECT m.user_id, m.last_read, m.admin, m.hidden FROM members m WHERE m.chat_id=?`, c.id);
+  const mem = qa(`SELECT m.user_id, m.last_read, m.admin, m.hidden, m.fav FROM members m WHERE m.chat_id=?`, c.id);
   const mine = mem.find(x => x.user_id === me);
   const last = q1(`SELECT * FROM messages WHERE chat_id=? ORDER BY id DESC LIMIT 1`, c.id);
   const unread = q1(`SELECT COUNT(*) n FROM messages WHERE chat_id=? AND id>? AND (sender IS NULL OR sender<>?)`, c.id, mine ? mine.last_read : 0, me).n;
   const others = mem.filter(x => x.user_id !== me);
-  const out = { id: c.id, type: c.type, name: c.name, createdAt: c.created_at, unread, last: msgOut(last), hidden: !!(mine && mine.hidden),
+  const out = { id: c.id, type: c.type, name: c.name, createdAt: c.created_at, unread, last: msgOut(last), hidden: !!(mine && mine.hidden), fav: !!(mine && mine.fav),
     members: mem.map(x => ({ id: x.user_id, lastRead: x.last_read, admin: !!x.admin })),
     users: Object.fromEntries(mem.map(x => [x.user_id, userCard(getUser(x.user_id), me)])) };
   if (c.type === 'direct') { const o = others[0] && getUser(others[0].user_id); out.peer = o ? o.id : null; out.blocked = o ? blockedEither(me, o.id) : false; }
@@ -631,6 +631,21 @@ R('POST', /^\/api\/qr\/connect$/, async ({ me, body }) => {
 R('POST', /^\/api\/contacts\/share-priv$/, async ({ me, body }) => {
   const id = +body.id, [a, b] = pair(me.id, id);
   run(`UPDATE contacts SET lim=0 WHERE a=? AND b=? AND lim=?`, a, b, me.id); push(id, { t: 'contacts' }); return { ok: true };
+});
+
+/* ---------- favoris et répertoire du téléphone ---------- */
+R('POST', /^\/api\/chats\/(\d+)\/fav$/, async ({ me, m, body }) => { const c = chatFor(me, +m[1]); run(`UPDATE members SET fav=? WHERE chat_id=? AND user_id=?`, body.fav ? 1 : 0, c.id, me.id); return { ok: true }; });
+// Le téléphone envoie des empreintes des numéros (pas les numéros eux-mêmes) ; on répond lesquels ont Tam-Tam.
+R('POST', /^\/api\/contacts\/match$/, async ({ me, body }) => {
+  if (tooMany('match:' + me.id, 20, 60 * 60_000)) E(429, 'Trop de demandes. Réessayez plus tard.');
+  const want = new Set((Array.isArray(body.hashes) ? body.hashes : []).slice(0, 3000).map(String));
+  const out = {};
+  for (const u of qa(`SELECT * FROM users WHERE id<>? AND priv LIKE '%"tel"%'`, me.id)) {
+    const t = String(J(u.priv, {}).tel || '').replace(/\D/g, ''); if (t.length < 6) continue;
+    const h = sha(t.slice(-9)); if (!want.has(h) || blockedEither(me.id, u.id)) continue;
+    const c = userCard(u, me.id); out[h] = { id: c.id, name: c.name, handle: c.handle, avatar: c.avatar, photo: c.photo, rel: c.rel };
+  }
+  return { matches: out };
 });
 
 function chatFor(me, id) { const c = q1(`SELECT * FROM chats WHERE id=?`, id); if (!c || !isMember(id, me.id)) E(404, 'Discussion introuvable.'); return c; }

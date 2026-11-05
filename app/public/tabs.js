@@ -197,3 +197,111 @@ Object.assign(ACT, {
   qrCopy(d) { (navigator.clipboard ? navigator.clipboard.writeText(d.url) : Promise.reject()).then(() => toast('Lien copié.'), () => toast(d.url)); },
   async sharePriv(d) { try { await api('/api/contacts/share-priv', {id: +d.id}); toast('Votre profil privé est maintenant visible pour ce contact.'); profSheet(+d.id); } catch (e) { toast(e.message); } },
 });
+
+/* ---------- onglet Contacts : le répertoire du téléphone ---------- */
+const Book = {
+  list: null, match: {}, q: '', loaded: false,
+  canPick: () => 'contacts' in navigator && navigator.contacts && typeof navigator.contacts.select === 'function',
+  key: () => 'book:' + S.me.id,
+  norm: t => String(t || '').replace(/\D/g, '').slice(-9),
+  async hash(t) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); },
+  async load() {
+    if (this.loaded) return; this.loaded = true;
+    const saved = await Store.get(this.key()); this.list = (saved && saved.list) || []; this.match = (saved && saved.match) || {};
+    if (S.tab === 'contacts') renderBody();
+    if (this.list.length) this.refresh();
+  },
+  async save() { await Store.set(this.key(), {list: this.list, match: this.match}); },
+  // envoie seulement des empreintes des numéros : le serveur ne reçoit jamais votre répertoire en clair
+  async refresh() {
+    const hs = {}; for (const c of this.list) { const n = this.norm(c.tel); if (n.length >= 6) hs[await this.hash(n)] = n; }
+    try { const r = await api('/api/contacts/match', {hashes: Object.keys(hs)}); this.match = {}; for (const [h, u] of Object.entries(r.matches)) this.match[hs[h]] = u; keepUsers(Object.values(r.matches)); await this.save(); }
+    catch (e) { toast(e.message); }
+    if (S.tab === 'contacts') renderBody();
+  },
+  async pick() {
+    if (!this.canPick()) return this.manual();
+    try {
+      const got = await navigator.contacts.select(['name', 'tel'], {multiple: true}); if (!got || !got.length) return;
+      const seen = new Set(this.list.map(c => this.norm(c.tel)));
+      for (const c of got) for (const tel of (c.tel || []).slice(0, 2)) { const n = this.norm(tel); if (n.length < 6 || seen.has(n)) continue; seen.add(n); this.list.push({name: (c.name && c.name[0]) || tel, tel}); }
+      this.list.sort((a, b) => a.name.localeCompare(b.name, 'fr')); await this.save(); toast(`${got.length} contact${got.length > 1 ? 's' : ''} ajouté${got.length > 1 ? 's' : ''}.`); this.refresh();
+    } catch { toast('Le répertoire n’a pas pu être ouvert.'); }
+  },
+  manual() {
+    sheet(`${head('Ajouter un contact du téléphone')}<form class="sheet-body" data-form="bookAdd">
+      ${this.canPick() ? '' : '<p class="hint">Sur cet appareil, Tam-Tam ne peut pas ouvrir le répertoire. Ajoutez vos proches un par un.</p>'}
+      <div class="field"><label for="bkName">Nom</label><input id="bkName" maxlength="60" autocomplete="off" required></div>
+      <div class="field"><label for="bkTel">Numéro de téléphone</label><input id="bkTel" type="tel" inputmode="tel" maxlength="20" placeholder="+221 …" required></div>
+      <p class="err" id="bkErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="submit">Ajouter</button></div></form>`, 'Ajouter un contact');
+  },
+  relUpdate(u) { for (const v of Object.values(this.match)) if (v.id === u.id) v.rel = u.rel; },
+  initial: n => esc((n || '?').trim().charAt(0).toUpperCase()),
+  row(c) {
+    const n = this.norm(c.tel), u = this.match[n];
+    const av = u ? avatar(uOf(u.id).name ? uOf(u.id) : u, 'sm') : `<span class="av sm letter" aria-hidden="true">${this.initial(c.name)}</span>`;
+    return `<div class="bk">${av}<div class="cl-t"><b>${esc(c.name)}</b><span>${esc(c.tel)}${u ? ' · sur Tam-Tam' : ''}</span></div>
+      ${u ? `<button class="btn sm" type="button" data-act="bookChat" data-id="${u.id}">Discuter</button>` : `<button class="btn sm ghost" type="button" data-act="bookInvite" data-tel="${esc(c.tel)}">Inviter</button>`}</div>`;
+  },
+  body() {
+    if (!this.loaded) { this.load(); return '<p class="empty">Chargement…</p>'; }
+    const q = this.q.trim().toLowerCase(), qd = q.replace(/\D/g, '');
+    let list = this.list.filter(c => !q || c.name.toLowerCase().includes(q) || (qd && c.tel.replace(/\D/g, '').includes(qd)));
+    list = list.slice().sort((a, b) => (this.match[this.norm(b.tel)] ? 1 : 0) - (this.match[this.norm(a.tel)] ? 1 : 0));
+    const on = list.filter(c => this.match[this.norm(c.tel)]).length;
+    const noTel = !((S.me.priv || {}).tel);
+    return `${noTel ? `<div class="qrnote" style="margin:8px 12px"><span>📱 Ajoutez votre numéro pour que vos proches vous retrouvent sur Tam-Tam.</span><button class="btn sm" type="button" data-act="tab" data-t="settings">Ajouter mon numéro</button></div>` : ''}
+      ${this.list.length ? `<div style="padding:6px 16px 4px"><label class="search">${I.search}<span class="sr">Chercher</span><input id="bq" type="search" placeholder="Chercher un nom ou un numéro" autocomplete="off" value="${esc(this.q)}"></label></div>
+      <div class="sec">${on ? `${on} sur Tam-Tam · ` : ''}${this.list.length} contact${this.list.length > 1 ? 's' : ''}</div>
+      <div id="bkList">${list.map(c => this.row(c)).join('') || '<p class="empty">Aucun contact ne correspond.</p>'}</div>
+      <div class="actions" style="justify-content:center;padding:12px 16px 24px"><button class="btn sm ghost" type="button" data-act="bookPick">${I.userplus}${this.canPick() ? 'Ajouter depuis mon répertoire' : 'Ajouter un contact'}</button>${this.canPick() ? '<button class="btn sm ghost" type="button" data-act="bookManual">Saisir un numéro</button>' : ''}</div>`
+      : `<div class="empty"><p><b>Retrouvez vos proches</b></p><p>Choisissez les contacts de votre téléphone : ceux qui ont déjà Tam-Tam s’affichent avec <b>Discuter</b>, les autres avec <b>Inviter</b>.</p>
+        <button class="btn" type="button" data-act="bookPick">${I.users}${this.canPick() ? 'Choisir dans mon répertoire' : 'Ajouter un contact'}</button>
+        <p class="hint">Vos contacts restent sur ce téléphone. Tam-Tam reçoit seulement une empreinte des numéros, jamais votre répertoire en clair.</p></div>`}`;
+  },
+  after() {},
+};
+FORMS.bookAdd = async () => {
+  const name = $('#bkName').value.trim(), tel = $('#bkTel').value.trim(), er = $('#bkErr');
+  if (!name || Book.norm(tel).length < 6) { er.textContent = 'Indiquez un nom et un numéro complet.'; er.hidden = false; return; }
+  if (!Book.list.some(c => Book.norm(c.tel) === Book.norm(tel))) { Book.list.push({name, tel}); Book.list.sort((a, b) => a.name.localeCompare(b.name, 'fr')); await Book.save(); }
+  closeLayer(); Book.refresh();
+};
+document.addEventListener('input', e => { if (e.target.id === 'bq') { Book.q = e.target.value; const q = Book.q.trim().toLowerCase(), qd = q.replace(/\D/g, ''); const el = $('#bkList'); if (el) el.innerHTML = Book.list.filter(c => !q || c.name.toLowerCase().includes(q) || (qd && c.tel.replace(/\D/g, '').includes(qd))).map(c => Book.row(c)).join('') || '<p class="empty">Aucun contact ne correspond.</p>'; } });
+
+/* ---------- « Ajouter des amis » (le + en haut) ---------- */
+const Add = {
+  row(u) { return `<div class="row">${avOn(u)}<button class="row-name linkless" type="button" data-act="prof" data-id="${u.id}" style="border:0;background:none;padding:0;text-align:left;display:flex;flex-direction:column;align-items:flex-start;min-width:0"><b>${esc(u.name)}</b><small style="color:var(--fg-2);font-weight:400">@${esc(u.handle)}${u.pub && u.pub.ville ? ' · ' + esc(u.pub.ville) : ''}${u.mutual ? ` · ${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun` : ''}</small></button><span class="row-end">${relBtn(u)}</span></div>`; },
+  html() {
+    const C = S.contacts;
+    return `${head('Ajouter des amis')}<div class="sheet-body" id="addSheet" style="gap:6px">
+      <label class="search">${I.search}<span class="sr">Chercher un membre</span><input id="fq" type="search" placeholder="Nom ou pseudo (@…)" autocomplete="off" value="${esc(S.fq || '')}"></label>
+      <div id="fres">${S.fres ? (S.fres.length ? S.fres.map(u => this.row(u)).join('') : '<p class="empty">Personne ne correspond.</p>') : ''}</div>
+      ${C.incoming.length ? `<div class="sec">Demandes reçues · ${C.incoming.length}</div>${C.incoming.map(u => userRow(u, `<button class="btn sm ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button><button class="btn sm" type="button" data-act="cAccept" data-id="${u.id}">Accepter</button>`)).join('')}` : ''}
+      ${C.suggestions.length ? `<div class="sec">Sur Tam-Tam · pas dans vos contacts</div><p class="hint" style="margin:0 0 4px">Touchez une personne pour voir son profil public. Elle devra accepter votre demande avant que vous puissiez échanger.</p>${C.suggestions.map(u => this.row(u)).join('')}` : ''}
+      ${C.outgoing.length ? `<div class="sec">Demandes envoyées</div>${C.outgoing.map(u => this.row(u)).join('')}` : ''}
+      <div class="sec">Inviter vos proches</div>
+      <div class="invite-box" style="margin:0">
+        ${S.lastInvite ? `<div class="invite-url">${esc(S.lastInvite.url)}</div><div class="actions" style="justify-content:flex-start"><button class="btn sm" type="button" data-act="invCopy">${I.copy}Copier le lien</button><a class="btn sm ghost" href="https://wa.me/?text=${encodeURIComponent(inviteText())}" target="_blank" rel="noopener">WhatsApp</a>${navigator.share ? '<button class="btn sm ghost" type="button" data-act="invShare">Partager…</button>' : ''}</div><span class="hint">Valable 14 jours, pour 20 personnes au plus.</span>`
+        : `<span class="hint">Seules les personnes qui ont un lien d’invitation ou votre code QR peuvent s’inscrire.</span><div><button class="btn sm" type="button" data-act="invNew">${I.userplus}Créer un lien d’invitation</button></div>`}
+      </div>
+      <div class="sec">Code QR</div>
+      <div class="actions" style="justify-content:flex-start;margin-bottom:8px"><button class="btn sm ghost" type="button" data-act="qrShow">${I.qr}Mon code QR</button>${'BarcodeDetector' in window ? `<button class="btn sm ghost" type="button" data-act="qrScan">${I.camera}Scanner un code</button>` : ''}</div></div>`;
+  },
+  open() { S.fq = ''; S.fres = null; sheet(this.html(), 'Ajouter des amis'); },
+  render() { const el = $('#addSheet'); if (!el) return; const box = el.closest('.sheet'); const y = el.scrollTop; box.innerHTML = this.html(); const n = $('#addSheet'); if (n) n.scrollTop = y; },
+};
+Object.assign(ACT, {
+  addOpen() { Add.open(); },
+  bookPick() { Book.pick(); }, bookManual() { Book.manual(); },
+  async bookChat(d) {
+    const id = +d.id, u = uOf(id), rel = (Object.values(Book.match).find(x => x.id === id) || {}).rel || u.rel;
+    if (rel === 'contact') return ACT.write({id});
+    if (rel === 'received') { await contactAct('accept', id); return ACT.write({id}); }
+    if (rel === 'sent') return toast('Demande déjà envoyée : vous pourrez discuter dès qu’elle sera acceptée.');
+    await contactAct('request', id);
+  },
+  async bookInvite(d) { try { if (!S.lastInvite) S.lastInvite = await api('/api/invites', {}); location.href = `sms:${d.tel.replace(/[^\d+]/g, '')}?body=${encodeURIComponent(inviteText())}`; } catch (e) { toast(e.message); } },
+  filt(d) { S.filt = d.f; renderHead(); renderBody(); },
+  async favToggle() { const c = S.chats.get(S.chatId); if (!c) return; try { await api(`/api/chats/${c.id}/fav`, {fav: !c.fav}); c.fav = !c.fav; closeLayer(); renderBody(); toast(c.fav ? 'Ajoutée aux favoris.' : 'Retirée des favoris.'); } catch (e) { toast(e.message); } },
+});

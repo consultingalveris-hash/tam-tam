@@ -212,23 +212,24 @@ function renderAll() { renderTabs(); renderHead(); renderBody(); }
 const TABS = [['chats', 'Discussions', I.chats], ['contacts', 'Contacts', I.users], ['calls', 'Appels', I.dialpad]];
 function renderTabs() {
   const unread = [...S.chats.values()].filter(c => c.unread > 0 && (!c.hidden || S.showHidden)).length, inc = S.contacts.incoming.length;
-  $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${id === 'chats' && unread ? `<span class="badge" aria-label="${unread} non lues">${unread}</span>` : ''}${id === 'contacts' && inc ? `<span class="badge" aria-label="${inc} demandes">${inc}</span>` : ''}</button>`).join('');
+  $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${id === 'chats' && unread ? `<span class="badge" aria-label="${unread} non lues">${unread}</span>` : ''}</button>`).join('');
   $('#fab').hidden = S.tab !== 'chats'; Device.badge();
   const n = [...S.chats.values()].reduce((a, c) => a + (c.unread || 0), 0); document.title = n ? `(${n}) tam-tam` : 'tam-tam';
 }
 function renderHead() {
   const h = $('#head');
   if (S.tab === 'chats') {
-    h.innerHTML = `<div class="title"><h1 class="brand">${WORD}</h1><span class="grow"></span><button class="ib" type="button" data-act="tab" data-t="contacts" aria-label="Ajouter des contacts" title="Ajouter des contacts">${I.userplus}</button><button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button></div>
+    h.innerHTML = `<div class="title"><h1 class="brand">${WORD}</h1><span class="grow"></span><button class="ib dotted" type="button" data-act="addOpen" aria-label="Ajouter des amis${S.contacts.incoming.length ? ` (${S.contacts.incoming.length} demande${S.contacts.incoming.length > 1 ? 's' : ''})` : ''}" title="Ajouter des amis">${I.userplus}${S.contacts.incoming.length ? `<span class="badge">${S.contacts.incoming.length}</span>` : ''}</button><button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button></div>
       <div class="stories" id="stories" aria-label="Statuts"></div>
-      <label class="search">${I.search}<span class="sr">Rechercher</span><input id="q" type="search" placeholder="Rechercher une discussion" value="${esc(S.q)}" autocomplete="off"></label>`;
+      <label class="search">${I.search}<span class="sr">Rechercher</span><input id="q" type="search" placeholder="Rechercher une discussion" value="${esc(S.q)}" autocomplete="off"></label>
+      <div class="chips filt" role="group" aria-label="Filtrer les discussions">${[['all', 'Toutes'], ['unread', 'Non lues'], ['fav', 'Favoris'], ['group', 'Groupes']].map(([k, l]) => `<button class="chip" type="button" data-act="filt" data-f="${k}" aria-pressed="${(S.filt || 'all') === k}">${l}</button>`).join('')}<button class="chip" type="button" data-act="prof" data-id="${S.me.id}">Mon profil</button></div>`;
     renderStories();
   } else h.innerHTML = `<div class="title"><h1>${{contacts: 'Contacts', calls: 'Appels', settings: 'Réglages'}[S.tab]}</h1><span class="grow"></span>${S.tab !== 'settings' ? `<button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button>` : ''}</div>`;
 }
 function renderBody() {
   const b = $('#body'); if (!b) return;
   if (S.tab === 'chats') b.innerHTML = Device.banner() + gcallBanner() + chatRows();
-  else if (S.tab === 'contacts') b.innerHTML = contactsBody();
+  else if (S.tab === 'contacts') { b.innerHTML = Book.body(); Book.after(); }
   else if (S.tab === 'calls') { b.innerHTML = Calls.body(); Calls.after(); }
   else { b.innerHTML = settingsBody(); fillFp(); }
 }
@@ -249,6 +250,8 @@ function chatRows() {
   const q = S.q.trim().toLowerCase();
   let list = [...S.chats.values()].filter(c => (c.last || c.type === 'group' || c.id === S.chatId) && (!c.hidden || S.showHidden));
   Priv.watch(q);
+  const fl = S.filt || 'all';
+  if (fl === 'unread') list = list.filter(c => c.unread > 0); else if (fl === 'fav') list = list.filter(c => c.fav); else if (fl === 'group') list = list.filter(c => c.type === 'group');
   const hitMsg = {};
   if (q && !(S.showHidden && Priv.isCode(q))) {
     Find.preload(q);
@@ -259,6 +262,7 @@ function chatRows() {
   if (S.showHidden) list.sort((a, b) => (b.hidden ? 1 : 0) - (a.hidden ? 1 : 0));
   list.sort((a, b) => (b.last?.at || b.createdAt) - (a.last?.at || a.createdAt));
   const privBar = S.showHidden ? `<div class="privbar">${I.lock}<span>Discussions privées affichées</span><button class="btn sm ghost" type="button" data-act="privHide">Masquer</button></div>` : '';
+  if (!list.length && fl !== 'all' && !q) return privBar + `<p class="empty">${{unread: 'Aucune discussion non lue.', fav: 'Aucun favori. Dans une discussion, touchez ⋮ puis « Ajouter aux favoris ».', group: 'Aucun groupe. Créez-en un avec le bouton turquoise.'}[fl]}</p>`;
   if (!list.length) return privBar + (q ? `<p class="empty">Aucune discussion ne correspond.</p>`
     : `<div class="empty"><p>Aucune discussion pour l’instant.</p><p>Invitez vos proches depuis l’onglet <b>Contacts</b>, puis appuyez sur le bouton turquoise pour leur écrire.</p><button class="btn" type="button" data-act="tab" data-t="contacts">${I.userplus}Inviter mes proches</button></div>`);
   return privBar + list.map(c => {
@@ -311,10 +315,10 @@ let fqT;
 async function searchPeople(q) {
   S.fq = q; clearTimeout(fqT);
   if (q.trim().length < 2) { S.fres = null; $('#fres').innerHTML = ''; return; }
-  fqT = setTimeout(async () => { try { const r = await api('/api/users/search?q=' + encodeURIComponent(q.trim())); keepUsers(r.users); S.fres = r.users; const el = $('#fres'); if (el) el.innerHTML = r.users.length ? r.users.map(u => userRow(u)).join('') : '<p class="empty">Personne ne correspond.</p>'; } catch (e) { toast(e.message); } }, 300);
+  fqT = setTimeout(async () => { try { const r = await api('/api/users/search?q=' + encodeURIComponent(q.trim())); keepUsers(r.users); S.fres = r.users; const el = $('#fres'); if (el) el.innerHTML = r.users.length ? r.users.map(u => Add.row(u)).join('') : '<p class="empty">Personne ne correspond.</p>'; } catch (e) { toast(e.message); } }, 300);
 }
 async function contactAct(kind, id) {
-  try { const r = await api('/api/contacts/' + kind, {id}); keepUsers([r.user]); await loadContacts(); if (S.fres) S.fres = S.fres.map(u => u.id === id ? r.user : u); renderTabs(); renderBody();
+  try { const r = await api('/api/contacts/' + kind, {id}); keepUsers([r.user]); await loadContacts(); if (S.fres) S.fres = S.fres.map(u => u.id === id ? r.user : u); renderTabs(); renderBody(); if ($('#addSheet')) Add.render(); Book.relUpdate(r.user);
     toast({request: 'Demande envoyée : la personne doit l’accepter.', accept: 'Vous êtes maintenant en contact.', decline: 'Demande refusée. La personne n’est pas prévenue.', remove: 'C’est fait.'}[kind]);
     if (layer.firstChild && $('.prof')) profSheet(id);
   } catch (e) { toast(e.message); }
@@ -570,6 +574,7 @@ function chatMenu() {
   sheet(`${head(esc(chatTitle(c)))}<div class="menu">
     ${c.type === 'group' ? `<button type="button" data-act="chatInfo">${I.info}Infos du groupe</button><button type="button" data-act="groupAddOpen">${I.userplus}Ajouter des membres</button><button type="button" class="danger" data-act="leaveAsk">${I.back}Quitter le groupe</button>`
     : `<button type="button" data-act="prof" data-id="${u.id}">${I.info}Voir le profil</button>`}
+    <button type="button" data-act="favToggle">${I.star}${c.fav ? 'Retirer des favoris' : 'Ajouter aux favoris'}</button>
     <button type="button" data-act="privToggle">${I.lock}${c.hidden ? 'Ne plus rendre privée' : 'Rendre la discussion privée'}</button>
     <button type="button" class="danger" data-act="reportAsk" data-id="${u ? u.id : ''}" data-chat="${c.id}">${I.flag}Signaler</button>
     ${u ? `<button type="button" class="danger" data-act="${blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${I.block}${blocked ? 'Débloquer ' : 'Bloquer '}${esc(first(u.name))}</button>` : ''}</div>`, 'Options');
@@ -703,7 +708,7 @@ function settingsBody() {
     ${me.admin ? mailBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.9</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.10</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -759,7 +764,7 @@ const ACT = {
   async write(d) { closeLayer(); try { const r = await api('/api/chats/direct', {userId: +d.id}); keepUsers(Object.values(r.chat.users)); S.chats.set(r.chat.id, r.chat); S.tab = 'chats'; renderAll(); openChat(r.chat.id); } catch (e) { toast(e.message); } },
   close() { closeLayer(); },
   scrim(d, el, e) { if (e.target === el) closeLayer(); },
-  invNew: async () => { try { S.lastInvite = await api('/api/invites', {}); renderBody(); } catch (e) { toast(e.message); } },
+  invNew: async () => { try { S.lastInvite = await api('/api/invites', {}); renderBody(); if ($('#addSheet')) Add.render(); } catch (e) { toast(e.message); } },
   invCopy() { const t = S.lastInvite.url; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('Lien copié : collez-le dans un message à vos proches.'), () => toast('Sélectionnez le lien et copiez-le.')); },
   cRequest: d => contactAct('request', +d.id), cAccept: d => contactAct('accept', +d.id), cDecline: d => contactAct('decline', +d.id), cRemove: d => contactAct('remove', +d.id),
   cRemoveAsk(d) { confirmSheet('Retirer ce contact ?', 'Vous ne pourrez plus vous écrire tant que l’un de vous n’aura pas renvoyé de demande.', 'Retirer', 'cRemoveYes', d.id); },
