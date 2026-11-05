@@ -21,13 +21,20 @@ fi
 NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' "$C" | head -n1)
 echo "Caddy du CRM : $C — réseau : $NET"
 
+# Mémoire de secours (swap) : évite que le serveur se bloque si la mémoire vive est pleine.
+if [ -z "$(swapon --show --noheadings 2>/dev/null)" ]; then
+  if [ ! -f /swapfile ]; then fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none; chmod 600 /swapfile; mkswap /swapfile >/dev/null; fi
+  swapon /swapfile && { grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab; } && echo "Mémoire de secours activée (2 Go)."
+fi
+sysctl -q vm.swappiness=20 2>/dev/null || true
+
 # Relais d'appels (TURN) : aide les appels à passer quand les réseaux mobiles bloquent la connexion directe.
 SECRET_TURN_F=/root/.tam-tam-turn
 [ -s "$SECRET_TURN_F" ] || { head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$SECRET_TURN_F"; chmod 600 "$SECRET_TURN_F"; }
 SECRET_TURN=$(cat "$SECRET_TURN_F")
 IP_PUB=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -n1)
 docker rm -f tam-tam-turn >/dev/null 2>&1 || true
-if docker run -d --name tam-tam-turn --restart unless-stopped --network host coturn/coturn:4.6 -n \
+if docker run -d --name tam-tam-turn --restart unless-stopped --network host --memory 256m coturn/coturn:4.6 -n \
   --listening-port=3478 --fingerprint --use-auth-secret --static-auth-secret="$SECRET_TURN" --realm="$DOMAINE" \
   --min-port=49160 --max-port=49200 --no-cli --no-tls --no-dtls --no-multicast-peers --log-file=stdout \
   ${IP_PUB:+--external-ip="$IP_PUB"} \
@@ -43,7 +50,7 @@ echo "Construction de tam-tam (une minute la première fois)…"
 docker build -q -t "$APP:latest" "$DOSSIER/app" >/dev/null
 docker volume create "$VOLUME" >/dev/null
 docker rm -f "$APP" >/dev/null 2>&1 || true
-docker run -d --name "$APP" --restart unless-stopped --network "$NET" \
+docker run -d --name "$APP" --restart unless-stopped --network "$NET" --memory 512m \
   -v "$VOLUME:/data" \
   -e BASE_URL="https://$DOMAINE" -e OWNER_EMAIL="$PROPRIETAIRE" \
   -e TURN_SECRET="$SECRET_TURN" -e TURN_HOST="$DOMAINE" \
@@ -82,5 +89,7 @@ BLOC
   echo "Adresse ajoutée : https://$DOMAINE"
 fi
 echo
+docker stats --no-stream --format "{{.Name}} {{.MemUsage}}" 2>/dev/null || true
+free -m | head -3
 echo "TERMINE : https://$DOMAINE"
 echo "Premier compte : créez-le avec l'adresse $PROPRIETAIRE."

@@ -214,6 +214,7 @@ function currentUser(req) {
   return q1(`SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?`, sha(tok), now()) || null;
 }
 const attempts = new Map();
+function blockedNow(key, max = 10, win = 15 * 60_000) { const t = now(); return (attempts.get(key) || []).filter(x => t - x < win).length >= max; }
 function tooMany(key, max = 10, win = 15 * 60_000) {
   const t = now(), a = (attempts.get(key) || []).filter(x => t - x < win); a.push(t); attempts.set(key, a); return a.length > max;
 }
@@ -269,9 +270,10 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
 
 R('POST', /^\/api\/login$/, async ({ req, res, body }) => {
   const email = clean(body.email, 120).toLowerCase();
-  if (tooMany('login:' + ipOf(req)) || tooMany('login:' + email)) E(429, 'Trop de tentatives. Réessayez dans 15 minutes.');
+  // seuls les essais ratés comptent : se connecter et se déconnecter plusieurs fois reste possible
+  if (blockedNow('login:' + ipOf(req), 20) || blockedNow('login:' + email)) E(429, 'Trop d’essais ratés. Réessayez dans 15 minutes.');
   const u = q1(`SELECT * FROM users WHERE email=?`, email);
-  if (!u || !checkPass(body.pass, u.pass)) E(401, 'E-mail ou mot de passe incorrect.');
+  if (!u || !checkPass(body.pass, u.pass)) { tooMany('login:' + ipOf(req), 20); tooMany('login:' + email); E(401, u ? 'Mot de passe incorrect. Vous pouvez utiliser « Mot de passe oublié ? ».' : 'Aucun compte tam-tam avec cette adresse. Pour en créer un, il faut un lien d’invitation d’un membre.'); }
   setSession(res, u.id); return { me: meOut(u) };
 }, false);
 
