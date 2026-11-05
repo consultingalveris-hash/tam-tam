@@ -163,6 +163,7 @@ async function startApp() {
   root.innerHTML = `<div class="app" data-view="list"><aside class="side" id="side"><div class="head" id="head"></div><div class="body" id="body"></div><nav class="tabs" id="tabs" aria-label="Rubriques"></nav><button class="fab" id="fab" type="button" data-act="fab" aria-label="Nouvelle discussion">${I.newchat}</button></aside><main class="main" id="main"></main></div>`;
   renderMain();
   await Promise.all([loadChats(), loadContacts(), loadStatuses()]).catch(e => toast(e.message));
+  api('/api/translate/status').then(r => { Tr.st = r; }).catch(() => {});
   renderAll(); connect(); if (S.locked) showLock();
   GCall.loadActive(); Call.checkPending(); Device.badge();
   if (S.lock.type === 'off') return requireLock();
@@ -470,7 +471,7 @@ function renderMessages(keep) {
     if (m.deleted) body = `<span class="txt gone">${out ? 'Vous avez supprimé ce message' : 'Ce message a été supprimé'}</span>`;
     else if (m.once) body = onceBubble(m, out);
     else if (m.kind === 'audio') body = `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
-    else body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? `<span class="txt">${esc(m.text)}</span>` : '');
+    else body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? (Tr.shown.has(m.id) && Tr.get(m.id) ? Tr.html(m) : `<span class="txt">${esc(m.text)}</span>`) : '');
     h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble">
       ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${body}<span class="meta">${hm(m.at)}${out && !m.deleted ? tick(readState(c, m)) : ''}</span>
       ${m.deleted ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message">${I.chev}</button>`}</div></div>`;
@@ -671,7 +672,7 @@ function reportSheet(userId, chatId) {
 }
 function msgMenu(id) {
   const list = S.msgs.get(S.chatId) || [], m = list.find(x => x.id === id); if (!m || m.deleted) return;
-  sheet(`<div class="menu" style="padding-top:12px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
+  sheet(`<div class="menu" style="padding-top:12px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once && !m.locked && m.from !== S.me.id && Tr.st && Tr.st.on ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}${Tr.shown.has(id) ? 'Voir la traduction' : 'Traduire'}</button>` : ''}${m.text && !m.once ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
     ${m.from === S.me.id ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde</button>` : ''}</div>`, 'Message');
 }
 
@@ -801,6 +802,41 @@ function picsView(list, title) {
   const l = (list || []).filter(Boolean); if (!l.length) return '';
   return `<span class="lbl">${title}</span><div class="ph3">${l.map((u, i) => `<button class="ph3-img" type="button" data-act="picView" data-src="${esc(u)}" aria-label="Agrandir la photo ${i + 1}"><img src="${esc(u)}" alt=""></button>`).join('')}</div>`;
 }
+/* ---------- traduction à la demande ---------- */
+const LANG_FR = {fr: 'français', en: 'anglais', wo: 'wolof', ff: 'peul (pulaar)', bm: 'bambara', ln: 'lingala', sw: 'swahili', ha: 'haoussa', yo: 'yoruba', ig: 'igbo', ee: 'ewe', ak: 'twi', rw: 'kinyarwanda', sg: 'sango', ar: 'arabe', pt: 'portugais', es: 'espagnol', de: 'allemand', it: 'italien', zh: 'chinois', ru: 'russe', tr: 'turc', nl: 'néerlandais', hi: 'hindi', am: 'amharique', so: 'somali', zu: 'zoulou', xh: 'xhosa', mg: 'malgache', rn: 'kirundi', kg: 'kikongo', ts: 'tsonga', tn: 'tswana', st: 'sotho', sn: 'shona', ny: 'chichewa', om: 'oromo', ti: 'tigrigna', lg: 'luganda', ki: 'kikuyu'};
+const Tr = {
+  st: null,
+  lang() { try { return localStorage.getItem('tt-trlang') || 'fr'; } catch { return 'fr'; } },
+  setLang(l) { try { localStorage.setItem('tt-trlang', l); } catch {} },
+  get(id) { try { return JSON.parse(localStorage.getItem(`tt-tr:${id}:${this.lang()}`) || 'null'); } catch { return null; } },
+  put(id, v) { try { localStorage.setItem(`tt-tr:${id}:${this.lang()}`, JSON.stringify(v)); } catch {} },
+  shown: new Set(),
+  async run(id) {
+    const m = (S.msgs.get(S.chatId) || []).find(x => x.id === id); if (!m || !m.text) return;
+    if (this.get(id)) { this.shown.add(id); return renderMessages(true); } // déjà traduit : rien n'est recompté
+    try { const r = await api('/api/translate', {text: m.text, to: this.lang()}); this.put(id, r); this.shown.add(id); renderMessages(true); }
+    catch (e) { toast(e.message); }
+  },
+  html(m) {
+    const t = this.shown.has(m.id) && this.get(m.id); if (!t) return '';
+    const l = t.from && LANG_FR[t.from], from = l ? (/^[aeiouhé]/.test(l) ? 'de l’' : 'du ') + l : '';
+    return `<span class="trl-txt">${esc(t.text)}</span><span class="trl">${I.translate}Traduit${from ? ' ' + esc(from) : ''} · <button class="linkb" type="button" data-act="trOrig" data-id="${m.id}">Voir l’original</button></span>`;
+  },
+  settingsHtml() {
+    if (!this.st || !this.st.on) return '';
+    return `<div class="set-block"><h2>${I.translate} Traduction</h2><p class="hint">Sur un message reçu, appuyez longuement (ou touchez la flèche ⌄) puis « Traduire ». Le texte traduit est envoyé à Google pour la traduction : ce message-là n’est plus protégé de bout en bout.</p>
+      <div class="field"><label for="trLang">Traduire vers</label><select id="trLang">${this.st.langs.map(l => `<option value="${l}"${l === this.lang() ? ' selected' : ''}>${LANG_FR[l] || l}</option>`).join('')}</select></div></div>`;
+  },
+};
+function trBox() {
+  const t = S.trset;
+  if (!t) return `<div class="set-block" id="trBox"><h2>${I.translate} Traduction (Google)</h2><p class="hint">Permet de traduire un message reçu. Gratuit jusqu’à 480 000 caractères par mois, puis la traduction s’arrête jusqu’au 1er du mois suivant.</p><div><button class="btn sm ghost" type="button" data-act="trLoad">Afficher les réglages</button></div></div>`;
+  const pct = Math.min(100, Math.round(t.used / t.cap * 100));
+  return `<form class="set-block" id="trBox" data-form="trset" autocomplete="off"><h2>${I.translate} Traduction (Google)</h2>
+    <p class="hint">${t.has ? `<b>Activée.</b> Ce mois-ci : ${t.used.toLocaleString('fr-FR')} caractères traduits sur ${t.cap.toLocaleString('fr-FR')} gratuits (${pct} %). Au-delà, la traduction s’arrête jusqu’au 1er du mois.` : 'Collez ici la clé d’API créée dans Google Cloud (projet « tam-tam »).'}</p>
+    <div class="field"><label for="trKey">Clé d’API Google${t.has ? ' (laisser vide pour garder l’actuelle)' : ''}</label><input id="trKey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…"></div>
+    <p class="err" id="trErr" role="alert" hidden></p><div class="actions" style="justify-content:flex-start"><button class="btn sm" type="submit">Enregistrer</button>${t.has ? '<button class="btn sm ghost" type="button" data-act="trOff">Désactiver</button>' : ''}</div></form>`;
+}
 function availPicker() {
   const a = (S.me && S.me.avail) || 'on';
   return `<div class="avail" role="radiogroup" aria-label="Ma disponibilité">${[['off', 'Hors ligne'], ['busy', 'Occupé'], ['on', 'En ligne']].map(([v, l]) => `<button type="button" role="radio" class="av-opt ${v}" data-act="availSet" data-v="${v}" aria-checked="${a === v}"><i aria-hidden="true"></i><span>${l}</span></button>`).join('')}</div>`;
@@ -827,10 +863,12 @@ function settingsBody() {
     <div class="set-block"><h2>${I.shield} Appareils connectés</h2><p class="hint">Un téléphone perdu ou prêté ? Déconnectez-le à distance. Changer votre mot de passe déconnecte aussi tous les autres appareils.</p><div><button class="btn sm ghost" type="button" data-act="devList">Voir mes appareils connectés</button></div></div>
     <div class="set-block"><h2>Compte</h2><div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="pwSheet">${I.key}Changer le mot de passe</button><a class="btn sm ghost" href="/conditions" target="_blank" rel="noopener">Conditions et confidentialité</a><a class="btn sm ghost" href="/demo/" target="_blank" rel="noopener">Voir la maquette</a></div>
       <div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="logout">Se déconnecter</button><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte</button></div></div>
+    ${Tr.settingsHtml()}
     ${me.admin ? mailBox() : ''}
+    ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.14.1</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.15</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -906,6 +944,10 @@ const ACT = {
   attach() { $('#fileIn').click(); },
   camera() { $('#camIn').click(); },
   phCancel() { S.once = false; closeLayer(); renderComposer(); },
+  trMsg(d) { closeLayer(); Tr.run(+d.id); },
+  trOrig(d) { Tr.shown.delete(+d.id); renderMessages(true); },
+  async trLoad() { try { S.trset = await api('/api/admin/translate'); const el = $('#trBox'); if (el) el.outerHTML = trBox(); } catch (e) { toast(e.message); } },
+  async trOff() { try { await api('/api/admin/translate', {off: true}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction désactivée'); } catch (e) { toast(e.message); } },
   recStart() { Rec.start(); }, recCancel() { Rec.cancel(); }, recSend() { Rec.send(); },
   availSet(d) { if (S.me.avail === d.v) return; saveNow({avail: d.v}, {on: 'Vous apparaissez en ligne', busy: 'Vous apparaissez occupé', off: 'Vous apparaissez hors ligne'}[d.v]).then(() => renderHead()); },
   onceTog(d, el) { S.once = !S.once; document.querySelectorAll('.once-tog').forEach(b => b.setAttribute('aria-pressed', S.once)); const i = $('#msgIn'); if (i) i.placeholder = S.once ? 'Message à vue unique' : 'Message'; toast(S.once ? 'Vue unique activée : le prochain message ne pourra être ouvert qu’une fois.' : 'Vue unique désactivée'); },
@@ -1010,6 +1052,9 @@ const FORMS = {
   async gset() { const er = $('#gErr'), ok = $('#gOk'); er.hidden = true; ok.hidden = true;
     try { await api('/api/admin/google', {id: $('#gId').value.trim(), secret: $('#gSecret').value}); S.gset = await api('/api/admin/google'); $('#gBox').outerHTML = googleBox(); const o = $('#gOk'); o.textContent = 'Enregistré. Déconnectez-vous pour voir le bouton « Continuer avec Google ».'; o.hidden = false; }
     catch (e) { er.textContent = e.message; er.hidden = false; } },
+  async trset() { const er = $('#trErr'); er.hidden = true; const k = $('#trKey').value.trim(); if (!k) return;
+    try { await api('/api/admin/translate', {key: k}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction activée'); }
+    catch (e) { er.textContent = e.message; er.hidden = false; } },
   send: sendText,
   photo: sendPhoto,
   async group(f) {
@@ -1056,6 +1101,7 @@ document.addEventListener('change', async e => {
   const t = e.target;
   if (t.id === 'fileIn' || t.id === 'camIn') { const f = t.files[0]; t.value = ''; if (f) photoPreview(f); }
   else if (t.id === 'stIn') { const f = t.files[0]; t.value = ''; if (!f) return; try { const b = await shrink(f); S.sc.blob = b; S.sc.url = URL.createObjectURL(b); stComposer(); } catch (er) { toast(er.message); } }
+  else if (t.id === 'trLang') { Tr.setLang(t.value); Tr.shown.clear(); toast('Les prochaines traductions seront en ' + (LANG_FR[t.value] || t.value)); }
   else if (t.id === 'picIn') { const f = t.files[0]; t.value = ''; const sl = S.picSlot; if (!f || !sl) return;
     (async () => { try { toast('Envoi de la photo…'); const b = await shrink(f, 1280); const up = await upload(b); const r = await api('/api/me/pics', {set: sl.set, slot: sl.i, media: up.id}); S.me = r.me; renderBody(); toast('Photo ajoutée à votre profil'); } catch (e) { toast(e.message); } })(); }
   else if (t.id === 'meIn') { const f = t.files[0]; t.value = ''; if (!f) return; cropPhoto(f); }

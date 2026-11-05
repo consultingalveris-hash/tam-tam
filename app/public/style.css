@@ -551,3 +551,8 @@ mark{background:#ffe08a;color:inherit;border-radius:3px;padding:0 1px}
 .wmark{position:absolute;inset:0;pointer-events:none;z-index:2;background-repeat:repeat}
 .once-view{isolation:isolate}
 .sv-box{position:relative}
+/* traduction */
+.trl-txt{display:block;white-space:pre-wrap;overflow-wrap:anywhere}
+.trl{display:flex;align-items:center;gap:6px;margin-top:4px;padding-top:4px;border-top:1px solid color-mix(in srgb,currentColor 18%,transparent);font-size:12px;opacity:.8}
+.trl svg{width:14px;height:14px}
+.trl .linkb{font-size:12px;color:inherit;text-decoration:underline}

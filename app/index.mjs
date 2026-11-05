@@ -982,6 +982,38 @@ R('GET', /^\/api\/oauth\/google\/pending$/, async ({ url }) => {
 }, false);
 
 function adminOnly(me) { if (!me.admin) E(403, 'Réservé au propriétaire.'); }
+/* ---------- traduction (Google Cloud Translation, plafonnée à la partie gratuite) ---------- */
+const TR_URL = process.env.TR_URL || 'https://translation.googleapis.com/language/translate/v2';
+const TR_CAP = 480_000; // caractères par mois : Google en offre 500 000
+const TR_LANGS = ['fr', 'en', 'wo', 'ff', 'bm', 'ln', 'sw', 'ha', 'yo', 'ig', 'ee', 'ak', 'rw', 'sg', 'ar', 'pt', 'es', 'de', 'it', 'zh', 'ru', 'tr', 'nl', 'hi', 'am', 'so', 'zu', 'xh', 'mg', 'rn', 'kg', 'ts', 'tn', 'st', 'sn', 'ny', 'om', 'ti', 'lg', 'ki'];
+const trKey = () => { const r = q1(`SELECT v FROM settings WHERE k='translate'`); return r ? J(r.v, {}).key || '' : ''; };
+const trMonth = () => 'tr:' + new Date().toISOString().slice(0, 7);
+const trUsed = () => +(q1(`SELECT v FROM settings WHERE k=?`, trMonth())?.v || 0);
+R('GET', /^\/api\/translate\/status$/, async () => ({ on: !!trKey(), left: Math.max(0, TR_CAP - trUsed()), langs: TR_LANGS }));
+R('POST', /^\/api\/translate$/, async ({ me, body }) => {
+  const key = trKey(); if (!key) E(503, 'La traduction n’est pas encore activée sur Tam-Tam.');
+  const text = String(body.text || '').slice(0, 2000).trim(), to = String(body.to || 'fr');
+  if (!text) E(400, 'Rien à traduire.'); if (!TR_LANGS.includes(to)) E(400, 'Langue non prise en charge.');
+  if (tooMany('tr:' + me.id, 120, 60 * 60_000)) E(429, 'Trop de traductions d’un coup. Réessayez dans un moment.');
+  const used = trUsed(); if (used + text.length > TR_CAP) E(429, 'Traduction indisponible jusqu’au 1er du mois : la réserve gratuite de ce mois est épuisée.');
+  run(`INSERT OR REPLACE INTO settings(k,v) VALUES(?,?)`, trMonth(), String(used + text.length));
+  let r; try {
+    r = await fetch(TR_URL + '?key=' + encodeURIComponent(key), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q: text, target: to, format: 'text' }), signal: AbortSignal.timeout(10_000) });
+  } catch { E(502, 'Le service de traduction ne répond pas. Réessayez.'); }
+  const j = await r.json().catch(() => ({})); if (!r.ok) { console.error('traduction', r.status, JSON.stringify(j).slice(0, 300)); E(502, 'La traduction a échoué. Réessayez plus tard.'); }
+  const t = j.data && j.data.translations && j.data.translations[0]; if (!t) E(502, 'La traduction a échoué.');
+  return { text: t.translatedText, from: t.detectedSourceLanguage || null };
+});
+R('GET', /^\/api\/admin\/translate$/, async ({ me }) => { adminOnly(me); return { has: !!trKey(), used: trUsed(), cap: TR_CAP }; });
+R('POST', /^\/api\/admin\/translate$/, async ({ me, body }) => {
+  adminOnly(me);
+  if (body.off) { run(`DELETE FROM settings WHERE k='translate'`); return { ok: true }; }
+  const key = clean(body.key, 200); if (!/^[A-Za-z0-9_-]{30,}$/.test(key)) E(400, 'Cette clé ne ressemble pas à une clé Google (elle commence souvent par « AIza »).');
+  const r = await fetch(TR_URL + '?key=' + encodeURIComponent(key), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q: 'Bonjour', target: 'en', format: 'text' }), signal: AbortSignal.timeout(10_000) }).catch(() => null);
+  if (!r || !r.ok) { const j = r ? await r.json().catch(() => ({})) : {}; E(400, 'Google refuse cette clé : ' + ((j.error && j.error.message) || 'vérifiez que l’API « Cloud Translation » est activée et que la facturation est liée au projet.').slice(0, 200)); }
+  run(`INSERT OR REPLACE INTO settings(k,v) VALUES('translate',?)`, JSON.stringify({ key })); run(`INSERT OR REPLACE INTO settings(k,v) VALUES(?,?)`, trMonth(), String(trUsed() + 7));
+  return { ok: true };
+});
 R('GET', /^\/api\/admin\/google$/, async ({ me }) => { adminOnly(me); const r = q1(`SELECT v FROM settings WHERE k='google'`), g = r ? J(r.v, {}) : {}; return { id: g.id || '', hasSecret: !!g.secret, redirect: G_REDIRECT(), origin: BASE_URL }; });
 R('POST', /^\/api\/admin\/google$/, async ({ me, body }) => {
   adminOnly(me); const r = q1(`SELECT v FROM settings WHERE k='google'`), old = r ? J(r.v, {}) : {};
