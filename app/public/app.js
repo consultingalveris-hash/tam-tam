@@ -153,6 +153,7 @@ function onEvent(ev) {
   else if (ev.t === 'chats') loadChats().then(() => { if (S.tab === 'chats') renderBody(); });
   else if (ev.t === 'statuses') loadStatuses().then(renderStories);
   else if (ev.t === 'presence') { const u = S.users.get(ev.id); if (u) { u.online = ev.online; u.lastSeen = ev.lastSeen; } if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }
+  else if (ev.t === 'call') Call.onSignal(ev).catch(e => { console.error(e); toast('Problème pendant l’appel.'); Call.hangup(); });
   else if (ev.t === 'report' && S.me.admin) toast('Nouveau signalement reçu (Réglages, Administration)');
 }
 function refreshTyping(chatId) { if (S.tab === 'chats') renderBody(); if (S.chatId === chatId) { renderChatHead(); } }
@@ -324,6 +325,7 @@ function renderChatHead() {
   else { const u = uOf(c.peer); sub = tu ? '<small class="on">écrit…</small>' : `<small${u.online ? ' class="on"' : ''}>${u.online ? 'en ligne' : seenLabel(u.lastSeen)}</small>`; }
   h.innerHTML = `<button class="ib back" type="button" data-act="back" aria-label="Retour">${I.back}</button>
     <button class="chat-id" type="button" data-act="chatInfo">${c.type === 'group' ? grpAv(c, 'sm') : avatar(uOf(c.peer), 'sm')}<span style="min-width:0"><b>${esc(chatTitle(c))}</b>${sub}</span></button>
+    ${c.type === 'direct' && !c.blocked ? `<button class="ib" type="button" data-act="callVideo" aria-label="Appel vidéo">${I.video}</button><button class="ib" type="button" data-act="callAudio" aria-label="Appel vocal">${I.phone}</button>` : ''}
     <button class="ib" type="button" data-act="chatMenu" aria-label="Options de la discussion">${I.more}</button>`;
 }
 function renderComposer() {
@@ -613,7 +615,7 @@ function settingsBody() {
     ${me.admin ? mailBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">tam-tam · version 1 de test</p></div>`;
+    <p class="hint" style="text-align:center">tam-tam · version 1.4</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {

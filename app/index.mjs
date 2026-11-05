@@ -415,6 +415,38 @@ function sysMsg(cid, text) {
   const id = run(`INSERT INTO messages(chat_id,sender,kind,text,created_at) VALUES(?,NULL,'sys',?,?)`, cid, text, now()).lastInsertRowid;
   pushMany(memberIds(cid), { t: 'msg', msg: msgOut(q1(`SELECT * FROM messages WHERE id=?`, id)) });
 }
+/* ---------- appels audio et vidéo (signalisation seulement : le son et l'image passent d'un appareil à l'autre) ---------- */
+const TURN_SECRET = process.env.TURN_SECRET || '', TURN_HOST = process.env.TURN_HOST || '';
+R('GET', /^\/api\/call\/ice$/, async ({ me }) => {
+  const ice = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+  if (TURN_SECRET && TURN_HOST) {
+    const username = `${Math.floor(now() / 1000) + 12 * 3600}:${me.id}`;
+    ice.push({ urls: [`turn:${TURN_HOST}:3478?transport=udp`, `turn:${TURN_HOST}:3478?transport=tcp`], username, credential: crypto.createHmac('sha1', TURN_SECRET).update(username).digest('base64') });
+  }
+  return { ice };
+});
+const CALL_T = ['ring', 'accept', 'decline', 'busy', 'end', 'offer', 'answer', 'ice', 'media'];
+R('POST', /^\/api\/call\/signal$/, async ({ me, body }) => {
+  const type = String(body.type || ''), callId = clean(body.callId, 40), to = +body.to, cid = +body.chatId;
+  if (!CALL_T.includes(type) || !/^[A-Za-z0-9_-]{8,40}$/.test(callId)) E(400, 'Signal d’appel invalide.');
+  const c = chatFor(me, cid); if (c.type !== 'direct' || !isMember(cid, to) || to === me.id) E(400, 'Les appels se font en discussion à deux.');
+  if (blockedEither(me.id, to)) E(403, 'Appel impossible avec cette personne.');
+  if (type === 'ring' && tooMany('call:' + me.id, 20, 10 * 60_000)) E(429, 'Trop d’appels. Patientez quelques minutes.');
+  const data = body.data == null ? null : JSON.parse(JSON.stringify(body.data).slice(0, 60_000));
+  const ev = { t: 'call', type, callId, chatId: cid, from: me.id, video: !!body.video, data };
+  if (type === 'ring' && !online(to)) {
+    sysMsg(cid, `${body.video ? 'Appel vidéo' : 'Appel vocal'} manqué de ${me.name.split(' ')[0]}`);
+    return { ok: true, offline: true };
+  }
+  push(to, ev);
+  if (type === 'accept' || type === 'decline') push(me.id, { ...ev, elsewhere: true }); // arrête la sonnerie sur mes autres appareils
+  if (type === 'end' && body.log) {
+    const d = Math.max(0, Math.round(+body.log.dur || 0)), v = body.video ? 'Appel vidéo' : 'Appel vocal';
+    sysMsg(cid, d > 0 ? `${v} · ${d >= 60 ? Math.floor(d / 60) + ' min ' + String(d % 60).padStart(2, '0') + ' s' : d + ' s'}` : `${v} manqué de ${me.name.split(' ')[0]}`);
+  }
+  return { ok: true };
+});
+
 function chatFor(me, id) { const c = q1(`SELECT * FROM chats WHERE id=?`, id); if (!c || !isMember(id, me.id)) E(404, 'Discussion introuvable.'); return c; }
 R('POST', /^\/api\/chats\/(\d+)\/members$/, async ({ me, m, body }) => {
   const c = chatFor(me, +m[1]); if (c.type !== 'group') E(400, 'Seuls les groupes acceptent de nouveaux membres.');
@@ -676,7 +708,7 @@ R('GET', /^\/api\/stream$/, async ({ me, req, res }) => {
 
 /* ---------- serveur ---------- */
 const SEC = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'X-Frame-Options': 'DENY',
-  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" };
+  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" };
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, BASE_URL), p = url.pathname;
   try {
