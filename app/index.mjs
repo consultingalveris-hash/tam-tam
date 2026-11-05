@@ -51,9 +51,11 @@ CREATE TABLE IF NOT EXISTS status_views(status_id INTEGER NOT NULL REFERENCES st
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, target_user INTEGER, chat_id INTEGER, reason TEXT NOT NULL, note TEXT,
   created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0);
 `);
-for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`]) { try { db.exec(sql); } catch {} }
+for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`]) { try { db.exec(sql); } catch {} }
 db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, call_id TEXT NOT NULL, kind TEXT NOT NULL, chat_id INTEGER NOT NULL, caller INTEGER NOT NULL, callee INTEGER, video INTEGER NOT NULL, status TEXT NOT NULL, joined TEXT NOT NULL DEFAULT '[]', started INTEGER NOT NULL, answered INTEGER, ended INTEGER);
+CREATE INDEX IF NOT EXISTS calls_cid ON calls(call_id);
 CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, keys TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS gpending(token TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, sub TEXT NOT NULL, invite TEXT, expires INTEGER NOT NULL);`);
 const q1 = (sql, ...a) => db.prepare(sql).get(...a);
@@ -143,12 +145,12 @@ function msgOut(m) {
     media: m.deleted ? null : mediaUrl(m.media), replyTo: m.reply_to, deleted: !!m.deleted, at: m.created_at };
 }
 function chatOut(c, me) {
-  const mem = qa(`SELECT m.user_id, m.last_read, m.admin FROM members m WHERE m.chat_id=?`, c.id);
+  const mem = qa(`SELECT m.user_id, m.last_read, m.admin, m.hidden FROM members m WHERE m.chat_id=?`, c.id);
   const mine = mem.find(x => x.user_id === me);
   const last = q1(`SELECT * FROM messages WHERE chat_id=? ORDER BY id DESC LIMIT 1`, c.id);
   const unread = q1(`SELECT COUNT(*) n FROM messages WHERE chat_id=? AND id>? AND (sender IS NULL OR sender<>?)`, c.id, mine ? mine.last_read : 0, me).n;
   const others = mem.filter(x => x.user_id !== me);
-  const out = { id: c.id, type: c.type, name: c.name, createdAt: c.created_at, unread, last: msgOut(last),
+  const out = { id: c.id, type: c.type, name: c.name, createdAt: c.created_at, unread, last: msgOut(last), hidden: !!(mine && mine.hidden),
     members: mem.map(x => ({ id: x.user_id, lastRead: x.last_read, admin: !!x.admin })),
     users: Object.fromEntries(mem.map(x => [x.user_id, userCard(getUser(x.user_id), me)])) };
   if (c.type === 'direct') { const o = others[0] && getUser(others[0].user_id); out.peer = o ? o.id : null; out.blocked = o ? blockedEither(me, o.id) : false; }
@@ -220,7 +222,7 @@ function tooMany(key, max = 10, win = 15 * 60_000) {
 }
 const ipOf = req => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
 function meOut(u) {
-  return { ...userCard(u, u.id), email: u.email, priv: J(u.priv, {}), privTo: u.priv_to, admin: !!u.admin,
+  return { ...userCard(u, u.id), email: u.email, priv: J(u.priv, {}), privTo: u.priv_to, admin: !!u.admin, hasHideCode: !!u.hide_code,
     close: qa(`SELECT member FROM close_group WHERE owner=?`, u.id).map(r => r.member),
     blocked: qa(`SELECT blocked FROM blocks WHERE user_id=?`, u.id).map(r => userCard(getUser(r.blocked), u.id)).filter(Boolean),
     cguAt: u.cgu_at, createdAt: u.created_at };
@@ -440,6 +442,11 @@ R('POST', /^\/api\/call\/signal$/, async ({ me, body }) => {
   const data = body.data == null ? null : JSON.parse(JSON.stringify(body.data).slice(0, 60_000));
   const ev = { t: 'call', type, callId, chatId: cid, from: me.id, video: !!body.video, data };
   const wasOffline = type === 'ring' && !online(to);
+  // journal des appels (onglet « Appels »)
+  if (type === 'ring' && !q1(`SELECT 1 FROM calls WHERE call_id=?`, callId)) run(`INSERT INTO calls(call_id,kind,chat_id,caller,callee,video,status,started) VALUES(?,?,?,?,?,?,?,?)`, callId, 'direct', cid, me.id, to, body.video ? 1 : 0, 'ringing', now());
+  else if (type === 'accept') run(`UPDATE calls SET status='answered', answered=? WHERE call_id=? AND answered IS NULL`, now(), callId);
+  else if (type === 'decline' || type === 'busy') run(`UPDATE calls SET status=?, ended=? WHERE call_id=? AND status='ringing'`, type === 'busy' ? 'busy' : 'declined', now(), callId);
+  else if (type === 'end') run(`UPDATE calls SET ended=COALESCE(ended,?), status=CASE WHEN status='ringing' THEN 'missed' ELSE status END WHERE call_id=?`, now(), callId);
   if (type === 'ring') {
     // Le téléphone de la personne appelée sonne même si tam-tam est fermé : notification « touchez pour répondre ».
     pendingRings.set(to, { ev, at: now() });
@@ -499,7 +506,7 @@ function gleave(uid, id) {
   g.parts.delete(uid);
   for (const p of g.parts) push(p, { t: 'gcall', type: 'left', callId: id, user: uid });
   if (!g.parts.size) {
-    gcalls.delete(id); const d = Math.round((now() - g.started) / 1000);
+    gcalls.delete(id); const d = Math.round((now() - g.started) / 1000); run(`UPDATE calls SET ended=? WHERE call_id=?`, now(), id);
     sysMsg(g.chatId, `Appel de groupe terminé · ${d >= 60 ? Math.floor(d / 60) + ' min' : d + ' s'}`);
   }
   gstate(g, id);
@@ -510,6 +517,7 @@ R('POST', /^\/api\/gcall\/start$/, async ({ me, body }) => {
   if (tooMany('gcall:' + me.id, 10, 10 * 60_000)) E(429, 'Trop d’appels. Patientez quelques minutes.');
   const id = crypto.randomBytes(9).toString('base64url'), video = !!body.video;
   gcalls.set(id, { chatId: c.id, video, parts: new Set(), started: now() });
+  run(`INSERT INTO calls(call_id,kind,chat_id,caller,callee,video,status,started) VALUES(?,?,?,?,NULL,?,?,?)`, id, 'group', c.id, me.id, video ? 1 : 0, 'answered', now());
   const fn = me.name.split(' ')[0];
   sysMsg(c.id, `${fn} a lancé un appel ${video ? 'vidéo' : 'vocal'} de groupe`);
   for (const uid of memberIds(c.id)) if (uid !== me.id) {
@@ -524,6 +532,7 @@ R('POST', /^\/api\/gcall\/join$/, async ({ me, body }) => {
   if (!g.parts.has(me.id) && g.parts.size >= GMAX) E(409, `L’appel est complet (${GMAX} personnes au maximum).`);
   const others = [...g.parts].filter(x => x !== me.id);
   g.parts.add(me.id);
+  const row = q1(`SELECT joined FROM calls WHERE call_id=?`, id); if (row) { const j = new Set(J(row.joined, [])); j.add(me.id); run(`UPDATE calls SET joined=? WHERE call_id=?`, JSON.stringify([...j]), id); }
   for (const p of others) push(p, { t: 'gcall', type: 'joined', callId: id, user: me.id });
   gstate(g, id);
   return { parts: others, video: g.video, chatId: g.chatId };
@@ -539,6 +548,56 @@ R('POST', /^\/api\/gcall\/leave$/, async ({ me, body }) => { gleave(me.id, Strin
 R('GET', /^\/api\/gcall\/active$/, async ({ me }) => {
   const mine = new Set(qa(`SELECT chat_id FROM members WHERE user_id=?`, me.id).map(r => r.chat_id));
   return { calls: [...gcalls.entries()].filter(([, g]) => mine.has(g.chatId)).map(([id, g]) => ({ callId: id, chatId: g.chatId, video: g.video, parts: [...g.parts] })) };
+});
+
+/* ---------- onglet « Appels » : historique et numéros ---------- */
+R('GET', /^\/api\/calls$/, async ({ me }) => {
+  const mine = qa(`SELECT chat_id FROM members WHERE user_id=?`, me.id).map(r => r.chat_id);
+  const rows = qa(`SELECT * FROM calls WHERE caller=? OR callee=? OR (kind='group' AND chat_id IN (${mine.map(() => '?').join(',') || 'NULL'})) ORDER BY started DESC LIMIT 150`, me.id, me.id, ...mine);
+  const users = {};
+  const list = rows.map(r => {
+    const out = r.caller === me.id, peer = r.kind === 'direct' ? (out ? r.callee : r.caller) : null;
+    if (peer && !users[peer]) { const u = getUser(peer); if (u) users[peer] = userCard(u, me.id); }
+    const joined = J(r.joined, []), mineJoined = r.kind === 'group' && (out || joined.includes(me.id));
+    let status = r.status;
+    if (r.kind === 'group') status = mineJoined ? 'answered' : 'missed';
+    else if (!out && status !== 'answered') status = 'missed';
+    else if (out && status === 'ringing') status = r.ended ? 'missed' : 'ringing';
+    const from = r.answered || (r.kind === 'group' ? r.started : null), dur = from && r.ended ? Math.round((r.ended - from) / 1000) : 0;
+    return { id: r.id, kind: r.kind, chatId: r.chat_id, peer, dir: out ? 'out' : 'in', video: !!r.video, status, at: r.started, dur };
+  });
+  return { calls: list, users };
+});
+const digits = s => String(s || '').replace(/\D/g, '');
+R('GET', /^\/api\/calls\/lookup$/, async ({ me, url }) => {
+  const n = digits(url.searchParams.get('num')); if (n.length < 6) E(400, 'Numéro trop court.');
+  const key = n.slice(-9);
+  for (const id of contactIds(me.id)) {
+    const u = getUser(id); if (!u || !canSeePriv(u, me.id)) continue;
+    const t = digits(J(u.priv, {}).tel); if (t.length >= 6 && t.slice(-9) === key) return { user: userCard(u, me.id) };
+  }
+  return { user: null };
+});
+
+/* ---------- discussions privées : cachées du fil, révélées par un code tapé dans la recherche ---------- */
+R('POST', /^\/api\/chats\/(\d+)\/hide$/, async ({ me, m, body }) => {
+  const c = chatFor(me, +m[1]);
+  if (body.on) {
+    if (!me.hide_code) { const code = String(body.code || ''); if (!/^\d{4,8}$/.test(code)) E(400, 'Choisissez un code de 4 à 8 chiffres.'); run(`UPDATE users SET hide_code=? WHERE id=?`, hashPass(code), me.id); }
+  }
+  run(`UPDATE members SET hidden=? WHERE chat_id=? AND user_id=?`, body.on ? 1 : 0, c.id, me.id);
+  return { ok: true, chat: chatOut(c, me.id) };
+});
+R('POST', /^\/api\/private\/unlock$/, async ({ me, body }) => {
+  if (!me.hide_code) return { ok: false };
+  if (blockedNow('priv:' + me.id, 10)) return { ok: false, wait: true };
+  const ok = checkPass(String(body.code || ''), me.hide_code); if (!ok) tooMany('priv:' + me.id, 10);
+  return { ok };
+});
+R('POST', /^\/api\/private\/code$/, async ({ me, body }) => {
+  const code = String(body.code || ''); if (!/^\d{4,8}$/.test(code)) E(400, 'Choisissez un code de 4 à 8 chiffres.');
+  if (me.hide_code && !checkPass(String(body.old || ''), me.hide_code)) E(403, 'L’ancien code n’est pas le bon.');
+  run(`UPDATE users SET hide_code=? WHERE id=?`, hashPass(code), me.id); return { ok: true };
 });
 
 function chatFor(me, id) { const c = q1(`SELECT * FROM chats WHERE id=?`, id); if (!c || !isMember(id, me.id)) E(404, 'Discussion introuvable.'); return c; }
@@ -583,7 +642,8 @@ R('POST', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, body }) => {
   const msg = msgOut(q1(`SELECT * FROM messages WHERE id=?`, id));
   pushMany(memberIds(c.id), { t: 'msg', msg });
   const fn = me.name.split(' ')[0];
-  for (const uid of memberIds(c.id)) if (uid !== me.id) webPush(uid, c.type === 'group'
+  const hiddenFor = new Set(qa(`SELECT user_id FROM members WHERE chat_id=? AND hidden=1`, c.id).map(r => r.user_id));
+  for (const uid of memberIds(c.id)) if (uid !== me.id) webPush(uid, hiddenFor.has(uid) ? { title: 'tam-tam', body: 'Nouveau message', tag: 'chat-p', url: '/' } : c.type === 'group'
     ? { title: c.name || 'Groupe', body: `${fn} : ${media ? '📷 Photo' : 'nouveau message'}`, tag: 'chat-' + c.id, url: '/?chat=' + c.id }
     : { title: me.name, body: media ? '📷 Photo' : 'Nouveau message', tag: 'chat-' + c.id, url: '/?chat=' + c.id });
   return { msg };

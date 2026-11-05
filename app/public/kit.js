@@ -6,6 +6,10 @@ const I = {
   more: svg('<circle cx="12" cy="5" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.7" fill="currentColor" stroke="none"/>'),
   back: svg('<path d="M19 12H5"/><path d="m12 5-7 7 7 7"/>'),
   rotate: svg('<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>'),
+  dialpad: svg('<circle cx="6" cy="5" r="1.4"/><circle cx="12" cy="5" r="1.4"/><circle cx="18" cy="5" r="1.4"/><circle cx="6" cy="11" r="1.4"/><circle cx="12" cy="11" r="1.4"/><circle cx="18" cy="11" r="1.4"/><circle cx="6" cy="17" r="1.4"/><circle cx="12" cy="17" r="1.4"/><circle cx="18" cy="17" r="1.4"/><circle cx="12" cy="22" r="1.4"/>'),
+  arrowOut: svg('<path d="M7 17 17 7M9 7h8v8"/>'),
+  arrowIn: svg('<path d="M17 7 7 17M15 17H7V9"/>'),
+  backspace: svg('<path d="M21 5H9l-6 7 6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z"/><path d="m12 9 6 6M18 9l-6 6"/>'),
   phone: svg('<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>'),
   video: svg('<rect x="2" y="6" width="14" height="12" rx="2.5"/><path d="m16 10.5 6-3.5v10l-6-3.5z"/>'),
   send: svg('<path d="M3.4 20.4 21.5 12 3.4 3.6 3 10l12 2-12 2z"/>'),
@@ -37,7 +41,7 @@ const I = {
   callOut: svg('<path d="M7 17 17 7M9 7h8v8"/>'),
 };
 const LOGO = `<svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2.5c7.7 0 14 5.6 14 12.5s-6.3 12.5-14 12.5c-1.6 0-3.2-.25-4.6-.7L5 29.5l1.7-5.3C3.8 21.9 2 18.6 2 15 2 8.1 8.3 2.5 16 2.5z" fill="var(--accent)"/><path d="M9.5 10.5h13c0 4.2-2.6 5.6-3.9 7.3l1.6 4.7h-8.4l1.6-4.7c-1.3-1.7-3.9-3.1-3.9-7.3z" fill="#fff"/><path d="M11.6 13.6l2.9 3.7M20.4 13.6l-2.9 3.7M16 13.4v3.9" fill="none" stroke="var(--accent)" stroke-width="1" stroke-linecap="round"/><ellipse cx="16" cy="10.5" rx="6.5" ry="2.4" fill="var(--brand-2)" stroke="#fff" stroke-width="1.2"/></svg>`;
-const WORD = 'tam<i>-</i>tam';
+const WORD = 'Tam<i>-</i>Tam';
 I.camera = svg('<path d="M4 8h3l1.5-2.5h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>');
 I.clip = svg('<path d="M21 11.5 12.4 20a5.5 5.5 0 0 1-7.8-7.8l8.9-8.9a3.7 3.7 0 0 1 5.2 5.2l-8.9 8.9a1.8 1.8 0 0 1-2.6-2.6L15.4 6.6"/>');
 I.gal = svg('<rect x="7" y="3" width="14" height="14" rx="2"/><path d="M3 7v12a2 2 0 0 0 2 2h12"/><path d="m7 14 4-4 3 3 2-2 5 5"/>');

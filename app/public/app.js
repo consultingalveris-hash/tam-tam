@@ -207,9 +207,9 @@ async function loadStatuses() { const r = await api('/api/statuses'); S.statuses
 function renderAll() { renderTabs(); renderHead(); renderBody(); }
 
 /* ---------- liste ---------- */
-const TABS = [['chats', 'Discussions', I.chats], ['contacts', 'Contacts', I.users], ['settings', 'Réglages', I.settings]];
+const TABS = [['chats', 'Discussions', I.chats], ['contacts', 'Contacts', I.users], ['calls', 'Appels', I.dialpad]];
 function renderTabs() {
-  const unread = [...S.chats.values()].filter(c => c.unread > 0).length, inc = S.contacts.incoming.length;
+  const unread = [...S.chats.values()].filter(c => c.unread > 0 && (!c.hidden || S.showHidden)).length, inc = S.contacts.incoming.length;
   $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${id === 'chats' && unread ? `<span class="badge" aria-label="${unread} non lues">${unread}</span>` : ''}${id === 'contacts' && inc ? `<span class="badge" aria-label="${inc} demandes">${inc}</span>` : ''}</button>`).join('');
   $('#fab').hidden = S.tab !== 'chats'; Device.badge();
   const n = [...S.chats.values()].reduce((a, c) => a + (c.unread || 0), 0); document.title = n ? `(${n}) tam-tam` : 'tam-tam';
@@ -217,16 +217,17 @@ function renderTabs() {
 function renderHead() {
   const h = $('#head');
   if (S.tab === 'chats') {
-    h.innerHTML = `<div class="title">${LOGO}<h1 class="brand">${WORD}</h1><span class="grow"></span><button class="ib" type="button" data-act="tab" data-t="contacts" aria-label="Ajouter des contacts" title="Ajouter des contacts">${I.userplus}</button><button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button></div>
+    h.innerHTML = `<div class="title"><h1 class="brand">${WORD}</h1><span class="grow"></span><button class="ib" type="button" data-act="tab" data-t="contacts" aria-label="Ajouter des contacts" title="Ajouter des contacts">${I.userplus}</button><button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button></div>
       <div class="stories" id="stories" aria-label="Statuts"></div>
       <label class="search">${I.search}<span class="sr">Rechercher</span><input id="q" type="search" placeholder="Rechercher une discussion" value="${esc(S.q)}" autocomplete="off"></label>`;
     renderStories();
-  } else h.innerHTML = `<div class="title"><h1>${S.tab === 'contacts' ? 'Contacts' : 'Réglages'}</h1></div>`;
+  } else h.innerHTML = `<div class="title"><h1>${{contacts: 'Contacts', calls: 'Appels', settings: 'Réglages'}[S.tab]}</h1><span class="grow"></span>${S.tab !== 'settings' ? `<button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button>` : ''}</div>`;
 }
 function renderBody() {
   const b = $('#body'); if (!b) return;
   if (S.tab === 'chats') b.innerHTML = Device.banner() + gcallBanner() + chatRows();
   else if (S.tab === 'contacts') b.innerHTML = contactsBody();
+  else if (S.tab === 'calls') { b.innerHTML = Calls.body(); Calls.after(); }
   else { b.innerHTML = settingsBody(); fillFp(); }
 }
 const chatTitle = c => c.type === 'group' ? c.name : uOf(c.peer).name;
@@ -244,12 +245,15 @@ const tick = st => st === 'read'
   : `<svg class="tick" viewBox="0 0 18 12" role="img" aria-label="Envoyé"><path d="M4 6.5 7.5 10 15 1.5"/></svg>`;
 function chatRows() {
   const q = S.q.trim().toLowerCase();
-  let list = [...S.chats.values()].filter(c => c.last || c.type === 'group' || c.id === S.chatId);
-  if (q) list = list.filter(c => chatTitle(c).toLowerCase().includes(q));
+  let list = [...S.chats.values()].filter(c => (c.last || c.type === 'group' || c.id === S.chatId) && (!c.hidden || S.showHidden));
+  Priv.watch(q);
+  if (q && !(S.showHidden && Priv.isCode(q))) list = list.filter(c => chatTitle(c).toLowerCase().includes(q));
+  if (S.showHidden) list.sort((a, b) => (b.hidden ? 1 : 0) - (a.hidden ? 1 : 0));
   list.sort((a, b) => (b.last?.at || b.createdAt) - (a.last?.at || a.createdAt));
-  if (!list.length) return q ? `<p class="empty">Aucune discussion ne correspond.</p>`
-    : `<div class="empty"><p>Aucune discussion pour l’instant.</p><p>Invitez vos proches depuis l’onglet <b>Contacts</b>, puis appuyez sur le bouton turquoise pour leur écrire.</p><button class="btn" type="button" data-act="tab" data-t="contacts">${I.userplus}Inviter mes proches</button></div>`;
-  return list.map(c => {
+  const privBar = S.showHidden ? `<div class="privbar">${I.lock}<span>Discussions privées affichées</span><button class="btn sm ghost" type="button" data-act="privHide">Masquer</button></div>` : '';
+  if (!list.length) return privBar + (q ? `<p class="empty">Aucune discussion ne correspond.</p>`
+    : `<div class="empty"><p>Aucune discussion pour l’instant.</p><p>Invitez vos proches depuis l’onglet <b>Contacts</b>, puis appuyez sur le bouton turquoise pour leur écrire.</p><button class="btn" type="button" data-act="tab" data-t="contacts">${I.userplus}Inviter mes proches</button></div>`);
+  return privBar + list.map(c => {
     const m = c.last, tu = typingIn(c.id), u = c.type === 'direct' ? uOf(c.peer) : null;
     let prev = esc(snippet(m));
     if (tu) prev = `<span class="typing-t">${c.type === 'group' ? esc(first(uOf(tu).name)) + ' écrit…' : 'écrit…'}</span>`;
@@ -468,6 +472,7 @@ function paintCrop(ctx, size, mask) {
 function drawCrop() { const cv = $('#cropCv'); if (cv && S.crop) paintCrop(cv.getContext('2d'), cv.width, true); }
 function notify(c, m) {
   Sound.msg();
+  if (c.hidden) { if (!document.hidden) toast('Nouveau message'); return; }
   const who = m.from ? uOf(m.from).name : '', t = c.type === 'group' ? `${c.name} · ${first(who)}` : who;
   if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
     try { const n = new Notification(t, {body: snippet(m).slice(0, 120), tag: 'tt-' + c.id, icon: '/icon.svg'}); n.onclick = () => { window.focus(); openChat(c.id); n.close(); }; } catch {}
@@ -551,6 +556,7 @@ function chatMenu() {
   sheet(`${head(esc(chatTitle(c)))}<div class="menu">
     ${c.type === 'group' ? `<button type="button" data-act="chatInfo">${I.info}Infos du groupe</button><button type="button" data-act="groupAddOpen">${I.userplus}Ajouter des membres</button><button type="button" class="danger" data-act="leaveAsk">${I.back}Quitter le groupe</button>`
     : `<button type="button" data-act="prof" data-id="${u.id}">${I.info}Voir le profil</button><button type="button" class="danger" data-act="${blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${I.block}${blocked ? 'Débloquer ' : 'Bloquer '}${esc(first(u.name))}</button>`}
+    <button type="button" data-act="privToggle">${I.lock}${c.hidden ? 'Ne plus rendre privée' : 'Rendre la discussion privée'}</button>
     <button type="button" class="danger" data-act="reportAsk" data-id="${u ? u.id : ''}" data-chat="${c.id}">${I.flag}Signaler</button></div>`, 'Options');
 }
 function groupInfo() {
@@ -656,8 +662,9 @@ function settingsBody() {
   const cs = S.contacts.contacts, close = new Set(me.close || []);
   return `<div class="set">
     <div class="set-top">${avatar(me, 'lg')}<div><b>${esc(me.name)}</b><span>@${esc(me.handle)} · ${esc(me.email)}</span></div></div>
-    <div class="set-block"><h2>Photo ou avatar</h2>${avGallery(me.avatar, 'me')}
-      <div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="mePhoto">${I.camera}${me.photo ? 'Changer la photo' : 'Mettre une photo'}</button>${me.photo ? '<button class="btn sm ghost" type="button" data-act="meNoPhoto">Utiliser l’avatar</button>' : ''}<input type="file" id="meIn" accept="image/*" hidden></div></div>
+    <div class="set-block"><h2>Photo ou avatar</h2>
+      <div class="actions" style="justify-content:flex-start"><button class="btn sm" type="button" data-act="mePhoto">${I.camera}${me.photo ? 'Changer la photo' : 'Mettre une photo'}</button>${me.photo ? '<button class="btn sm ghost" type="button" data-act="meNoPhoto">Utiliser l’avatar</button>' : ''}<input type="file" id="meIn" accept="image/*" hidden></div>
+      <p class="hint">${me.photo ? 'Votre photo est affichée. Préférez-vous un avatar dessiné ? Composez-le ci-dessous, puis touchez « Utiliser l’avatar ».' : 'Ou composez un avatar dessiné :'}</p>${avGallery(me.avatar, 'me')}</div>
     <div class="set-block"><h2>${I.globe} Profil public</h2><p class="hint">Visible par les membres de tam-tam, notamment quand quelqu’un veut vous ajouter.</p>
       <div class="field"><label for="p-name">Nom</label><input id="p-name" data-set="name" maxlength="40" value="${esc(me.name)}"></div>
       <div class="field"><label for="p-handle">Pseudo</label><input id="p-handle" data-set="handle" maxlength="24" value="${esc(me.handle)}"></div>
@@ -673,6 +680,7 @@ function settingsBody() {
       <p>Votre code de sécurité : <b class="fp" id="myFp">…</b></p><p class="hint">Comparez-le avec celui qu’un proche voit sur votre profil pour vérifier que personne ne s’est glissé entre vous.</p>
       <div><button class="btn sm ghost" type="button" data-act="keyCode">${I.key}Changer le code de sauvegarde</button></div></div>
     ${lockSettingsHtml()}
+    ${Priv.settingsHtml()}
     ${Device.settingsHtml()}
     <div class="set-block"><h2>Personnes bloquées</h2>${(me.blocked || []).length ? me.blocked.map(u => `<div class="adm-row">${avatar(u, 'xs')}<span>${esc(u.name)}</span><button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button></div>`).join('') : '<p class="hint">Personne n’est bloqué.</p>'}</div>
     <div class="set-block"><h2>Compte</h2><div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="pwSheet">${I.key}Changer le mot de passe</button><a class="btn sm ghost" href="/conditions" target="_blank" rel="noopener">Conditions et confidentialité</a><a class="btn sm ghost" href="/demo/" target="_blank" rel="noopener">Voir la maquette</a></div>
@@ -680,7 +688,7 @@ function settingsBody() {
     ${me.admin ? mailBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">tam-tam · version 1.7</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.8</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -729,7 +737,7 @@ const ACT = {
     if (d.who === 'auth') { A.avatar = a; $('#avg-auth').outerHTML = avGallery(a, 'auth'); }
     else { S.me.avatar = a; const g = $('#avg-me'); if (g) g.outerHTML = avGallery(a, 'me'); clearTimeout(S.avT); S.avT = setTimeout(() => saveNow({avatar: a, photo: S.me.photo ? null : undefined}, 'Avatar enregistré'), 600); }
   },
-  tab(d) { S.tab = d.t; closeLayer(); renderAll(); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
+  tab(d) { if (d.t === 'calls') Calls.log = null; S.tab = d.t; closeLayer(); renderAll(); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
   fab() { newChatSheet(); },
   open(d) { openChat(+d.id); },
   back() { S.chatId = null; $('.app').dataset.view = 'list'; renderMain(); renderBody(); },
