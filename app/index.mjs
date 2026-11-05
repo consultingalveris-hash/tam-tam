@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import nodemailer from 'nodemailer';
 
 const ROOT = path.dirname(new URL(import.meta.url).pathname);
 const PORT = +process.env.PORT || 3000;
@@ -49,6 +50,9 @@ CREATE TABLE IF NOT EXISTS status_views(status_id INTEGER NOT NULL REFERENCES st
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, target_user INTEGER, chat_id INTEGER, reason TEXT NOT NULL, note TEXT,
   created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0);
 `);
+for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`]) { try { db.exec(sql); } catch {} }
+db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);`);
 const q1 = (sql, ...a) => db.prepare(sql).get(...a);
 const qa = (sql, ...a) => db.prepare(sql).all(...a);
 const run = (sql, ...a) => db.prepare(sql).run(...a);
@@ -107,7 +111,7 @@ function userCard(u, me) {
   if (!u) return null;
   const pub = J(u.pub, {}), rel = me ? relation(me, u.id) : 'none';
   const card = { id: u.id, name: u.name, handle: u.handle, avatar: J(u.avatar, null), photo: mediaUrl(u.photo), rel, online: rel === 'contact' || rel === 'me' ? online(u.id) : undefined,
-    lastSeen: rel === 'contact' ? u.last_seen : undefined, pub: {}, mutual: 0 };
+    lastSeen: rel === 'contact' ? u.last_seen : undefined, pub: {}, mutual: 0, pubkey: u.pubkey ? J(u.pubkey, null) : null };
   for (const k of PUB_K) if (pub[k] != null && pub[k] !== '') card.pub[k] = pub[k];
   if (me && me !== u.id) {
     const mine = new Set(contactIds(me)); card.mutual = contactIds(u.id).filter(x => mine.has(x)).length;
@@ -126,8 +130,8 @@ function canSeePriv(u, me) {
 const getUser = id => q1(`SELECT * FROM users WHERE id=?`, id);
 function msgOut(m) {
   if (!m) return null;
-  return { id: m.id, chatId: m.chat_id, from: m.sender, kind: m.kind, text: m.deleted ? '' : m.text, media: m.deleted ? null : mediaUrl(m.media),
-    replyTo: m.reply_to, deleted: !!m.deleted, at: m.created_at };
+  return { id: m.id, chatId: m.chat_id, from: m.sender, kind: m.kind, text: m.deleted || m.e2e ? '' : m.text, enc: m.e2e && !m.deleted ? J(m.text, null) : null,
+    media: m.deleted ? null : mediaUrl(m.media), replyTo: m.reply_to, deleted: !!m.deleted, at: m.created_at };
 }
 function chatOut(c, me) {
   const mem = qa(`SELECT m.user_id, m.last_read, m.admin FROM members m WHERE m.chat_id=?`, c.id);
@@ -193,8 +197,8 @@ async function readJson(req) {
 function cookies(req) { const o = {}; for (const p of (req.headers.cookie || '').split(';')) { const i = p.indexOf('='); if (i > 0) o[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim()); } return o; }
 const secure = BASE_URL.startsWith('https');
 function setSession(res, userId) {
-  const tok = rnd(32); run(`INSERT INTO sessions(token,user_id,expires) VALUES(?,?,?)`, sha(tok), userId, now() + 60 * DAY);
-  res.setHeader('Set-Cookie', `tt_s=${tok}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 86400}${secure ? '; Secure' : ''}`);
+  const tok = rnd(32); run(`INSERT INTO sessions(token,user_id,expires) VALUES(?,?,?)`, sha(tok), userId, now() + 365 * DAY);
+  res.setHeader('Set-Cookie', `tt_s=${tok}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${365 * 86400}${secure ? '; Secure' : ''}`);
 }
 function currentUser(req) {
   const tok = cookies(req).tt_s; if (!tok) return null;
@@ -220,7 +224,7 @@ const R = (method, re, fn, auth = true) => routes.push({ method, re, fn, auth })
 R('GET', /^\/api\/meta$/, async ({ req, url }) => {
   const code = url.searchParams.get('invite'), inv = inviteValid(code);
   const n = q1(`SELECT COUNT(*) n FROM users`).n;
-  return { ownerSetup: n === 0, ownerEmail: n === 0 && OWNER ? OWNER.replace(/^(.).*(@.*)$/, '$1•••$2') : null,
+  return { mail: !!getTransport(), ownerSetup: n === 0, ownerEmail: n === 0 && OWNER ? OWNER.replace(/^(.).*(@.*)$/, '$1•••$2') : null,
     invite: inv ? { by: getUser(inv.by_user)?.name || '' } : null };
 }, false);
 
@@ -365,7 +369,7 @@ R('POST', /^\/api\/block$/, async ({ me, body }) => {
 R('POST', /^\/api\/report$/, async ({ me, body }) => {
   const reason = clean(body.reason, 80); if (!reason) E(400, 'Choisissez un motif.');
   if (tooMany('rep:' + me.id, 20, DAY)) E(429, 'Trop de signalements aujourd’hui.');
-  run(`INSERT INTO reports(by_user,target_user,chat_id,reason,note,created_at) VALUES(?,?,?,?,?,?)`, me.id, body.userId ? +body.userId : null, body.chatId ? +body.chatId : null, reason, clean(body.note, 500), now());
+  run(`INSERT INTO reports(by_user,target_user,chat_id,reason,note,created_at) VALUES(?,?,?,?,?,?)`, me.id, body.userId ? +body.userId : null, body.chatId ? +body.chatId : null, reason, clean(body.note, 4000), now());
   for (const a of qa(`SELECT id FROM users WHERE admin=1`)) push(a.id, { t: 'report' });
   return { ok: true };
 });
@@ -427,11 +431,16 @@ R('POST', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, body }) => {
     if (!o || blockedEither(me.id, o)) E(403, 'Vous ne pouvez plus écrire à cette personne.');
     if (relation(me.id, o) !== 'contact') E(403, 'Vous n’êtes plus en contact avec cette personne.');
   }
-  const text = clean(body.text, 4000); let media = null;
+  let text = clean(body.text, 4000), media = null, e2e = 0;
+  if (body.enc) {
+    // Message chiffré de bout en bout : le serveur ne garde qu'une enveloppe illisible.
+    const env = body.enc; if (typeof env !== 'object' || typeof env.ct !== 'string' || typeof env.iv !== 'string' || typeof env.keys !== 'object') E(400, 'Message chiffré invalide.');
+    text = JSON.stringify({ v: 1, iv: env.iv, ct: env.ct, keys: env.keys, from: env.from }); if (text.length > 60000) E(413, 'Message trop long.'); e2e = 1;
+  }
   if (body.media) { const md = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.media), me.id); if (!md) E(400, 'Photo introuvable.'); media = md.id; }
   if (!text && !media) E(400, 'Message vide.');
   const reply = body.replyTo && q1(`SELECT id FROM messages WHERE id=? AND chat_id=?`, +body.replyTo, c.id) ? +body.replyTo : null;
-  const id = Number(run(`INSERT INTO messages(chat_id,sender,kind,text,media,reply_to,created_at) VALUES(?,?,?,?,?,?,?)`, c.id, me.id, media ? 'image' : 'text', text || null, media, reply, now()).lastInsertRowid);
+  const id = Number(run(`INSERT INTO messages(chat_id,sender,kind,text,media,reply_to,e2e,created_at) VALUES(?,?,?,?,?,?,?,?)`, c.id, me.id, media ? 'image' : 'text', text || null, media, reply, e2e, now()).lastInsertRowid);
   if (media) run(`UPDATE media SET scope='chat', ref=? WHERE id=?`, c.id, media);
   run(`UPDATE members SET last_read=? WHERE chat_id=? AND user_id=?`, id, c.id, me.id);
   const msg = msgOut(q1(`SELECT * FROM messages WHERE id=?`, id));
@@ -458,13 +467,14 @@ R('POST', /^\/api\/messages\/(\d+)\/delete$/, async ({ me, m }) => {
 
 /* photos */
 R('POST', /^\/api\/media$/, async ({ me, req }) => {
-  const ct = String(req.headers['content-type'] || ''); if (!/^image\/(jpeg|png|webp)$/.test(ct)) E(415, 'Seules les photos (JPEG, PNG, WebP) sont acceptées.');
+  const ct = String(req.headers['content-type'] || ''), enc = ct === 'application/octet-stream';
+  if (!enc && !/^image\/(jpeg|png|webp)$/.test(ct)) E(415, 'Seules les photos (JPEG, PNG, WebP) sont acceptées.');
   if (tooMany('up:' + me.id, 60, 10 * 60_000)) E(429, 'Trop de photos envoyées. Patientez un peu.');
   const buf = await readBody(req, 6_000_000); if (buf.length < 100) E(400, 'Fichier vide.');
   const sig = buf.subarray(0, 12).toString('hex');
-  if (!(sig.startsWith('ffd8ff') || sig.startsWith('89504e47') || (sig.startsWith('52494646') && buf.subarray(8, 12).toString() === 'WEBP'))) E(415, 'Ce fichier n’est pas une photo valide.');
+  if (!enc && !(sig.startsWith('ffd8ff') || sig.startsWith('89504e47') || (sig.startsWith('52494646') && buf.subarray(8, 12).toString() === 'WEBP'))) E(415, 'Ce fichier n’est pas une photo valide.');
   const id = rnd(18); fs.writeFileSync(path.join(MEDIA, id), buf);
-  run(`INSERT INTO media(id,owner,mime,size,created_at) VALUES(?,?,?,?,?)`, id, me.id, ct, buf.length, now());
+  run(`INSERT INTO media(id,owner,mime,size,enc,created_at) VALUES(?,?,?,?,?,?)`, id, me.id, ct, buf.length, enc ? 1 : 0, now());
   return { id, url: mediaUrl(id) };
 });
 R('GET', /^\/api\/media\/([A-Za-z0-9_-]{10,40})$/, async ({ me, m, res }) => {
@@ -517,6 +527,55 @@ R('POST', /^\/api\/statuses\/(\d+)\/delete$/, async ({ me, m }) => {
   if (s.media) dropMedia(s.media); run(`DELETE FROM statuses WHERE id=?`, s.id); pushMany(contactIds(me.id), { t: 'statuses' }); return { ok: true };
 });
 
+/* clés de chiffrement de bout en bout : le serveur garde la clé publique et une sauvegarde chiffrée par le code du membre */
+R('POST', /^\/api\/keys$/, async ({ me, body }) => {
+  const pk = body.pubkey; if (!pk || pk.kty !== 'EC' || pk.crv !== 'P-256' || typeof pk.x !== 'string' || typeof pk.y !== 'string' || pk.d) E(400, 'Clé invalide.');
+  const b = body.backup; if (!b || typeof b.ct !== 'string' || typeof b.iv !== 'string' || typeof b.salt !== 'string' || !(+b.iter >= 100000)) E(400, 'Sauvegarde invalide.');
+  if (JSON.stringify(b).length > 8000) E(413, 'Sauvegarde trop grande.');
+  const old = me.pubkey;
+  run(`UPDATE users SET pubkey=?, keybackup=? WHERE id=?`, JSON.stringify({ kty: 'EC', crv: 'P-256', x: pk.x, y: pk.y }), JSON.stringify({ ct: b.ct, iv: b.iv, salt: b.salt, iter: +b.iter }), me.id);
+  if (old && J(old, {}).x !== pk.x) for (const c of qa(`SELECT chat_id FROM members WHERE user_id=?`, me.id)) sysMsg(c.chat_id, `Le code de sécurité de ${me.name} a changé (nouvel appareil ou nouvelle clé).`);
+  pushMany(contactIds(me.id), { t: 'contacts' });
+  return { ok: true };
+});
+R('GET', /^\/api\/keys\/backup$/, async ({ me }) => ({ backup: me.keybackup ? J(me.keybackup, null) : null, pubkey: me.pubkey ? J(me.pubkey, null) : null }));
+
+/* mot de passe oublié : code à 6 chiffres envoyé par e-mail */
+function mailSettings() { const r = q1(`SELECT v FROM settings WHERE k='mail'`); return r ? J(r.v, null) : null; }
+let transport = null, transportKey = '';
+function getTransport() {
+  const m = mailSettings(); if (!m || !m.host || !m.user || !m.pass || !m.from) return null;
+  const key = JSON.stringify(m);
+  if (key !== transportKey) { transport = nodemailer.createTransport({ host: m.host, port: +m.port || 465, secure: (+m.port || 465) === 465, auth: { user: m.user, pass: m.pass } }); transportKey = key; }
+  return { t: transport, from: m.from };
+}
+const mailHtml = (title, inner) => `<div style="font-family:Arial,Helvetica,sans-serif;background:#eef6f7;padding:24px"><div style="max-width:520px;margin:auto;background:#fff;border-radius:14px;padding:26px;color:#0f2430;font-size:15px;line-height:1.5"><div style="font-weight:800;font-size:20px;color:#0b7a89;margin-bottom:14px">tam-tam</div><h1 style="font-size:19px;margin:0 0 10px">${title}</h1>${inner}<p style="color:#5d7380;font-size:12px;margin-top:26px">Message envoyé automatiquement par tam-tam. Si vous n’êtes pas à l’origine de cette demande, ignorez ce message : votre compte reste protégé.</p></div></div>`;
+async function sendMail(to, subject, html) { const tr = getTransport(); if (!tr) return false; await tr.t.sendMail({ from: tr.from, to, subject, html }); return true; }
+R('POST', /^\/api\/forgot$/, async ({ req, body }) => {
+  const email = clean(body.email, 120).toLowerCase(); if (!isEmail(email)) E(400, 'Adresse e-mail invalide.');
+  if (tooMany('forgot:' + ipOf(req), 6, 60 * 60_000) || tooMany('forgot:' + email, 3, 60 * 60_000)) E(429, 'Trop de demandes. Réessayez dans une heure.');
+  if (!getTransport()) E(503, 'L’envoi d’e-mails n’est pas encore réglé. Demandez un lien au responsable de tam-tam.');
+  const u = q1(`SELECT id,name FROM users WHERE email=?`, email);
+  if (u) {
+    const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+    run(`INSERT OR REPLACE INTO codes(email,code,tries,expires) VALUES(?,?,0,?)`, email, sha(code), now() + 15 * 60_000);
+    try { await sendMail(email, `Votre code tam-tam : ${code}`, mailHtml('Réinitialiser votre mot de passe', `<p>Bonjour ${String(u.name).replace(/[<>&]/g, '')},</p><p>Voici votre code pour choisir un nouveau mot de passe :</p><p style="font-size:30px;font-weight:800;letter-spacing:6px;margin:16px 0">${code}</p><p>Il est valable 15 minutes.</p>`)); }
+    catch (e) { console.error('envoi e-mail', e.message); E(502, 'L’e-mail n’a pas pu partir. Réessayez dans quelques minutes.'); }
+  }
+  return { ok: true }; // même réponse que le compte existe ou non
+}, false);
+R('POST', /^\/api\/forgot\/verify$/, async ({ req, res, body }) => {
+  const email = clean(body.email, 120).toLowerCase(), r = q1(`SELECT * FROM codes WHERE email=?`, email);
+  if (tooMany('fv:' + ipOf(req), 15, 60 * 60_000)) E(429, 'Trop de tentatives.');
+  if (!r || r.expires < now()) E(400, 'Ce code a expiré. Demandez-en un nouveau.');
+  if (r.tries >= 5) { run(`DELETE FROM codes WHERE email=?`, email); E(400, 'Trop d’essais. Demandez un nouveau code.'); }
+  if (sha(String(body.code || '').trim()) !== r.code) { run(`UPDATE codes SET tries=tries+1 WHERE email=?`, email); E(400, 'Code incorrect.'); }
+  if (String(body.pass || '').length < 8) E(400, 'Le mot de passe doit contenir au moins 8 caractères.');
+  const u = q1(`SELECT * FROM users WHERE email=?`, email); if (!u) E(400, 'Code incorrect.');
+  run(`UPDATE users SET pass=? WHERE id=?`, hashPass(body.pass), u.id); run(`DELETE FROM codes WHERE email=?`, email); run(`DELETE FROM sessions WHERE user_id=?`, u.id);
+  setSession(res, u.id); return { me: meOut(getUser(u.id)) };
+}, false);
+
 /* administration (propriétaire) */
 function adminOnly(me) { if (!me.admin) E(403, 'Réservé au propriétaire.'); }
 R('GET', /^\/api\/admin$/, async ({ me }) => {
@@ -529,6 +588,15 @@ R('POST', /^\/api\/admin\/reset$/, async ({ me, body }) => {
   adminOnly(me); const u = getUser(+body.userId); if (!u) E(404, 'Compte introuvable.');
   const tok = rnd(24); run(`INSERT INTO resets(token,user_id,expires) VALUES(?,?,?)`, sha(tok), u.id, now() + 2 * DAY);
   return { url: `${BASE_URL}/reset/${tok}` };
+});
+R('GET', /^\/api\/admin\/mail$/, async ({ me }) => { adminOnly(me); const m = mailSettings() || {}; return { host: m.host || '', port: m.port || 465, user: m.user || '', from: m.from || '', hasPass: !!m.pass }; });
+R('POST', /^\/api\/admin\/mail$/, async ({ me, body }) => {
+  adminOnly(me); const old = mailSettings() || {};
+  const m = { host: clean(body.host, 120), port: +body.port || 465, user: clean(body.user, 120), pass: body.pass ? String(body.pass).slice(0, 200) : old.pass, from: clean(body.from, 160) };
+  if (!m.host || !m.user || !m.pass || !m.from) E(400, 'Remplissez le serveur, l’identifiant, le mot de passe et l’expéditeur.');
+  run(`INSERT OR REPLACE INTO settings(k,v) VALUES('mail',?)`, JSON.stringify(m)); transportKey = '';
+  if (body.test) { try { await sendMail(me.email, 'Test d’envoi tam-tam', mailHtml('L’envoi d’e-mails fonctionne', '<p>Les codes « mot de passe oublié » partiront depuis cette adresse.</p>')); } catch (e) { E(502, 'Réglage enregistré, mais le test a échoué : ' + String(e.message || e).slice(0, 160)); } }
+  return { ok: true };
 });
 R('POST', /^\/api\/admin\/report-done$/, async ({ me, body }) => { adminOnly(me); run(`UPDATE reports SET done=1 WHERE id=?`, +body.id); return { ok: true }; });
 
