@@ -477,3 +477,51 @@ mark{background:#ffe08a;color:inherit;border-radius:3px;padding:0 1px}
 @keyframes slideL{from{transform:translateX(24px);opacity:.4}to{transform:none;opacity:1}}
 @keyframes slideR{from{transform:translateX(-24px);opacity:.4}to{transform:none;opacity:1}}
 #body.slide-l{animation:slideL .2s ease-out}#body.slide-r{animation:slideR .2s ease-out}
+/* photos du profil (3 publiques, 3 privées) */
+.ph3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.ph3-add{aspect-ratio:3/4;border:1.5px dashed var(--line);border-radius:14px;background:var(--surface-2);color:var(--fg-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font:inherit;font-size:14px;cursor:pointer}
+.ph3-add span{font-size:28px;line-height:1}
+.ph3-add:hover{border-color:var(--accent)}
+.ph3-it{position:relative}
+.ph3-img{display:block;width:100%;aspect-ratio:3/4;padding:0;border:0;border-radius:14px;overflow:hidden;background:var(--surface-2);cursor:zoom-in}
+.ph3-img img{width:100%;height:100%;object-fit:cover;display:block}
+.ph3-x{position:absolute;top:6px;right:6px;width:30px;height:30px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;display:grid;place-items:center;cursor:pointer}
+.ph3-x svg{width:16px;height:16px}
+.pic-big{max-width:100%;max-height:70vh;border-radius:14px}
+.ph-mini{display:flex;gap:4px;margin-top:6px}
+.ph-mini img{width:44px;height:58px;object-fit:cover;border-radius:8px}
+/* qui voit le profil privé */
+.locks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.lockopt{display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 6px;border:1.5px solid var(--line);border-radius:14px;background:var(--surface);color:var(--fg);font:inherit;cursor:pointer;text-align:center}
+.lockopt svg{width:20px;height:20px;color:var(--fg-2)}
+.lockopt small{color:var(--fg-2);font-size:12px;line-height:1.25}
+.lockopt[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.lockopt[aria-pressed="true"] svg{color:var(--accent-strong)}
+.grp-box{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
+.grp-box b{display:flex;align-items:center;gap:8px}
+.grp-box b svg{width:18px;height:18px}
+.grp-box .picks{background:var(--surface)}
+/* photo de profil : aperçu avant validation */
+.ph-pick{display:flex;align-items:center;gap:16px}
+.ph-pick .pp-prev{flex:none;display:block}
+@media (max-width:420px){.locks{grid-template-columns:1fr}.lockopt{flex-direction:row;justify-content:flex-start;gap:8px;text-align:left}}
+#phBlock .avb-top{display:none}
+/* messages à vue unique */
+.one{display:inline-grid;place-items:center;width:22px;height:22px;border:2px dashed currentColor;border-radius:50%;font:700 12px/1 var(--font-body);flex:none}
+.once-tog[aria-pressed="true"]{color:var(--accent-strong);background:var(--accent-soft)}
+.once-tog[aria-pressed="true"] .one{border-style:solid}
+.ph-prev .once-tog{color:#fff}
+.ph-prev .once-tog[aria-pressed="true"]{color:#0d0f12;background:#fff}
+.once-b{display:flex;align-items:center;gap:10px;padding:4px 2px;font:inherit;color:inherit;text-align:left;min-width:180px}
+.once-b>span:last-child{display:flex;flex-direction:column;font-weight:600}
+.once-b small{font-weight:400;opacity:.75;font-size:12px}
+.once-b.go{border:0;background:none;cursor:pointer}
+.once-b.go .one{color:var(--accent-strong);border-style:solid}
+.once-b.done{opacity:.65}
+.once-view{position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;background:#0d0f12;color:#fff;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.once-view .bar{display:flex;align-items:center;gap:10px;padding:8px 10px}
+.once-view .bar .ib{color:#fff}
+.once-view .bar small{margin-left:auto;opacity:.7;font-size:12px}
+.once-view .stage{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:12px}
+.once-view img{max-width:100%;max-height:75vh;border-radius:8px;pointer-events:none}
+.once-txt{max-width:560px;font-size:18px;line-height:1.5;white-space:pre-wrap;text-align:center}

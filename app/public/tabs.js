@@ -164,24 +164,45 @@ const Find = {
 const Qr = {
   async show(reset) {
     let r; try { r = await api(reset ? '/api/qr/reset' : '/api/qr', reset ? {} : undefined); } catch (e) { return toast(e.message); }
-    const scan = 'BarcodeDetector' in window;
     sheet(`${head('Mon code QR')}<div class="sheet-body" style="align-items:center;text-align:center">
       <div class="qrbox">${r.svg}</div>
       <p class="hint">Faites scanner ce code avec l’appareil photo d’un téléphone : la personne devient votre contact sur Tam-Tam. Elle peut vous écrire et vous appeler, mais <b>ne voit que votre profil public</b> : ni votre téléphone, ni votre adresse.</p>
-      <div class="actions" style="justify-content:center;flex-wrap:wrap">${scan ? `<button class="btn" type="button" data-act="qrScan">${I.camera}Scanner un code</button>` : ''}<button class="btn ghost" type="button" data-act="qrCopy" data-url="${esc(r.url)}">${I.copy}Copier le lien</button><button class="btn ghost" type="button" data-act="qrReset">Changer mon code</button></div>
-      ${scan ? '' : '<p class="hint">Pour scanner le code d’un ami, ouvrez l’appareil photo de votre téléphone et visez son code.</p>'}</div>`, 'Mon code QR');
+      <div class="actions" style="justify-content:center;flex-wrap:wrap"><button class="btn" type="button" data-act="qrScan">${I.camera}Scanner un code</button><button class="btn ghost" type="button" data-act="qrCopy" data-url="${esc(r.url)}">${I.copy}Copier le lien</button><button class="btn ghost" type="button" data-act="qrReset">Changer mon code</button></div>
+      </div>`, 'Mon code QR');
   },
+  jsqr() { return window.jsQR ? Promise.resolve(window.jsQR) : new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = '/jsqr.js'; sc.onload = () => res(window.jsQR); sc.onerror = () => rej(new Error('Lecteur de code indisponible.')); document.head.appendChild(sc); }); },
+  found(txt) { const m = /\/add\/([A-Za-z0-9_-]+)/.exec(txt || ''); if (!m) return false; closeLayer(); this.connect(m[1]); return true; },
   async scan() {
-    let stream; try { stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}}); } catch { return toast('Autorisez l’appareil photo pour scanner un code.'); }
-    sheet(`${head('Scanner un code QR')}<div class="sheet-body" style="align-items:center"><video id="qrVid" class="qrvid" autoplay playsinline muted></video><p class="hint">Visez le code QR de votre ami.</p></div>`, 'Scanner');
-    const v = $('#qrVid'); v.srcObject = stream; const det = new BarcodeDetector({formats: ['qr_code']});
+    sheet(`${head('Scanner un code QR')}<div class="sheet-body" style="align-items:center"><video id="qrVid" class="qrvid" autoplay playsinline muted></video><p class="hint" id="qrHint" style="text-align:center">Visez le code QR de votre ami.</p>
+      <div class="actions" style="justify-content:center"><button class="btn sm ghost" type="button" data-act="qrFile">${I.image}Choisir une photo du code</button><input type="file" id="qrIn" accept="image/*" hidden></div></div>`, 'Scanner');
+    let stream; try { stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}}); }
+    catch { const h = $('#qrHint'), v0 = $('#qrVid'); if (v0) v0.hidden = true; if (h) h.textContent = 'L’appareil photo n’est pas disponible ici. Prenez le code en photo (ou une capture d’écran), puis choisissez cette photo.'; return; }
+    const v = $('#qrVid'); if (!v) return stream.getTracks().forEach(t => t.stop()); v.srcObject = stream;
     const stop = () => stream.getTracks().forEach(t => t.stop());
+    let det = null, jq = null; if ('BarcodeDetector' in window) { try { det = new BarcodeDetector({formats: ['qr_code']}); } catch {} }
+    if (!det) { try { jq = await this.jsqr(); } catch (e) { toast(e.message); } }
+    const cv = document.createElement('canvas'), ctx = cv.getContext('2d', {willReadFrequently: true});
     const loop = async () => {
       if (!document.body.contains(v)) return stop();
-      try { const codes = await det.detect(v); const m = codes.map(c => /\/add\/([A-Za-z0-9_-]+)/.exec(c.rawValue)).find(Boolean); if (m) { stop(); closeLayer(); return this.connect(m[1]); } } catch {}
+      try {
+        let txt = '';
+        if (det) txt = ((await det.detect(v)).map(c => c.rawValue).find(x => /\/add\//.test(x))) || '';
+        else if (jq && v.videoWidth) { const k = Math.min(1, 640 / v.videoWidth); cv.width = v.videoWidth * k; cv.height = v.videoHeight * k; ctx.drawImage(v, 0, 0, cv.width, cv.height); const r = jq(ctx.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height); txt = r ? r.data : ''; }
+        if (txt && this.found(txt)) return stop();
+      } catch {}
       setTimeout(loop, 300);
     };
     v.onloadeddata = loop;
+  },
+  async fromFile(f) {
+    try {
+      const jq = await this.jsqr(), url = URL.createObjectURL(f), im = new Image();
+      await new Promise((res, rej) => { im.onload = res; im.onerror = () => rej(new Error('Photo illisible.')); im.src = url; });
+      const k = Math.min(1, 1200 / Math.max(im.width, im.height)), cv = document.createElement('canvas'); cv.width = im.width * k; cv.height = im.height * k;
+      const ctx = cv.getContext('2d'); ctx.drawImage(im, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url);
+      const r = jq(ctx.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height);
+      if (!r || !this.found(r.data)) toast('Aucun code Tam-Tam trouvé sur cette photo. Cadrez bien le code et réessayez.');
+    } catch (e) { toast(e.message); }
   },
   async connect(token) {
     history.replaceState(null, '', '/');
@@ -193,7 +214,7 @@ const Qr = {
   },
 };
 Object.assign(ACT, {
-  qrShow() { Qr.show(); }, qrReset() { Qr.show(true); }, qrScan() { Qr.scan(); },
+  qrShow() { Qr.show(); }, qrReset() { Qr.show(true); }, qrScan() { Qr.scan(); }, qrFile() { $('#qrIn').click(); },
   qrCopy(d) { (navigator.clipboard ? navigator.clipboard.writeText(d.url) : Promise.reject()).then(() => toast('Lien copié.'), () => toast(d.url)); },
   async sharePriv(d) { try { await api('/api/contacts/share-priv', {id: +d.id}); toast('Votre profil privé est maintenant visible pour ce contact.'); profSheet(+d.id); } catch (e) { toast(e.message); } },
 });
@@ -296,7 +317,7 @@ document.addEventListener('input', e => { if (e.target.id === 'bq') { Book.q = e
 
 /* ---------- « Ajouter des amis » (le + en haut) ---------- */
 const Add = {
-  row(u) { return `<div class="row">${avOn(u)}<button class="row-name linkless" type="button" data-act="prof" data-id="${u.id}" style="border:0;background:none;padding:0;text-align:left;display:flex;flex-direction:column;align-items:flex-start;min-width:0"><b>${esc(u.name)}</b><small style="color:var(--fg-2);font-weight:400">@${esc(u.handle)}${u.pub && u.pub.ville ? ' · ' + esc(u.pub.ville) : ''}${u.mutual ? ` · ${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun` : ''}</small></button><span class="row-end">${relBtn(u)}</span></div>`; },
+  row(u) { const ph = (u.pics || []).filter(Boolean); return `<div class="row${ph.length ? ' has-ph' : ''}">${avOn(u)}<button class="row-name linkless" type="button" data-act="prof" data-id="${u.id}" style="border:0;background:none;padding:0;text-align:left;display:flex;flex-direction:column;align-items:flex-start;min-width:0"><b>${esc(u.name)}</b><small style="color:var(--fg-2);font-weight:400">@${esc(u.handle)}${u.pub && u.pub.ville ? ' · ' + esc(u.pub.ville) : ''}${u.mutual ? ` · ${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun` : ''}</small>${ph.length ? `<span class="ph-mini">${ph.map(x => `<img src="${esc(x)}" alt="" loading="lazy">`).join('')}</span>` : ''}</button><span class="row-end">${relBtn(u)}</span></div>`; },
   html() {
     const C = S.contacts;
     return `${head('Ajouter des amis')}<div class="sheet-body" id="addSheet" style="gap:6px">
@@ -311,13 +332,21 @@ const Add = {
         : `<span class="hint">Seules les personnes qui ont un lien d’invitation ou votre code QR peuvent s’inscrire.</span><div><button class="btn sm" type="button" data-act="invNew">${I.userplus}Créer un lien d’invitation</button></div>`}
       </div>
       <div class="sec">Code QR</div>
-      <div class="actions" style="justify-content:flex-start;margin-bottom:8px"><button class="btn sm ghost" type="button" data-act="qrShow">${I.qr}Mon code QR</button>${'BarcodeDetector' in window ? `<button class="btn sm ghost" type="button" data-act="qrScan">${I.camera}Scanner un code</button>` : ''}</div></div>`;
+      <div class="actions" style="justify-content:flex-start;margin-bottom:8px"><button class="btn sm ghost" type="button" data-act="qrShow">${I.qr}Mon code QR</button><button class="btn sm ghost" type="button" data-act="qrScan">${I.camera}Scanner un code</button></div>
+      <div class="sec">Membres de Tam-Tam</div>
+      <p class="hint" style="margin:0 0 4px">Faites défiler et touchez une personne pour voir son profil public et ses photos, puis demandez-la en ami si vous le souhaitez. Même devenu ami, personne ne voit votre numéro de téléphone sans votre accord.</p>
+      <div id="peopleList">${Add.people ? (Add.people.length ? Add.people.map(u => this.row(u)).join('') : '<p class="empty">Pas encore d’autres membres.</p>') : '<p class="hint">Chargement…</p>'}</div>
+      ${Add.more ? '<div><button class="btn sm ghost" type="button" data-act="peopleMore">Voir plus de membres</button></div>' : ''}</div>`;
   },
-  open() { S.fq = ''; S.fres = null; sheet(this.html(), 'Ajouter des amis'); },
+  open() { S.fq = ''; S.fres = null; Add.people = null; Add.more = false; sheet(this.html(), 'Ajouter des amis'); this.loadPeople(); },
+  async loadPeople(more) {
+    try { const r = await api('/api/people?off=' + (more ? (Add.people || []).length : 0)); keepUsers(r.users); Add.people = (more ? Add.people || [] : []).concat(r.users); Add.more = r.more; this.render(); }
+    catch (e) { if (!more) { Add.people = []; this.render(); } toast(e.message); }
+  },
   render() { const el = $('#addSheet'); if (!el) return; const box = el.closest('.sheet'); const y = el.scrollTop; box.innerHTML = this.html(); const n = $('#addSheet'); if (n) n.scrollTop = y; },
 };
 Object.assign(ACT, {
-  addOpen() { Add.open(); },
+  addOpen() { Add.open(); }, peopleMore() { Add.loadPeople(true); },
   goPhone() { S.profTab = 'priv'; ACT.goProfile(); setTimeout(() => { const i = $('#p-tel'); if (i) { i.scrollIntoView({block: 'center'}); i.focus(); } }, 80); },
   bookPick() { Book.pick(); }, bookManual() { Book.manual(); }, bookMore() { Book.choices(); }, bookVcf() { $('#vcfIn').click(); },
   async bookChat(d) {
@@ -357,3 +386,4 @@ document.addEventListener('change', async e => {
     if (ORDER[next] !== S.tab) { ACT.tab({t: ORDER[next]}); const b = $('#body'); if (b) { b.classList.remove('slide-l', 'slide-r'); void b.offsetWidth; b.classList.add(dx < 0 ? 'slide-l' : 'slide-r'); } }
   }, {passive: true});
 })();
+document.addEventListener('change', e => { if (e.target.id !== 'qrIn') return; const f = e.target.files[0]; e.target.value = ''; if (f) Qr.fromFile(f); });

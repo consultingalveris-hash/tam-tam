@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS status_views(status_id INTEGER NOT NULL REFERENCES st
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, target_user INTEGER, chat_id INTEGER, reason TEXT NOT NULL, note TEXT,
   created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0);
 `);
-for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`]) { try { db.exec(sql); } catch {} }
+for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
 db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, call_id TEXT NOT NULL, kind TEXT NOT NULL, chat_id INTEGER NOT NULL, caller INTEGER NOT NULL, callee INTEGER, video INTEGER NOT NULL, status TEXT NOT NULL, joined TEXT NOT NULL DEFAULT '[]', started INTEGER NOT NULL, answered INTEGER, ended INTEGER);
@@ -125,14 +125,22 @@ function userCard(u, me) {
   const card = { id: u.id, name: u.name, handle: u.handle, avatar: J(u.avatar, null), photo: mediaUrl(u.photo), rel, online: rel === 'contact' || rel === 'me' ? online(u.id) : undefined,
     lastSeen: rel === 'contact' ? u.last_seen : undefined, pub: {}, mutual: 0, pubkey: u.pubkey ? J(u.pubkey, null) : null };
   for (const k of PUB_K) if (pub[k] != null && pub[k] !== '') card.pub[k] = pub[k];
+  card.pics = picsOf(u, 'pub');
   if (me && me !== u.id) {
     const mine = new Set(contactIds(me)); card.mutual = contactIds(u.id).filter(x => mine.has(x)).length;
     card.blocked = iBlocked(me, u.id);
-    if (canSeePriv(u, me)) card.priv = J(u.priv, {});
+    if (canSeePriv(u, me)) {
+      // Le numéro de téléphone n'est jamais montré sans l'accord explicite de son propriétaire.
+      const pv = J(u.priv, {}); if (!telShared(u.id, me)) delete pv.tel; card.priv = pv;
+      card.privPics = picsOf(u, 'priv');
+    }
+    card.telMine = telShared(me, u.id);
     if (card.rel === 'contact') { const l = limOf(me, u.id); if (l === me) card.limMine = true; else if (l === u.id) card.limTheirs = true; }
   }
   return card;
 }
+const telShared = (owner, viewer) => !!q1(`SELECT 1 FROM tel_share WHERE owner=? AND viewer=?`, owner, viewer);
+const picsOf = (u, set) => (J(u.pics, {})[set] || [null, null, null]).map(mediaUrl);
 function canSeePriv(u, me) {
   if (u.id === me) return true;
   if (u.priv_to === 'me') return false;
@@ -145,7 +153,14 @@ const getUser = id => q1(`SELECT * FROM users WHERE id=?`, id);
 function msgOut(m) {
   if (!m) return null;
   return { id: m.id, chatId: m.chat_id, from: m.sender, kind: m.kind, text: m.deleted || m.e2e ? '' : m.text, enc: m.e2e && !m.deleted ? J(m.text, null) : null,
-    media: m.deleted ? null : mediaUrl(m.media), replyTo: m.reply_to, deleted: !!m.deleted, at: m.created_at };
+    media: m.deleted ? null : mediaUrl(m.media), replyTo: m.reply_to, deleted: !!m.deleted, at: m.created_at,
+    ...(m.once ? { once: true, opened: qa(`SELECT user_id FROM once_views WHERE msg_id=?`, m.id).map(r => r.user_id) } : {}) };
+}
+// Un message à vue unique déjà ouvert ne renvoie plus son contenu à celui qui l'a ouvert (ni à l'expéditeur).
+function msgFor(m, uid) {
+  const o = msgOut(m); if (!o || !o.once) return o;
+  if (m.sender === uid || o.opened.includes(uid)) { o.enc = null; o.text = ''; o.media = o.media ? 'x' : null; }
+  return o;
 }
 function chatOut(c, me) {
   const mem = qa(`SELECT m.user_id, m.last_read, m.admin, m.hidden, m.fav FROM members m WHERE m.chat_id=?`, c.id);
@@ -225,7 +240,7 @@ function tooMany(key, max = 10, win = 15 * 60_000) {
 }
 const ipOf = req => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
 function meOut(u) {
-  return { ...userCard(u, u.id), email: u.email, priv: J(u.priv, {}), privTo: u.priv_to, admin: !!u.admin, hasHideCode: !!u.hide_code,
+  return { ...userCard(u, u.id), email: u.email, priv: J(u.priv, {}), privPics: picsOf(u, 'priv'), privTo: u.priv_to, admin: !!u.admin, hasHideCode: !!u.hide_code,
     close: qa(`SELECT member FROM close_group WHERE owner=?`, u.id).map(r => r.member),
     blocked: qa(`SELECT blocked FROM blocks WHERE user_id=?`, u.id).map(r => userCard(getUser(r.blocked), u.id)).filter(Boolean),
     cguAt: u.cgu_at, createdAt: u.created_at };
@@ -327,6 +342,45 @@ R('POST', /^\/api\/me$/, async ({ me, body }) => {
   }
   return { me: meOut(getUser(me.id)) };
 });
+// Trois photos publiques et trois photos privées sur le profil.
+R('POST', /^\/api\/me\/pics$/, async ({ me, body }) => {
+  const set = body.set === 'priv' ? 'priv' : 'pub', slot = +body.slot; if (![0, 1, 2].includes(slot)) E(400, 'Emplacement inconnu.');
+  const all = J(me.pics, {}), list = (all[set] || [null, null, null]).slice(0, 3);
+  if (body.media) {
+    const m = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL AND enc=0`, String(body.media), me.id); if (!m) E(400, 'Photo introuvable.');
+    run(`UPDATE media SET scope=?, ref=? WHERE id=?`, set === 'pub' ? 'ppub' : 'ppriv', me.id, m.id);
+  }
+  if (list[slot]) dropMedia(list[slot]);
+  list[slot] = body.media ? String(body.media) : null; all[set] = list;
+  run(`UPDATE users SET pics=? WHERE id=?`, JSON.stringify(all), me.id);
+  return { me: meOut(getUser(me.id)) };
+});
+R('POST', /^\/api\/contacts\/share-tel$/, async ({ me, body }) => {
+  const id = +body.id; if (relation(me.id, id) !== 'contact') E(400, 'Cette personne doit d’abord être votre contact.');
+  if (body.on) run(`INSERT OR IGNORE INTO tel_share(owner,viewer) VALUES(?,?)`, me.id, id); else run(`DELETE FROM tel_share WHERE owner=? AND viewer=?`, me.id, id);
+  push(id, { t: 'contacts' }); return { ok: true };
+});
+// Tous les membres de Tam-Tam (profil public seulement), pour les découvrir et leur demander d'être amis.
+R('GET', /^\/api\/people$/, async ({ me, url }) => {
+  const off = Math.max(0, +url.searchParams.get('off') || 0);
+  const rows = qa(`SELECT * FROM users WHERE id<>? AND id NOT IN (SELECT CASE WHEN a=? THEN b ELSE a END FROM contacts WHERE (a=? OR b=?) AND status='accepted') ORDER BY id DESC LIMIT 31 OFFSET ?`, me.id, me.id, me.id, me.id, off);
+  return { users: rows.slice(0, 30).filter(u => !blockedEither(me.id, u.id)).map(u => userCard(u, me.id)), more: rows.length > 30 };
+});
+// Message à vue unique : ouvert une fois, puis effacé du serveur quand tous les destinataires l'ont vu.
+R('POST', /^\/api\/messages\/(\d+)\/opened$/, async ({ me, m }) => {
+  const msg = q1(`SELECT * FROM messages WHERE id=? AND once=1`, +m[1]); if (!msg || !isMember(msg.chat_id, me.id)) E(404, 'Message introuvable.');
+  if (msg.sender === me.id) return { ok: true };
+  run(`INSERT OR IGNORE INTO once_views(msg_id,user_id,at) VALUES(?,?,?)`, msg.id, me.id, now());
+  const others = memberIds(msg.chat_id).filter(x => x !== msg.sender), seen = new Set(qa(`SELECT user_id FROM once_views WHERE msg_id=?`, msg.id).map(r => r.user_id));
+  if (others.every(x => seen.has(x))) { if (msg.media) dropMedia(msg.media); run(`UPDATE messages SET text=NULL WHERE id=?`, msg.id); }
+  pushMany(memberIds(msg.chat_id), { t: 'msg', msg: msgOut(q1(`SELECT * FROM messages WHERE id=?`, msg.id)), update: true });
+  return { ok: true };
+});
+// Capture d'écran repérée sur l'appareil : on prévient tout le monde dans la discussion.
+R('POST', /^\/api\/chats\/(\d+)\/shot$/, async ({ me, m, body }) => {
+  const c = chatFor(me, +m[1]); if (tooMany('shot:' + me.id, 10, 60_000)) return { ok: true };
+  sysMsg(c.id, `📸 ${me.name} a fait une capture d’écran${body.once ? ' d’un message à vue unique' : ''}`); return { ok: true };
+});
 R('POST', /^\/api\/me\/password$/, async ({ me, body }) => {
   if (!checkPass(body.old, me.pass)) E(400, 'Le mot de passe actuel est incorrect.');
   if (String(body.pass || '').length < 8) E(400, 'Le nouveau mot de passe doit contenir au moins 8 caractères.');
@@ -382,7 +436,7 @@ R('POST', /^\/api\/contacts\/(request|accept|decline|remove)$/, async ({ me, m, 
   } else if (m[1] === 'accept') {
     if (!r || r.status !== 'pending' || r.requester === me.id) E(400, 'Aucune demande à accepter.');
     run(`UPDATE contacts SET status='accepted' WHERE a=? AND b=?`, a, b);
-  } else run(`DELETE FROM contacts WHERE a=? AND b=?`, a, b);
+  } else { run(`DELETE FROM contacts WHERE a=? AND b=?`, a, b); run(`DELETE FROM tel_share WHERE (owner=? AND viewer=?) OR (owner=? AND viewer=?)`, me.id, id, id, me.id); }
   push(id, { t: 'contacts' }); push(me.id, { t: 'contacts' });
   return { user: userCard(u, me.id) };
 });
@@ -665,7 +719,7 @@ R('POST', /^\/api\/chats\/(\d+)\/leave$/, async ({ me, m }) => {
 R('GET', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, url }) => {
   const c = chatFor(me, +m[1]), before = +url.searchParams.get('before') || 9e15;
   const rows = qa(`SELECT * FROM messages WHERE chat_id=? AND id<? ORDER BY id DESC LIMIT 60`, c.id, before).reverse();
-  return { messages: rows.map(msgOut), more: rows.length === 60 };
+  return { messages: rows.map(r => msgFor(r, me.id)), more: rows.length === 60 };
 });
 R('POST', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, body }) => {
   const c = chatFor(me, +m[1]);
@@ -684,7 +738,7 @@ R('POST', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, body }) => {
   if (body.media) { const md = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.media), me.id); if (!md) E(400, 'Photo introuvable.'); media = md.id; }
   if (!text && !media) E(400, 'Message vide.');
   const reply = body.replyTo && q1(`SELECT id FROM messages WHERE id=? AND chat_id=?`, +body.replyTo, c.id) ? +body.replyTo : null;
-  const id = Number(run(`INSERT INTO messages(chat_id,sender,kind,text,media,reply_to,e2e,created_at) VALUES(?,?,?,?,?,?,?,?)`, c.id, me.id, media ? 'image' : 'text', text || null, media, reply, e2e, now()).lastInsertRowid);
+  const id = Number(run(`INSERT INTO messages(chat_id,sender,kind,text,media,reply_to,e2e,once,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, c.id, me.id, media ? 'image' : 'text', text || null, media, body.once ? null : reply, e2e, body.once ? 1 : 0, now()).lastInsertRowid);
   if (media) run(`UPDATE media SET scope='chat', ref=? WHERE id=?`, c.id, media);
   run(`UPDATE members SET last_read=? WHERE chat_id=? AND user_id=?`, id, c.id, me.id);
   const msg = msgOut(q1(`SELECT * FROM messages WHERE id=?`, id));
@@ -730,7 +784,12 @@ R('GET', /^\/api\/media\/([A-Za-z0-9_-]{10,40})$/, async ({ me, m, res }) => {
   const md = q1(`SELECT * FROM media WHERE id=?`, m[1]); if (!md) E(404, 'Introuvable');
   let ok = md.owner === me.id;
   if (!ok && md.scope === 'avatar') ok = true;
-  if (!ok && md.scope === 'chat') ok = isMember(md.ref, me.id);
+  if (!ok && md.scope === 'ppub') ok = !blockedEither(md.owner, me.id);
+  if (!ok && md.scope === 'ppriv') { const o = getUser(md.owner); ok = !!o && canSeePriv(o, me.id); }
+  if (!ok && md.scope === 'chat') {
+    ok = isMember(md.ref, me.id);
+    const om = ok && q1(`SELECT id FROM messages WHERE media=? AND once=1`, md.id); if (om && q1(`SELECT 1 FROM once_views WHERE msg_id=? AND user_id=?`, om.id, me.id)) ok = false;
+  }
   if (!ok && md.scope === 'status') { const s = q1(`SELECT * FROM statuses WHERE id=?`, md.ref); ok = !!s && statusVisible(s, me.id); }
   if (!ok) E(404, 'Introuvable');
   res.writeHead(200, { 'Content-Type': md.mime, 'Cache-Control': 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' });

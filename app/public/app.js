@@ -240,7 +240,7 @@ function renderBody() {
 const chatTitle = c => c.type === 'group' ? c.name : uOf(c.peer).name;
 function snippet(m) {
   if (!m) return 'Aucun message';
-  if (m.deleted) return 'Message supprimé'; if (m.kind === 'sys') return m.text; if (m.locked) return m.text;
+  if (m.deleted) return 'Message supprimé'; if (m.kind === 'sys') return m.text; if (m.once) return m.media ? '① Photo à vue unique' : '① Message à vue unique'; if (m.locked) return m.text;
   return (m.media ? '📷 Photo' + (m.text ? ' · ' : '') : '') + (m.text || '');
 }
 function readState(c, m) {
@@ -261,7 +261,7 @@ function chatRows() {
   if (q && !(S.showHidden && Priv.isCode(q))) {
     Find.preload(q);
     list = list.filter(c => { if (chatTitle(c).toLowerCase().includes(q)) return true;
-      const m = (S.msgs.get(c.id) || []).slice().reverse().find(m => !m.deleted && m.kind !== 'sys' && typeof m.text === 'string' && m.text.toLowerCase().includes(q));
+      const m = (S.msgs.get(c.id) || []).slice().reverse().find(m => !m.deleted && !m.once && m.kind !== 'sys' && typeof m.text === 'string' && m.text.toLowerCase().includes(q));
       if (m) { hitMsg[c.id] = m; return true; } return false; });
   }
   if (S.showHidden) list.sort((a, b) => (b.hidden ? 1 : 0) - (a.hidden ? 1 : 0));
@@ -343,7 +343,9 @@ async function profSheet(id) {
     ${u.rel === 'contact' && u.pubkey ? `<p class="hint">${I.shield} Code de sécurité de ${esc(first(u.name))} : <b class="fp" id="peerFp">…</b></p>` : ''}
     ${u.limTheirs ? `<p class="hint">${I.lock} Ajouté par code QR : vous voyez seulement son profil public.</p>` : ''}
     ${u.limMine ? `<div class="qrnote"><span>${I.lock} Contact ajouté avec votre code QR : ${esc(first(u.name))} ne voit pas votre profil privé (téléphone, adresse…).</span><button class="btn sm ghost" type="button" data-act="sharePriv" data-id="${u.id}">Lui montrer mon profil privé</button></div>` : ''}
-    ${u.priv ? `<span class="lbl">${I.lock} Profil privé</span>${dl(PRIV_L.map(([k, l]) => [l, u.priv[k]])) || '<p class="hint">Rien de renseigné.</p>'}` : ''}
+    ${picsView(u.pics, 'Photos publiques')}
+    ${u.priv ? `<span class="lbl">${I.lock} Profil privé</span>${dl(PRIV_L.map(([k, l]) => [l, u.priv[k]])) || '<p class="hint">Rien de renseigné.</p>'}${picsView(u.privPics, 'Photos privées')}` : ''}
+    ${u.rel === 'contact' ? `<div class="qrnote"><span>${I.phone || ''} ${u.telMine ? `${esc(first(u.name))} voit votre numéro de téléphone.` : `${esc(first(u.name))} ne voit pas votre numéro de téléphone.`}</span><button class="btn sm ghost" type="button" data-act="shareTel" data-id="${u.id}" data-on="${u.telMine ? '' : '1'}">${u.telMine ? 'Ne plus montrer mon numéro' : 'Lui montrer mon numéro'}</button></div>` : ''}
     ${u.rel === 'sent' ? '<p class="hint">Demande envoyée : vous pourrez échanger quand elle sera acceptée.</p>' : u.rel === 'none' ? '<p class="hint">Après votre demande, cette personne doit l’accepter pour que vous puissiez échanger.</p>' : ''}
     ${u.rel === 'me' ? '<p class="hint" style="text-align:center">C’est ainsi que les autres membres voient votre profil.</p>' : `<div class="actions">${u.rel === 'received' ? `<button class="btn ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button>` : ''}${u.blocked ? '' : relBtn(u).replace(/btn sm/g, 'btn')}</div>
     <div class="actions" style="justify-content:flex-start">${u.rel === 'contact' ? `<button class="btn sm ghost" type="button" data-act="cRemoveAsk" data-id="${u.id}">Retirer des contacts</button>` : ''}<button class="btn sm ghost" type="button" data-act="${u.blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${u.blocked ? 'Débloquer' : 'Bloquer'}</button><button class="btn sm ghost" type="button" data-act="reportAsk" data-id="${u.id}">Signaler</button></div>`}</div>`, 'Profil');
@@ -393,14 +395,20 @@ function renderComposer() {
     const u = uOf(c.peer), mine = (S.me.blocked || []).some(b => b.id === c.peer);
     el.innerHTML = `<div class="blocked-bar">${I.block}<span>${mine ? `Vous avez bloqué ${esc(first(u.name))}.` : 'Vous ne pouvez plus écrire à cette personne.'}</span>${mine ? `<button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button>` : ''}</div>`; return;
   }
-  el.innerHTML = `<form class="composer" data-form="send" autocomplete="off"><div class="inwrap"><textarea id="msgIn" rows="1" placeholder="Message" aria-label="Écrire un message" maxlength="4000"></textarea>
-    <button class="ib" type="button" data-act="attach" aria-label="Joindre une photo">${I.clip}</button><button class="ib" type="button" data-act="camera" aria-label="Prendre une photo">${I.camera}</button></div>
+  el.innerHTML = `<form class="composer" data-form="send" autocomplete="off"><div class="inwrap"><textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
+    <button class="ib" type="button" data-act="attach" aria-label="Joindre une photo">${I.clip}</button><button class="ib" type="button" data-act="camera" aria-label="Prendre une photo">${I.camera}</button><button class="ib once-tog" type="button" data-act="onceTog" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique : le message ne peut être ouvert qu’une fois"><span class="one" aria-hidden="true">1</span></button></div>
     <input type="file" id="fileIn" accept="image/*" hidden><input type="file" id="camIn" accept="image/*" capture="environment" hidden>
     <button class="send" type="submit" aria-label="Envoyer">${I.send}</button></form>`;
 }
 function quoteHtml(c, id) {
   const q = (S.msgs.get(c.id) || []).find(x => x.id === id); if (!q) return '';
   return `<span class="quote" data-act="jump" data-id="${q.id}"><b>${esc(q.from === S.me.id ? 'Vous' : uOf(q.from).name)}</b><span>${esc(snippet(q))}</span></span>`;
+}
+function onceBubble(m, out) {
+  const what = m.media ? 'Photo' : 'Message', mine = (m.opened || []).includes(S.me.id);
+  if (out) return `<span class="once-b"><span class="one" aria-hidden="true">1</span><span>${what} à vue unique<small>${(m.opened || []).length ? 'Ouvert' : 'Envoyé'}</small></span></span>`;
+  if (mine) return `<span class="once-b done"><span class="one" aria-hidden="true">1</span><span>${what} à vue unique<small>Ouvert</small></span></span>`;
+  return `<button class="once-b go" type="button" data-act="onceOpen" data-id="${m.id}"><span class="one" aria-hidden="true">1</span><span>${what} à vue unique<small>Touchez pour ${m.media ? 'voir' : 'lire'} · une seule fois</small></span></button>`;
 }
 function renderMessages(keep) {
   const c = S.chats.get(S.chatId), box = $('#msgs'); if (!c || !box) return;
@@ -416,6 +424,7 @@ function renderMessages(keep) {
     const u = uOf(m.from);
     let body;
     if (m.deleted) body = `<span class="txt gone">${out ? 'Vous avez supprimé ce message' : 'Ce message a été supprimé'}</span>`;
+    else if (m.once) body = onceBubble(m, out);
     else body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? `<span class="txt">${esc(m.text)}</span>` : '');
     h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble">
       ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${body}<span class="meta">${hm(m.at)}${out && !m.deleted ? tick(readState(c, m)) : ''}</span>
@@ -469,7 +478,7 @@ function cropPhoto(file) {
     sheet(`${head('Ajuster la photo')}<div class="sheet-body crop-body"><p class="hint">Faites glisser la photo avec le doigt et zoomez pour bien cadrer votre visage.</p>
       <div class="crop-stage"><canvas id="cropCv" width="560" height="560" aria-label="Aperçu de la photo"></canvas></div>
       <div class="crop-tools"><span aria-hidden="true">−</span><input id="cropZoom" type="range" min="1" max="4" step="0.01" value="1" aria-label="Zoom"><span aria-hidden="true">+</span><button class="ib" type="button" data-act="cropRot" aria-label="Tourner la photo">${I.rotate || '⟳'}</button></div>
-      <div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="button" data-act="cropOk">Enregistrer la photo</button></div></div>`, 'Ajuster la photo');
+      <div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="button" data-act="cropOk">Utiliser cette photo</button></div></div>`, 'Ajuster la photo');
     const cv = $('#cropCv'); let drag = null;
     cv.addEventListener('pointerdown', e => { drag = {x: e.clientX, y: e.clientY, ox: S.crop.x, oy: S.crop.y}; cv.setPointerCapture(e.pointerId); });
     cv.addEventListener('pointermove', e => { if (!drag) return; const k = cv.width / cv.getBoundingClientRect().width; S.crop.x = drag.ox + (e.clientX - drag.x) * k; S.crop.y = drag.oy + (e.clientY - drag.y) * k; drawCrop(); });
@@ -513,7 +522,7 @@ async function sendText() {
   i.value = ''; autoGrow(i); const reply = S.replyTo; S.replyTo = null; renderReplyBar();
   try {
     const {env} = await E2E.seal({t}, recipients(c));
-    const body = {enc: env}; if (reply) body.replyTo = reply;
+    const body = {enc: env}; if (reply) body.replyTo = reply; if (S.once) { body.once = true; S.once = false; renderComposer(); }
     const r = await api(`/api/chats/${c.id}/messages`, body); onMsg(r.msg);
   } catch (e) { toast(e.message); i.value = t; }
 }
@@ -538,7 +547,7 @@ async function photoPreview(file) {
   let blob; try { blob = await shrink(file); } catch (e) { return toast(e.message); }
   const url = URL.createObjectURL(blob); S.pend = {blob, url};
   layer.innerHTML = `<div class="ph-prev" role="dialog" aria-modal="true" aria-label="Envoyer une photo"><div class="bar"><button class="ib" type="button" data-act="phCancel" aria-label="Annuler">${I.close}</button><b>Envoyer à ${esc(chatTitle(S.chats.get(S.chatId)))}</b></div>
-    <div class="stage"><img src="${url}" alt="Aperçu"></div><form class="send-row" data-form="photo"><input id="phCap" maxlength="1000" placeholder="Ajouter une légende…"><button class="send" type="submit" aria-label="Envoyer">${I.send}</button></form></div>`;
+    <div class="stage"><img src="${url}" alt="Aperçu"></div><form class="send-row" data-form="photo"><button class="ib once-tog" type="button" data-act="onceTog" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique"><span class="one" aria-hidden="true">1</span></button><input id="phCap" maxlength="1000" placeholder="Ajouter une légende…"><button class="send" type="submit" aria-label="Envoyer">${I.send}</button></form></div>`;
   $('#phCap').focus();
 }
 async function sendPhoto() {
@@ -546,7 +555,8 @@ async function sendPhoto() {
   try {
     const c = S.chats.get(S.chatId), sealed = await E2E.seal({t: cap}, recipients(c), await p.blob.arrayBuffer());
     const up = await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'});
-    const r = await api(`/api/chats/${c.id}/messages`, {media: up.id, enc: sealed.env}); E2E.imgs.set(r.msg.id, p.url); S.pend = null; closeLayer(); onMsg(r.msg);
+    const once = !!S.once; S.once = false;
+    const r = await api(`/api/chats/${c.id}/messages`, {media: up.id, enc: sealed.env, once}); if (once) URL.revokeObjectURL(p.url); else E2E.imgs.set(r.msg.id, p.url); S.pend = null; closeLayer(); renderComposer(); onMsg(r.msg);
   }
   catch (e) { toast(e.message); btn.disabled = false; }
 }
@@ -557,7 +567,17 @@ function sheet(html, label, focus) {
   layer.innerHTML = `<div class="layer" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(label)}">${html}</div></div>`;
   const f = layer.querySelector(focus || '.sheet button, .sheet input'); if (f) f.focus({preventScroll: true});
 }
-function closeLayer() { clearTimeout(svT); layer.innerHTML = ''; S.sv = null; if (S.pend) { URL.revokeObjectURL(S.pend.url); S.pend = null; } }
+function onceDone() {
+  const id = S.onceMsg; if (!id) return; S.onceMsg = null; if (S.onceUrl) { URL.revokeObjectURL(S.onceUrl); S.onceUrl = null; }
+  layer.innerHTML = '';
+  for (const list of S.msgs.values()) { const m = list.find(x => x.id === id); if (m) { m.opened = (m.opened || []).concat(S.me.id); m.text = ''; m.enc = null; } }
+  api(`/api/messages/${id}/opened`, {}).catch(() => {}); renderMessages(true);
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden && S.onceMsg) onceDone(); });
+// Capture d'écran repérée au clavier (ordinateur) : l'autre personne est prévenue.
+document.addEventListener('keyup', e => { if (e.key === 'PrintScreen' && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
+document.addEventListener('keydown', e => { if (e.metaKey && e.shiftKey && ['3', '4', '5'].includes(e.key) && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
+function closeLayer() { if (S.onceMsg) return onceDone(); clearTimeout(svT); layer.innerHTML = ''; S.sv = null; if (S.pend) { URL.revokeObjectURL(S.pend.url); S.pend = null; } }
 function confirmSheet(title, text, yes, act, id) {
   sheet(`${head(title)}<div class="sheet-body"><p>${text}</p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="button" data-act="${act}" data-id="${id || ''}">${yes}</button></div></div>`, title);
 }
@@ -600,7 +620,7 @@ function reportSheet(userId, chatId) {
 }
 function msgMenu(id) {
   const list = S.msgs.get(S.chatId) || [], m = list.find(x => x.id === id); if (!m || m.deleted) return;
-  sheet(`<div class="menu" style="padding-top:12px"><button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>${m.text ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
+  sheet(`<div class="menu" style="padding-top:12px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
     ${m.from === S.me.id ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde</button>` : ''}</div>`, 'Message');
 }
 
@@ -613,7 +633,7 @@ function stComposer() {
     <div class="stage"><div class="st-box" style="--h:${s.bg}">${s.url ? `<img src="${s.url}" alt="Aperçu">` : `<textarea id="stText" maxlength="700" placeholder="Écrivez votre statut…">${esc(s.text)}</textarea>`}</div></div>
     <div class="st-tools">
       <div class="seg" role="group" aria-label="Visibilité"><button type="button" data-act="stAud" data-a="public" aria-pressed="${s.aud === 'public'}">${I.globe}Public</button><button type="button" data-act="stAud" data-a="private" aria-pressed="${s.aud === 'private'}">${I.lock}Privé</button></div>
-      <p class="hint">${s.aud === 'private' ? `Visible seulement par votre groupe privé (${closeN} personne${closeN > 1 ? 's' : ''}). <button class="linkb" type="button" data-act="closeEdit">Choisir les personnes</button>` : 'Visible par tous vos contacts pendant 24 heures.'}</p>
+      ${s.aud === 'private' ? closePicker() : '<p class="hint">Visible par tous vos contacts pendant 24 heures.</p>'}
       ${s.url ? `<div class="field"><label for="stCap">Légende</label><input id="stCap" maxlength="700" value="${esc(s.text)}"></div><div><button class="btn sm ghost" type="button" data-act="stNoPhoto">Retirer la photo</button></div>`
       : `<div class="bgs">${BGS.map(h => `<button class="sw" type="button" style="--c:hsl(${h} 55% 35%)" data-act="stBg" data-h="${h}" aria-pressed="${s.bg === h}" aria-label="Couleur de fond"></button>`).join('')}</div><div><button class="btn sm ghost" type="button" data-act="stPhoto">${I.image}Ajouter une photo</button><input type="file" id="stIn" accept="image/*" hidden></div>`}
     </div></div>`;
@@ -680,9 +700,24 @@ function googleBox() {
     <p class="err" id="gErr" role="alert" hidden></p><p class="hint" id="gOk" role="status" hidden></p>
     <div class="actions" style="justify-content:flex-start"><button class="btn sm" type="submit">Enregistrer</button>${g.id ? '<button class="btn sm ghost" type="button" data-act="gOff">Désactiver</button>' : ''}</div></form>`;
 }
+function picsEdit(set) {
+  const list = (set === 'pub' ? S.me.pics : S.me.privPics) || [null, null, null];
+  return `<span class="lbl">${set === 'pub' ? 'Mes 3 photos publiques' : 'Mes 3 photos privées'}</span>
+    <p class="hint" style="margin:0">${set === 'pub' ? 'Tous les membres de Tam-Tam peuvent les voir, par exemple avant de vous demander en ami.' : 'Seules les personnes autorisées à voir votre profil privé peuvent les voir.'}</p>
+    <div class="ph3">${[0, 1, 2].map(i => list[i]
+      ? `<div class="ph3-it"><button class="ph3-img" type="button" data-act="picView" data-src="${esc(list[i])}" aria-label="Agrandir la photo ${i + 1}"><img src="${esc(list[i])}" alt=""></button><button class="ph3-x" type="button" data-act="picDel" data-set="${set}" data-i="${i}" aria-label="Retirer la photo ${i + 1}">${I.close}</button></div>`
+      : `<button class="ph3-add" type="button" data-act="picAdd" data-set="${set}" data-i="${i}"><span aria-hidden="true">+</span>Photo ${i + 1}</button>`).join('')}</div>
+    <input type="file" id="picIn" accept="image/*" hidden>`;
+}
+function closePicker() {
+  const cs = S.contacts.contacts, close = new Set(S.me.close || []);
+  return `<div class="grp-box"><b>${I.users} Mon groupe privé</b><p class="hint" style="margin:0">Ces amis voient vos statuts privés${S.me.privTo === 'grp' ? ' et votre profil privé verrouillé' : ''}.</p>
+    ${cs.length ? `<div class="picks">${cs.map(u => `<label class="pick"><input type="checkbox" name="close" value="${u.id}"${close.has(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint" style="margin:0">Ajoutez d’abord des amis.</p>'}</div>`;
+}
 function profileEditor() {
   const me = S.me, p = me.pub || {}, pv = me.priv || {}, t = S.profTab || 'pub';
   const f = (set, k, l, ph = '', type = 'text', max = 80) => `<div class="field"><label for="p-${k}">${l}</label>${k === 'bio' ? `<textarea id="p-${k}" data-set="${set}" data-k="${k}" rows="2" maxlength="200" placeholder="${ph}">${esc((set === 'pub' ? p : pv)[k] || '')}</textarea>` : `<input id="p-${k}" data-set="${set}" data-k="${k}" type="${type}" maxlength="${max}" placeholder="${ph}" value="${esc((set === 'pub' ? p : pv)[k] || '')}">`}</div>`;
+  const LOCKS = [['contacts', I.globe, 'Ouvert', 'Tous mes amis le voient'], ['grp', I.lock, 'Verrouillé', 'Seulement mon groupe privé'], ['me', I.lock, 'Fermé', 'Personne, sauf moi']];
   return `<div class="set myprof">
     <div class="set-top">${avatar(me, 'lg')}<div><b>${esc(me.name)}</b><span>@${esc(me.handle)}</span></div></div>
     <div class="seg" role="tablist"><button type="button" role="tab" data-act="profTab" data-t="pub" aria-selected="${t === 'pub'}">${I.globe}Profil public</button><button type="button" role="tab" data-act="profTab" data-t="priv" aria-selected="${t === 'priv'}">${I.lock}Profil privé</button></div>
@@ -692,13 +727,27 @@ function profileEditor() {
       <div class="field"><label for="p-handle">Pseudo</label><input id="p-handle" data-set="handle" maxlength="24" value="${esc(me.handle)}"></div>
       ${f('pub', 'bio', 'Qui suis-je', 'Quelques mots sur vous')}${f('pub', 'metier', 'Métier ou études')}${f('pub', 'ville', 'Ville', 'Ex. : Dakar, Sénégal')}${f('pub', 'langues', 'Langues parlées', 'Ex. : Français, Wolof')}${f('pub', 'interets', 'Centres d’intérêt')}
       <div class="field"><span class="lbl">Jour et mois de naissance</span><div class="bd-row"><select id="p-bd" data-set="pub" data-k="bd" aria-label="Jour"><option value="">Jour</option>${Array.from({length: 31}, (_, i) => `<option value="${i + 1}"${+p.bd === i + 1 ? ' selected' : ''}>${i + 1}</option>`).join('')}</select><select id="p-bm" data-set="pub" data-k="bm" aria-label="Mois"><option value="">Mois</option>${MOIS.map((m, i) => `<option value="${i + 1}"${+p.bm === i + 1 ? ' selected' : ''}>${m}</option>`).join('')}</select></div></div>
-      <div><button class="btn sm ghost" type="button" data-act="prof" data-id="${me.id}">${I.eye}Voir mon profil comme les autres</button></div></div>
-` : `<p class="note">${I.lock}Visible seulement par les personnes que vous choisissez. Votre numéro sert aussi à ce que vos proches vous retrouvent dans leur répertoire.</p>
+      ${picsEdit('pub')}
+      <div><button class="btn sm ghost" type="button" data-act="prof" data-id="${me.id}">${I.eye}Voir mon profil public comme les autres</button></div></div>
+` : `<p class="note">${I.lock}<span>Votre profil privé n’est jamais visible par des inconnus. Votre <b>numéro de téléphone</b> reste caché, même pour vos amis : vous le montrez seulement à qui vous voulez, depuis son profil (« Lui montrer mon numéro »).</span></p>
     <div class="set-block">
-      <span class="lbl">Qui peut le voir</span><div class="chips">${[['me', 'Moi uniquement'], ['contacts', 'Tous mes contacts'], ['grp', 'Mon groupe privé']].map(([v, l]) => `<button class="chip" type="button" data-act="privTo" data-v="${v}" aria-pressed="${me.privTo === v}">${l}</button>`).join('')}</div>
-      ${f('priv', 'tel', 'Téléphone', '+221 …', 'tel')}${f('priv', 'annee', 'Année de naissance', 'Ex. : 1985', 'number')}${f('priv', 'mail', 'E-mail de contact', '', 'email')}${f('priv', 'adresse', 'Quartier ou adresse')}${f('priv', 'travail', 'Lieu de travail')}${f('priv', 'famille', 'Famille')}</div>
+      <span class="lbl">Qui peut voir mon profil privé</span>
+      <div class="locks">${LOCKS.map(([v, ic, l, h]) => `<button class="lockopt" type="button" data-act="privTo" data-v="${v}" aria-pressed="${me.privTo === v}">${ic}<b>${l}</b><small>${h}</small></button>`).join('')}</div>
+      ${closePicker()}
+    </div>
+    <div class="set-block">
+      ${f('priv', 'tel', 'Téléphone (caché sauf accord)', '+221 …', 'tel')}${f('priv', 'annee', 'Année de naissance', 'Ex. : 1985', 'number')}${f('priv', 'mail', 'E-mail de contact', '', 'email')}${f('priv', 'adresse', 'Quartier ou adresse')}${f('priv', 'travail', 'Lieu de travail')}${f('priv', 'famille', 'Famille')}
+      ${picsEdit('priv')}</div>
 `}
   </div>`;
+}
+function pendAvatar() {
+  const P = S.pp; if (!P) return avatar(S.me, 'xl');
+  return P.kind === 'photo' ? `<span class="av xl"><img src="${esc(P.url)}" alt=""></span>` : `<span class="av xl" aria-hidden="true">${avFace(P.av)}</span>`;
+}
+function picsView(list, title) {
+  const l = (list || []).filter(Boolean); if (!l.length) return '';
+  return `<span class="lbl">${title}</span><div class="ph3">${l.map((u, i) => `<button class="ph3-img" type="button" data-act="picView" data-src="${esc(u)}" aria-label="Agrandir la photo ${i + 1}"><img src="${esc(u)}" alt=""></button>`).join('')}</div>`;
 }
 function settingsBody() {
   const me = S.me, p = me.pub || {}, pv = me.priv || {};
@@ -706,12 +755,12 @@ function settingsBody() {
   const cs = S.contacts.contacts, close = new Set(me.close || []);
   return `<div class="set">
     <div class="set-top">${avatar(me, 'lg')}<div><b>${esc(me.name)}</b><span>@${esc(me.handle)} · ${esc(me.email)}</span></div></div>
-    <div class="set-block"><h2>Photo ou avatar</h2>
-      <div class="actions" style="justify-content:flex-start"><button class="btn sm" type="button" data-act="mePhoto">${I.camera}${me.photo ? 'Changer la photo' : 'Mettre une photo'}</button>${S.showAv ? '' : `<button class="btn sm ghost" type="button" data-act="avShow">${me.photo ? 'Utiliser l’avatar' : 'Modifier mon avatar'}</button>`}<input type="file" id="meIn" accept="image/*" hidden></div>
-      ${S.showAv ? `<p class="hint">Composez votre avatar dessiné :</p>${avGallery(me.avatar, 'me')}<div><button class="btn sm ghost" type="button" data-act="avHide">Masquer les avatars</button></div>` : ''}</div>
+    <div class="set-block" id="phBlock"><h2>Photo de profil</h2>
+      <div class="ph-pick"><span class="pp-prev">${pendAvatar()}</span><p class="hint" style="margin:0">${S.pp ? 'Aperçu de votre nouveau choix. Il ne remplace votre photo actuelle qu’après « Valider ».' : 'Choisissez une photo ou un avatar dessiné. Rien ne change tant que vous n’avez pas validé.'}</p></div>
+      <div class="actions" style="justify-content:flex-start"><button class="btn sm" type="button" data-act="mePhoto">${I.camera}Prendre ou choisir une photo</button><button class="btn sm ghost" type="button" data-act="avShow" aria-pressed="${!!S.showAv}">Utiliser un avatar</button><input type="file" id="meIn" accept="image/*" hidden></div>
+      ${S.showAv ? `${avGallery(S.pp && S.pp.kind === 'av' ? S.pp.av : me.avatar, 'me')}` : ''}
+      ${S.pp ? `<div class="actions"><button class="btn ghost" type="button" data-act="pendCancel">Annuler</button><button class="btn" type="button" data-act="pendOk">Valider et changer ma photo de profil</button></div>` : ''}</div>
     <div class="set-block"><h2>${I.globe} Profil public et privé</h2><p class="hint">Ils se règlent dans <b>Discussions → Mon profil</b>.</p><div><button class="btn sm ghost" type="button" data-act="goProfile">Ouvrir mon profil</button></div></div>
-    <div class="set-block"><h2>Groupe privé</h2><p class="hint">Ces contacts voient vos statuts privés${me.privTo === 'grp' ? ' et votre profil privé' : ''}.</p>
-      ${cs.length ? `<div class="picks">${cs.map(u => `<label class="pick"><input type="checkbox" name="close" value="${u.id}"${close.has(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint">Ajoutez d’abord des contacts.</p>'}</div>
     <div class="set-block"><h2>${I.shield} Chiffrement de bout en bout</h2><p class="hint">Vos messages et vos photos sont chiffrés sur votre appareil : seules les personnes de la discussion peuvent les lire, pas même le serveur.</p>
       <p>Votre code de sécurité : <b class="fp" id="myFp">…</b></p><p class="hint">Comparez-le avec celui qu’un proche voit sur votre profil pour vérifier que personne ne s’est glissé entre vous.</p>
       <div><button class="btn sm ghost" type="button" data-act="keyCode">${I.key}Changer le code de sauvegarde</button></div></div>
@@ -724,7 +773,7 @@ function settingsBody() {
     ${me.admin ? mailBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.11</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.12</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -771,7 +820,7 @@ const ACT = {
     if (d.v === 't') a[d.k] = !a[d.k]; else a[d.k] = d.v;
     if (d.k === 'st' && FEM.includes(d.v) && !base.f) a.f = true;
     if (d.who === 'auth') { A.avatar = a; $('#avg-auth').outerHTML = avGallery(a, 'auth'); }
-    else { S.me.avatar = a; const g = $('#avg-me'); if (g) g.outerHTML = avGallery(a, 'me'); clearTimeout(S.avT); S.avT = setTimeout(() => saveNow({avatar: a, photo: S.me.photo ? null : undefined}, 'Avatar enregistré'), 600); }
+    else { if (S.pp && S.pp.url) URL.revokeObjectURL(S.pp.url); S.pp = {kind: 'av', av: a}; renderBody(); }
   },
   tab(d) { if (d.t === 'calls') Calls.log = null; S.tab = d.t; closeLayer(); renderAll(); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
   fab() { newChatSheet(); },
@@ -786,6 +835,7 @@ const ACT = {
   cRemoveAsk(d) { confirmSheet('Retirer ce contact ?', 'Vous ne pourrez plus vous écrire tant que l’un de vous n’aura pas renvoyé de demande.', 'Retirer', 'cRemoveYes', d.id); },
   cRemoveYes(d) { closeLayer(); contactAct('remove', +d.id); },
   prof(d) { profSheet(+d.id); },
+  async shareTel(d) { try { await api('/api/contacts/share-tel', {id: +d.id, on: !!d.on}); toast(d.on ? 'Votre numéro est maintenant visible pour ce contact.' : 'Votre numéro est de nouveau caché pour ce contact.'); profSheet(+d.id); } catch (e) { toast(e.message); } },
   blockAsk(d) { confirmSheet('Bloquer cette personne ?', 'Elle ne pourra plus vous écrire, vous ajouter ni voir vos statuts. Elle n’est pas prévenue.', 'Bloquer', 'blockYes', d.id); },
   async blockYes(d) { closeLayer(); try { const r = await api('/api/block', {id: +d.id, on: true}); S.me = r.me; await Promise.all([loadChats(), loadContacts(), loadStatuses()]); renderAll(); if (S.chatId) renderMain(); toast('Personne bloquée'); } catch (e) { toast(e.message); } },
   async unblock(d) { closeLayer(); try { const r = await api('/api/block', {id: +d.id, on: false}); S.me = r.me; await Promise.all([loadChats(), loadContacts()]); renderAll(); if (S.chatId) renderMain(); toast('Personne débloquée'); } catch (e) { toast(e.message); } },
@@ -798,7 +848,21 @@ const ACT = {
   async leaveYes() { closeLayer(); try { await api(`/api/chats/${S.chatId}/leave`, {}); S.chats.delete(S.chatId); S.chatId = null; $('.app').dataset.view = 'list'; renderMain(); renderAll(); } catch (e) { toast(e.message); } },
   attach() { $('#fileIn').click(); },
   camera() { $('#camIn').click(); },
-  phCancel() { closeLayer(); },
+  phCancel() { S.once = false; closeLayer(); renderComposer(); },
+  onceTog(d, el) { S.once = !S.once; document.querySelectorAll('.once-tog').forEach(b => b.setAttribute('aria-pressed', S.once)); const i = $('#msgIn'); if (i) i.placeholder = S.once ? 'Message à vue unique' : 'Message'; toast(S.once ? 'Vue unique activée : le prochain message ne pourra être ouvert qu’une fois.' : 'Vue unique désactivée'); },
+  async onceOpen(d) {
+    const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +d.id); if (!m) return;
+    let inner = '';
+    if (m.locked) return toast('Ce message ne peut pas être lu sur cet appareil.');
+    if (m.media) {
+      try { const r = await fetch(m.media, {credentials: 'same-origin'}); if (!r.ok) throw 0; const url = URL.createObjectURL(new Blob([await E2E.decBytes(m._key, m.miv, await r.arrayBuffer())], {type: 'image/jpeg'})); S.onceUrl = url; inner = `<img src="${url}" alt="Photo à vue unique" draggable="false">`; }
+      catch { return toast('Cette photo n’est plus disponible.'); }
+    }
+    S.onceMsg = m.id;
+    layer.innerHTML = `<div class="once-view" role="dialog" aria-modal="true" aria-label="Vue unique"><div class="bar"><button class="ib" type="button" data-act="onceClose" aria-label="Fermer">${I.close}</button><b>Vue unique</b><small>Se ferme et s’efface quand vous quittez</small></div>
+      <div class="stage">${inner}${m.text ? `<p class="once-txt">${esc(m.text)}</p>` : ''}</div></div>`;
+  },
+  onceClose() { onceDone(); },
   zoom(d, el) { layer.innerHTML = `<div class="zoom" data-act="close"><img src="${esc(el.src)}" alt="Photo"><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>`; },
   older() { loadOlder(); },
   msgMenu(d) { msgMenu(+d.id); },
@@ -830,13 +894,26 @@ const ACT = {
   async cropOk(d, el) {
     if (!S.crop) return; el.disabled = true;
     const cv = document.createElement('canvas'); cv.width = cv.height = 640; paintCrop(cv.getContext('2d'), 640, false);
-    try { const b = await new Promise((res, rej) => cv.toBlob(x => x ? res(x) : rej(new Error('Photo illisible.')), 'image/jpeg', .88)); const up = await upload(b);
-      URL.revokeObjectURL(S.crop.url); S.crop = null; closeLayer(); saveNow({photo: up.id}, 'Photo de profil enregistrée'); }
+    try { const b = await new Promise((res, rej) => cv.toBlob(x => x ? res(x) : rej(new Error('Photo illisible.')), 'image/jpeg', .88));
+      URL.revokeObjectURL(S.crop.url); S.crop = null; closeLayer();
+      if (S.pp && S.pp.url) URL.revokeObjectURL(S.pp.url); S.pp = {kind: 'photo', blob: b, url: URL.createObjectURL(b)}; S.showAv = false; renderBody();
+      setTimeout(() => { const el = $('#phBlock'); if (el) el.scrollIntoView({block: 'center'}); }, 50); toast('Vérifiez l’aperçu, puis touchez « Valider ».'); }
     catch (e) { el.disabled = false; toast(e.message); }
   },
   soundToggle() { Sound.set(!Sound.on()); renderBody(); if (Sound.on()) Sound.msg(true); },
   meNoPhoto() { saveNow({photo: null}, 'Avatar rétabli'); },
-  avShow() { S.showAv = true; if (S.me.photo) saveNow({photo: null}, 'Avatar affiché à la place de la photo'); else renderBody(); },
+  avShow() { S.showAv = !S.showAv; if (S.showAv && !(S.pp && S.pp.kind === 'av')) { if (S.pp && S.pp.url) URL.revokeObjectURL(S.pp.url); S.pp = {kind: 'av', av: avNorm(S.me.avatar)}; } renderBody(); },
+  pendCancel() { if (S.pp && S.pp.url) URL.revokeObjectURL(S.pp.url); S.pp = null; S.showAv = false; renderBody(); },
+  async pendOk(d, el) {
+    const P = S.pp; if (!P) return; el.disabled = true;
+    try {
+      if (P.kind === 'photo') { const up = await upload(P.blob); URL.revokeObjectURL(P.url); S.pp = null; S.showAv = false; await saveNow({photo: up.id}, 'Photo de profil changée'); }
+      else { S.pp = null; S.showAv = false; await saveNow({avatar: P.av, photo: null}, 'Avatar choisi comme photo de profil'); }
+    } catch (e) { el.disabled = false; toast(e.message); }
+  },
+  picAdd(d) { S.picSlot = {set: d.set, i: +d.i}; $('#picIn').click(); },
+  async picDel(d) { try { const r = await api('/api/me/pics', {set: d.set, slot: +d.i, media: null}); S.me = r.me; renderBody(); toast('Photo retirée'); } catch (e) { toast(e.message); } },
+  picView(d) { sheet(`${head('Photo')}<div class="sheet-body" style="align-items:center"><img class="pic-big" src="${esc(d.src)}" alt="Photo du profil"></div>`, 'Photo'); },
   avHide() { S.showAv = false; renderBody(); },
   profTab(d) { S.profTab = d.t; renderBody(); },
   goProfile() { S.tab = 'chats'; S.filt = 'me'; renderAll(); },
@@ -908,9 +985,11 @@ document.addEventListener('change', async e => {
   const t = e.target;
   if (t.id === 'fileIn' || t.id === 'camIn') { const f = t.files[0]; t.value = ''; if (f) photoPreview(f); }
   else if (t.id === 'stIn') { const f = t.files[0]; t.value = ''; if (!f) return; try { const b = await shrink(f); S.sc.blob = b; S.sc.url = URL.createObjectURL(b); stComposer(); } catch (er) { toast(er.message); } }
+  else if (t.id === 'picIn') { const f = t.files[0]; t.value = ''; const sl = S.picSlot; if (!f || !sl) return;
+    (async () => { try { toast('Envoi de la photo…'); const b = await shrink(f, 1280); const up = await upload(b); const r = await api('/api/me/pics', {set: sl.set, slot: sl.i, media: up.id}); S.me = r.me; renderBody(); toast('Photo ajoutée à votre profil'); } catch (e) { toast(e.message); } })(); }
   else if (t.id === 'meIn') { const f = t.files[0]; t.value = ''; if (!f) return; cropPhoto(f); }
   else if (t.id === 'cropZoom') { S.crop.z = +t.value; drawCrop(); }
-  else if (t.name === 'close') { const ids = [...document.querySelectorAll('input[name="close"]:checked')].map(i => +i.value); saveNow({close: ids}); }
+  else if (t.name === 'close') { const ids = [...(t.closest('.grp-box') || document).querySelectorAll('input[name="close"]:checked')].map(i => +i.value); saveNow({close: ids}, 'Groupe privé mis à jour'); }
   else if (t.dataset.set === 'name' || t.dataset.set === 'handle') saveNow({[t.dataset.set]: t.value}, 'Enregistré');
   else if (t.tagName === 'SELECT' && t.dataset.set) queueSave({[t.dataset.set]: {[t.dataset.k]: t.value}});
 });
@@ -1063,3 +1142,4 @@ function lockSetupSheet(step, first, msg) {
 const inviteText = () => `Rejoins-moi sur tam-tam, la messagerie qui fait vivre nos langues : ${S.lastInvite.url}`;
 
 boot();
+document.addEventListener('contextmenu', e => { if (e.target.closest('.once-view')) e.preventDefault(); });
