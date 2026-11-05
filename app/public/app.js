@@ -1,0 +1,674 @@
+/* tam-tam — version 1 (interface). Tout passe par le serveur : comptes, contacts, messages en direct, statuts. */
+'use strict';
+const $ = s => document.querySelector(s);
+const root = $('#root'), layer = $('#layer');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const first = n => String(n || '').split(' ')[0];
+const deN = n => (/^[aeiouyhâàéèêîïôûAEIOUYHÂÀÉÈÊÎÏÔÛ]/.test(n) ? 'd’' : 'de ') + n;
+const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const pad = n => String(n).padStart(2, '0');
+const hm = t => { const d = new Date(t); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+const dayStart = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+function dayLabel(t) {
+  const d = dayStart(t), today = dayStart(Date.now());
+  if (d === today) return 'Aujourd’hui'; if (d === today - 864e5) return 'Hier';
+  return new Date(t).toLocaleDateString('fr-FR', {weekday: 'long', day: 'numeric', month: 'long'});
+}
+const listTime = t => dayStart(t) === dayStart(Date.now()) ? hm(t) : dayStart(t) === dayStart(Date.now()) - 864e5 ? 'Hier' : new Date(t).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit'});
+function seenLabel(t) {
+  if (!t) return 'hors ligne';
+  const d = dayStart(t), today = dayStart(Date.now());
+  return 'vu ' + (d === today ? 'aujourd’hui' : d === today - 864e5 ? 'hier' : 'le ' + new Date(t).toLocaleDateString('fr-FR', {day: 'numeric', month: 'short'})) + ' à ' + hm(t);
+}
+
+/* ---------- état ---------- */
+const S = {me: null, chats: new Map(), msgs: new Map(), more: new Map(), contacts: {contacts: [], incoming: [], outgoing: [], suggestions: []},
+  statuses: {mine: {items: []}, others: []}, users: new Map(), tab: 'chats', chatId: null, q: '', typing: new Map(), lastFrom: new Map(), replyTo: null, invite: null};
+const uOf = id => S.users.get(id) || {id, name: 'Membre', handle: '', avatar: {d: 'm2', c: 'turq'}};
+function keepUsers(list) { for (const u of list || []) if (u) S.users.set(u.id, Object.assign(S.users.get(u.id) || {}, u)); }
+
+/* ---------- appels au serveur ---------- */
+async function api(path, body, opts = {}) {
+  const init = {method: body !== undefined ? 'POST' : 'GET', headers: {}, credentials: 'same-origin'};
+  if (body !== undefined) { if (opts.raw) { init.body = body; init.headers['Content-Type'] = opts.type; } else { init.body = JSON.stringify(body); init.headers['Content-Type'] = 'application/json'; } }
+  let r;
+  try { r = await fetch(path, init); } catch { throw new Error('Pas de connexion internet. Réessayez.'); }
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && S.me) { S.me = null; boot(); }
+  if (!r.ok) throw new Error(data.error || 'Erreur. Réessayez.');
+  return data;
+}
+let toastT;
+function toast(t) { let el = $('.toast'); if (!el) { el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); } el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, 3200); }
+
+/* ---------- avatars ---------- */
+function avatar(u, cls = '') {
+  if (!u) return `<span class="av ${cls}"></span>`;
+  if (u.photo) return `<span class="av ${cls}"><img src="${esc(u.photo)}" alt=""></span>`;
+  const a = u.avatar || {d: 'm2', c: 'turq'}, c = colOf(a.c);
+  return `<span class="av ${cls}" aria-hidden="true">${avSvg(a.d, c[2], c[3])}</span>`;
+}
+const avOn = (u, cls) => `<span class="avw">${avatar(u, cls)}${u && u.online ? '<span class="dot-on" aria-label="en ligne"></span>' : ''}</span>`;
+const grpAv = (c, cls = '') => `<span class="av grp ${cls}" style="--h:${(c.id * 47) % 360}" aria-hidden="true">${I.users}</span>`;
+function avGallery(sel, who) {
+  const d = sel.d, c = colOf(sel.c);
+  const row = g => Object.entries(AV_DESIGNS).filter(([, v]) => v[0] === g).map(([k, v]) => `<button class="avg-b" type="button" data-act="avPick" data-who="${who}" data-d="${k}" aria-pressed="${k === d}" aria-label="${v[1]}" title="${v[1]}">${avSvg(k, c[2], c[3])}</button>`).join('');
+  return `<div class="avg" id="avg-${who}"><span class="lbl">Féminins</span><div class="avg-row">${row('f')}</div><span class="lbl">Masculins</span><div class="avg-row">${row('m')}</div>
+    <span class="lbl">Couleur</span><div class="avg-sw">${AV_COLORS.map(x => `<button class="sw" type="button" data-act="avCol" data-who="${who}" data-c="${x[0]}" style="--c:${x[2]}" aria-pressed="${x[0] === sel.c}" aria-label="${x[1]}" title="${x[1]}"></button>`).join('')}</div></div>`;
+}
+
+/* ---------- connexion et inscription ---------- */
+const A = {mode: 'login', avatar: {d: 'm1', c: 'turq'}};
+async function boot() {
+  const p = location.pathname, inv = (p.match(/^\/invite\/([A-Za-z0-9_-]+)$/) || [])[1], rst = (p.match(/^\/reset\/([A-Za-z0-9_-]+)$/) || [])[1];
+  if (inv) S.invite = inv;
+  if (rst) { A.mode = 'reset'; A.token = rst; return renderAuth(); }
+  try { const r = await api('/api/me'); S.me = r.me; keepUsers([r.me]); history.replaceState(null, '', '/'); return start(); } catch {}
+  try { const m = await api('/api/meta' + (S.invite ? '?invite=' + encodeURIComponent(S.invite) : '')); A.meta = m; if (m.ownerSetup || m.invite) A.mode = 'register'; } catch { A.meta = {}; }
+  renderAuth();
+}
+function renderAuth(msg) {
+  const m = A.meta || {}, top = `<div class="auth-top">${LOGO}<h1 class="brand">${WORD}</h1></div>`;
+  let h;
+  if (A.mode === 'reset') h = `<h2>Nouveau mot de passe</h2><p class="hint">Choisissez un nouveau mot de passe pour votre compte.</p>
+    <div class="field"><label for="aPass">Nouveau mot de passe (8 caractères minimum)</label><div class="pw"><input id="aPass" type="password" autocomplete="new-password" minlength="8" required><button type="button" data-act="pwShow">Voir</button></div></div>
+    <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Enregistrer et me connecter</button>`;
+  else if (A.mode === 'register') h = `<h2>${m.ownerSetup ? 'Créer le compte du propriétaire' : 'Créer mon compte'}</h2>
+    <p class="hint">${m.ownerSetup ? `Premier compte de tam-tam${m.ownerEmail ? ` : utilisez l’adresse ${esc(m.ownerEmail)}` : ''}.` : m.invite ? `${esc(m.invite.by)} vous invite sur tam-tam.` : 'L’inscription se fait uniquement avec un lien d’invitation envoyé par un membre.'}</p>
+    ${m.ownerSetup || m.invite ? `<div class="field"><label for="aName">Votre nom</label><input id="aName" autocomplete="name" maxlength="40" required placeholder="Prénom et nom"></div>
+    <div class="field"><label for="aMail">Adresse e-mail</label><input id="aMail" type="email" autocomplete="email" required></div>
+    <div class="field"><label for="aPass">Mot de passe (8 caractères minimum)</label><div class="pw"><input id="aPass" type="password" autocomplete="new-password" minlength="8" required><button type="button" data-act="pwShow">Voir</button></div></div>
+    <span class="lbl">Votre avatar</span>${avGallery(A.avatar, 'auth')}
+    <label class="pick chk"><input type="checkbox" id="aAge"><span>J’ai 16 ans ou plus.</span></label>
+    <label class="pick chk"><input type="checkbox" id="aCgu"><span>J’ai lu et j’accepte les <a href="/conditions" target="_blank" rel="noopener">Conditions générales et la Politique de confidentialité</a>.</span></label>
+    <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Créer mon compte</button>` : ''}
+    <button class="linkb" type="button" data-act="authMode" data-m="login">J’ai déjà un compte : me connecter</button>`;
+  else h = `<h2>Bienvenue</h2><p class="hint">La messagerie qui fait vivre nos langues. Connectez-vous pour retrouver vos proches.</p>
+    <div class="field"><label for="aMail">Adresse e-mail</label><input id="aMail" type="email" autocomplete="email" required></div>
+    <div class="field"><label for="aPass">Mot de passe</label><div class="pw"><input id="aPass" type="password" autocomplete="current-password" required><button type="button" data-act="pwShow">Voir</button></div></div>
+    <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Me connecter</button>
+    ${m.invite || m.ownerSetup ? '<button class="linkb" type="button" data-act="authMode" data-m="register">Créer un compte</button>' : ''}
+    <p class="hint">Mot de passe oublié ? Demandez un lien de réinitialisation à la personne qui vous a invité ou au responsable de tam-tam.</p>`;
+  root.innerHTML = `<div class="auth"><form class="auth-card" data-form="auth" novalidate>${top}${h}</form></div>`;
+  const f = root.querySelector('input'); if (f) f.focus();
+}
+async function submitAuth() {
+  const v = id => ($('#' + id) || {}).value || '', err = t => { const e = $('#aErr'); if (e) { e.textContent = t; e.hidden = false; } };
+  const btn = root.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
+  try {
+    let r;
+    if (A.mode === 'reset') r = await api('/api/reset', {token: A.token, pass: v('aPass')});
+    else if (A.mode === 'register') r = await api('/api/register', {name: v('aName'), email: v('aMail'), pass: v('aPass'), avatar: A.avatar, age: $('#aAge').checked, cgu: $('#aCgu').checked, invite: S.invite});
+    else r = await api('/api/login', {email: v('aMail'), pass: v('aPass')});
+    S.me = r.me; keepUsers([r.me]); history.replaceState(null, '', '/'); start();
+  } catch (e) { err(e.message); if (btn) btn.disabled = false; }
+}
+
+/* ---------- démarrage ---------- */
+let es = null;
+async function start() {
+  root.innerHTML = `<div class="app" data-view="list"><aside class="side" id="side"><div class="head" id="head"></div><div class="body" id="body"></div><nav class="tabs" id="tabs" aria-label="Rubriques"></nav><button class="fab" id="fab" type="button" data-act="fab" aria-label="Nouvelle discussion">${I.newchat}</button></aside><main class="main" id="main"></main></div>`;
+  renderMain();
+  await Promise.all([loadChats(), loadContacts(), loadStatuses()]).catch(e => toast(e.message));
+  renderAll(); connect();
+}
+function connect() {
+  if (es) es.close();
+  es = new EventSource('/api/stream');
+  es.onmessage = e => { let ev; try { ev = JSON.parse(e.data); } catch { return; } onEvent(ev); };
+  es.onerror = () => { /* le navigateur se reconnecte tout seul */ };
+}
+let resync = null;
+function onEvent(ev) {
+  if (ev.t === 'hello') { if (resync) { loadChats().then(renderAll); if (S.chatId) loadMessages(S.chatId, true); } resync = true; }
+  else if (ev.t === 'msg') onMsg(ev.msg, ev.update);
+  else if (ev.t === 'read') { const c = S.chats.get(ev.chatId); if (c) { const m = c.members.find(x => x.id === ev.user); if (m) m.lastRead = Math.max(m.lastRead, ev.upTo); if (S.chatId === ev.chatId) renderMessages(true); if (S.tab === 'chats') renderBody(); } }
+  else if (ev.t === 'typing') { const k = ev.chatId; if (Date.now() - (S.lastFrom.get(k + ':' + ev.user) || 0) < 2500) return; S.typing.set(k, {user: ev.user, until: Date.now() + 4000}); refreshTyping(k); setTimeout(() => refreshTyping(k), 4100); }
+  else if (ev.t === 'contacts') { loadContacts().then(() => { renderTabs(); if (S.tab !== 'chats') renderBody(); }); loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }); }
+  else if (ev.t === 'chats') loadChats().then(() => { if (S.tab === 'chats') renderBody(); });
+  else if (ev.t === 'statuses') loadStatuses().then(renderStories);
+  else if (ev.t === 'presence') { const u = S.users.get(ev.id); if (u) { u.online = ev.online; u.lastSeen = ev.lastSeen; } if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }
+  else if (ev.t === 'report' && S.me.admin) toast('Nouveau signalement reçu (Réglages, Administration)');
+}
+function refreshTyping(chatId) { if (S.tab === 'chats') renderBody(); if (S.chatId === chatId) { renderChatHead(); } }
+const typingIn = id => { const t = S.typing.get(id); return t && t.until > Date.now() ? t.user : null; };
+
+async function loadChats() { const r = await api('/api/chats'); S.chats = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); S.chats.set(c.id, c); } }
+async function loadContacts() { const r = await api('/api/contacts'); S.contacts = r; keepUsers([...r.contacts, ...r.incoming, ...r.outgoing, ...r.suggestions]); }
+async function loadStatuses() { const r = await api('/api/statuses'); S.statuses = r; keepUsers([r.mine.user, ...r.others.map(g => g.user)]); }
+
+function renderAll() { renderTabs(); renderHead(); renderBody(); }
+
+/* ---------- liste ---------- */
+const TABS = [['chats', 'Discussions', I.chats], ['contacts', 'Contacts', I.users], ['settings', 'Réglages', I.settings]];
+function renderTabs() {
+  const unread = [...S.chats.values()].filter(c => c.unread > 0).length, inc = S.contacts.incoming.length;
+  $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${id === 'chats' && unread ? `<span class="badge" aria-label="${unread} non lues">${unread}</span>` : ''}${id === 'contacts' && inc ? `<span class="badge" aria-label="${inc} demandes">${inc}</span>` : ''}</button>`).join('');
+  $('#fab').hidden = S.tab !== 'chats';
+  const n = [...S.chats.values()].reduce((a, c) => a + (c.unread || 0), 0); document.title = n ? `(${n}) tam-tam` : 'tam-tam';
+}
+function renderHead() {
+  const h = $('#head');
+  if (S.tab === 'chats') {
+    h.innerHTML = `<div class="title"><button class="me-btn" type="button" data-act="tab" data-t="settings" aria-label="Mon profil">${avatar(S.me, 'xs')}</button>${LOGO}<h1 class="brand">${WORD}</h1><span class="grow"></span><button class="ib" type="button" data-act="tab" data-t="contacts" aria-label="Ajouter des contacts">${I.userplus}</button></div>
+      <div class="stories" id="stories" aria-label="Statuts"></div>
+      <label class="search">${I.search}<span class="sr">Rechercher</span><input id="q" type="search" placeholder="Rechercher une discussion" value="${esc(S.q)}" autocomplete="off"></label>`;
+    renderStories();
+  } else h.innerHTML = `<div class="title"><h1>${S.tab === 'contacts' ? 'Contacts' : 'Réglages'}</h1></div>`;
+}
+function renderBody() {
+  const b = $('#body'); if (!b) return;
+  if (S.tab === 'chats') b.innerHTML = chatRows();
+  else if (S.tab === 'contacts') b.innerHTML = contactsBody();
+  else b.innerHTML = settingsBody();
+}
+const chatTitle = c => c.type === 'group' ? c.name : uOf(c.peer).name;
+function snippet(m) {
+  if (!m) return 'Aucun message';
+  if (m.deleted) return 'Message supprimé'; if (m.kind === 'sys') return m.text;
+  return (m.media ? '📷 Photo' + (m.text ? ' · ' : '') : '') + (m.text || '');
+}
+function readState(c, m) {
+  const others = c.members.filter(x => x.id !== S.me.id);
+  return others.length && others.every(x => x.lastRead >= m.id) ? 'read' : 'sent';
+}
+const tick = st => st === 'read'
+  ? `<svg class="tick read" viewBox="0 0 18 12" role="img" aria-label="Lu"><path d="M1 6.5 4.5 10 12 1.5"/><path d="M7.6 8.9 8.7 10 16.2 1.5"/></svg>`
+  : `<svg class="tick" viewBox="0 0 18 12" role="img" aria-label="Envoyé"><path d="M4 6.5 7.5 10 15 1.5"/></svg>`;
+function chatRows() {
+  const q = S.q.trim().toLowerCase();
+  let list = [...S.chats.values()].filter(c => c.last || c.type === 'group' || c.id === S.chatId);
+  if (q) list = list.filter(c => chatTitle(c).toLowerCase().includes(q));
+  list.sort((a, b) => (b.last?.at || b.createdAt) - (a.last?.at || a.createdAt));
+  if (!list.length) return q ? `<p class="empty">Aucune discussion ne correspond.</p>`
+    : `<div class="empty"><p>Aucune discussion pour l’instant.</p><p>Invitez vos proches depuis l’onglet <b>Contacts</b>, puis appuyez sur le bouton turquoise pour leur écrire.</p><button class="btn" type="button" data-act="tab" data-t="contacts">${I.userplus}Inviter mes proches</button></div>`;
+  return list.map(c => {
+    const m = c.last, tu = typingIn(c.id), u = c.type === 'direct' ? uOf(c.peer) : null;
+    let prev = esc(snippet(m));
+    if (tu) prev = `<span class="typing-t">${c.type === 'group' ? esc(first(uOf(tu).name)) + ' écrit…' : 'écrit…'}</span>`;
+    else if (m && c.type === 'group' && m.from && m.kind !== 'sys') prev = esc(m.from === S.me.id ? 'Vous' : first(uOf(m.from).name)) + ' : ' + prev;
+    const mine = m && m.from === S.me.id && !m.deleted && m.kind !== 'sys';
+    return `<button class="row${c.id === S.chatId ? ' active' : ''}" type="button" data-act="open" data-id="${c.id}">
+      ${c.type === 'group' ? grpAv(c) : avOn(u)}
+      <span class="row-name">${esc(chatTitle(c))}</span><span class="row-time${c.unread ? ' new' : ''}">${m ? listTime(m.at) : ''}</span>
+      <span class="row-prev">${mine && !tu ? tick(readState(c, m)) : ''}<span>${prev}</span>${c.unread ? `<span class="badge" style="margin-left:auto">${c.unread}</span>` : ''}</span></button>`;
+  }).join('');
+}
+
+/* ---------- statuts : barre ---------- */
+function renderStories() {
+  const el = $('#stories'); if (!el) return;
+  const mine = S.statuses.mine, has = mine.items.length;
+  el.innerHTML = `<button class="story" type="button" data-act="${has ? 'stOpen' : 'stNew'}" data-u="${S.me.id}" aria-label="Mon statut"><span class="ring${has ? '' : ' empty'}">${avatar(S.me)}<span class="plus" data-act="stNew" role="button" aria-label="Ajouter un statut">${I.plus}</span></span><span class="story-n">Mon statut</span></button>`
+    + S.statuses.others.map(g => `<button class="story" type="button" data-act="stOpen" data-u="${g.user.id}" aria-label="Statut ${esc(deN(g.user.name))}"><span class="ring${g.allSeen ? ' seen' : ''}">${avatar(g.user)}${g.items.some(i => i.aud === 'private') ? `<span class="lock" aria-hidden="true">${I.lock}</span>` : ''}</span><span class="story-n">${esc(first(g.user.name))}</span></button>`).join('');
+}
+
+/* ---------- contacts ---------- */
+function relBtn(u) {
+  if (u.rel === 'contact') return `<button class="btn sm ghost" type="button" data-act="write" data-id="${u.id}">Écrire</button>`;
+  if (u.rel === 'received') return `<button class="btn sm" type="button" data-act="cAccept" data-id="${u.id}">Accepter</button>`;
+  if (u.rel === 'sent') return `<button class="btn sm ghost" type="button" data-act="cRemove" data-id="${u.id}">Annuler</button>`;
+  return `<button class="btn sm" type="button" data-act="cRequest" data-id="${u.id}">${I.plus}Ajouter</button>`;
+}
+const userRow = (u, extra) => `<div class="row">${avOn(u)}<button class="row-name linkless" type="button" data-act="prof" data-id="${u.id}" style="border:0;background:none;padding:0;text-align:left">${esc(u.name)}</button><span class="row-end">${extra || relBtn(u)}</span>
+  <span class="row-prev"><span>@${esc(u.handle)}${u.pub && u.pub.ville ? ' · ' + esc(u.pub.ville) : ''}${u.mutual ? ` · ${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun` : ''}</span></span></div>`;
+function contactsBody() {
+  const C = S.contacts;
+  return `<div class="invite-box"><b>Invitez vos proches</b><span class="hint">Seules les personnes qui ont un lien d’invitation peuvent s’inscrire. La personne invitée devient directement votre contact.</span>
+      ${S.lastInvite ? `<div class="invite-url">${esc(S.lastInvite.url)}</div><div class="actions" style="justify-content:flex-start"><button class="btn sm" type="button" data-act="invCopy">${I.copy}Copier le lien</button><a class="btn sm ghost" href="https://wa.me/?text=${encodeURIComponent('Rejoins-moi sur tam-tam, la messagerie qui fait vivre nos langues : ' + S.lastInvite.url)}" target="_blank" rel="noopener">Envoyer par WhatsApp</a></div><span class="hint">Valable 14 jours, pour 20 personnes au plus.</span>`
+      : `<div><button class="btn" type="button" data-act="invNew">${I.userplus}Créer un lien d’invitation</button></div>`}</div>
+    <div style="padding:0 16px"><label class="search">${I.search}<span class="sr">Chercher un membre</span><input id="fq" type="search" placeholder="Chercher un membre : nom, @pseudo ou e-mail" autocomplete="off" value="${esc(S.fq || '')}"></label></div>
+    <div id="fres">${S.fres ? (S.fres.length ? S.fres.map(u => userRow(u)).join('') : '<p class="empty">Personne ne correspond.</p>') : ''}</div>
+    ${C.incoming.length ? `<div class="sec">Demandes reçues · ${C.incoming.length}</div>${C.incoming.map(u => userRow(u, `<button class="btn sm ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button><button class="btn sm" type="button" data-act="cAccept" data-id="${u.id}">Accepter</button>`)).join('')}` : ''}
+    <div class="sec">Mes contacts · ${C.contacts.length}</div>${C.contacts.length ? C.contacts.map(u => userRow(u)).join('') : '<p class="empty">Pas encore de contact. Envoyez un lien d’invitation à vos proches.</p>'}
+    ${C.outgoing.length ? `<div class="sec">Demandes envoyées</div>${C.outgoing.map(u => userRow(u)).join('')}` : ''}
+    ${C.suggestions.length ? `<div class="sec">Vous les connaissez peut-être</div>${C.suggestions.map(u => userRow(u)).join('')}` : ''}<div style="height:20px"></div>`;
+}
+let fqT;
+async function searchPeople(q) {
+  S.fq = q; clearTimeout(fqT);
+  if (q.trim().length < 2) { S.fres = null; $('#fres').innerHTML = ''; return; }
+  fqT = setTimeout(async () => { try { const r = await api('/api/users/search?q=' + encodeURIComponent(q.trim())); keepUsers(r.users); S.fres = r.users; const el = $('#fres'); if (el) el.innerHTML = r.users.length ? r.users.map(u => userRow(u)).join('') : '<p class="empty">Personne ne correspond.</p>'; } catch (e) { toast(e.message); } }, 300);
+}
+async function contactAct(kind, id) {
+  try { const r = await api('/api/contacts/' + kind, {id}); keepUsers([r.user]); await loadContacts(); if (S.fres) S.fres = S.fres.map(u => u.id === id ? r.user : u); renderTabs(); renderBody();
+    toast({request: 'Demande envoyée : la personne doit l’accepter.', accept: 'Vous êtes maintenant en contact.', decline: 'Demande refusée. La personne n’est pas prévenue.', remove: 'C’est fait.'}[kind]);
+    if (layer.firstChild && $('.prof')) profSheet(id);
+  } catch (e) { toast(e.message); }
+}
+
+/* ---------- profil d'une personne ---------- */
+const PUB_L = [['bio', 'Qui suis-je'], ['metier', 'Métier ou études'], ['ville', 'Ville'], ['langues', 'Langues parlées'], ['interets', 'Centres d’intérêt']];
+const PRIV_L = [['tel', 'Téléphone'], ['annee', 'Année de naissance'], ['mail', 'E-mail de contact'], ['adresse', 'Quartier ou adresse'], ['travail', 'Lieu de travail'], ['famille', 'Famille']];
+function dl(rows) { const r = rows.filter(x => x[1]); return r.length ? `<dl class="dl">${r.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : ''; }
+async function profSheet(id) {
+  let u = uOf(id);
+  try { const r = await api('/api/users/' + id); u = r.user; keepUsers([u]); } catch (e) { return toast(e.message); }
+  const p = u.pub || {}, bd = p.bd && p.bm ? `${p.bd} ${MOIS[p.bm - 1]}` : '';
+  sheet(`${head('Profil')}<div class="sheet-body"><div class="prof">${avatar(u, 'xl')}<b>${esc(u.name)}</b><span>@${esc(u.handle)}</span>${u.rel === 'contact' ? `<small>${u.online ? 'En ligne' : seenLabel(u.lastSeen)}</small>` : ''}${u.mutual ? `<small>${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun</small>` : ''}</div>
+    ${dl(PUB_L.map(([k, l]) => [l, p[k]]).concat([['Anniversaire', bd]])) || '<p class="hint" style="text-align:center">Profil public encore vide.</p>'}
+    ${u.priv ? `<span class="lbl">${I.lock} Profil privé</span>${dl(PRIV_L.map(([k, l]) => [l, u.priv[k]])) || '<p class="hint">Rien de renseigné.</p>'}` : ''}
+    ${u.rel === 'sent' ? '<p class="hint">Demande envoyée : vous pourrez échanger quand elle sera acceptée.</p>' : u.rel === 'none' ? '<p class="hint">Après votre demande, cette personne doit l’accepter pour que vous puissiez échanger.</p>' : ''}
+    ${u.rel === 'me' ? '<p class="hint" style="text-align:center">C’est ainsi que les autres membres voient votre profil.</p>' : `<div class="actions">${u.rel === 'received' ? `<button class="btn ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button>` : ''}${u.blocked ? '' : relBtn(u).replace(/btn sm/g, 'btn')}</div>
+    <div class="actions" style="justify-content:flex-start">${u.rel === 'contact' ? `<button class="btn sm ghost" type="button" data-act="cRemoveAsk" data-id="${u.id}">Retirer des contacts</button>` : ''}<button class="btn sm ghost" type="button" data-act="${u.blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${u.blocked ? 'Débloquer' : 'Bloquer'}</button><button class="btn sm ghost" type="button" data-act="reportAsk" data-id="${u.id}">Signaler</button></div>`}</div>`, 'Profil');
+}
+
+/* ---------- discussion ---------- */
+async function openChat(id) {
+  S.chatId = id; S.replyTo = null;
+  $('.app').dataset.view = 'chat'; renderMain(); if (S.tab === 'chats') renderBody();
+  await loadMessages(id);
+}
+async function loadMessages(id, fresh) {
+  try {
+    const r = await api(`/api/chats/${id}/messages`); S.msgs.set(id, r.messages); S.more.set(id, r.more);
+    if (S.chatId === id) { renderMessages(); markRead(); }
+  } catch (e) { toast(e.message); }
+}
+async function loadOlder() {
+  const id = S.chatId, list = S.msgs.get(id) || []; if (!list.length) return;
+  const box = $('#msgs'), h0 = box.scrollHeight;
+  const r = await api(`/api/chats/${id}/messages?before=${list[0].id}`); S.msgs.set(id, r.messages.concat(list)); S.more.set(id, r.more);
+  renderMessages(true); box.scrollTop = box.scrollHeight - h0;
+}
+function renderMain() {
+  const main = $('#main'); if (!main) return;
+  const c = S.chats.get(S.chatId);
+  if (!c) { main.innerHTML = `<div class="chat-empty">${LOGO}<b>${WORD}</b><span>Choisissez une discussion, ou invitez vos proches depuis l’onglet Contacts.</span></div>`; return; }
+  main.innerHTML = `<header class="chat-head" id="chatHead"></header><div class="msgs" id="msgs" tabindex="0" aria-label="Messages"></div><div id="replyBar"></div><div id="compose"></div>`;
+  renderChatHead(); renderComposer(); renderMessages();
+  $('#msgs').addEventListener('scroll', e => { if (e.target.scrollTop < 40 && S.more.get(S.chatId) && !S.loadingOld) { S.loadingOld = true; loadOlder().finally(() => { S.loadingOld = false; }); } });
+}
+function renderChatHead() {
+  const c = S.chats.get(S.chatId), h = $('#chatHead'); if (!c || !h) return;
+  const tu = typingIn(c.id); let sub;
+  if (c.type === 'group') sub = tu ? `<small class="on">${esc(first(uOf(tu).name))} écrit…</small>` : `<small>${c.members.map(m => m.id === S.me.id ? 'Vous' : first(uOf(m.id).name)).join(', ')}</small>`;
+  else { const u = uOf(c.peer); sub = tu ? '<small class="on">écrit…</small>' : `<small${u.online ? ' class="on"' : ''}>${u.online ? 'en ligne' : seenLabel(u.lastSeen)}</small>`; }
+  h.innerHTML = `<button class="ib back" type="button" data-act="back" aria-label="Retour">${I.back}</button>
+    <button class="chat-id" type="button" data-act="chatInfo">${c.type === 'group' ? grpAv(c, 'sm') : avatar(uOf(c.peer), 'sm')}<span style="min-width:0"><b>${esc(chatTitle(c))}</b>${sub}</span></button>
+    <button class="ib" type="button" data-act="chatMenu" aria-label="Options de la discussion">${I.more}</button>`;
+}
+function renderComposer() {
+  const c = S.chats.get(S.chatId), el = $('#compose'); if (!c || !el) return;
+  if (c.type === 'direct' && c.blocked) {
+    const u = uOf(c.peer), mine = (S.me.blocked || []).some(b => b.id === c.peer);
+    el.innerHTML = `<div class="blocked-bar">${I.block}<span>${mine ? `Vous avez bloqué ${esc(first(u.name))}.` : 'Vous ne pouvez plus écrire à cette personne.'}</span>${mine ? `<button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button>` : ''}</div>`; return;
+  }
+  el.innerHTML = `<form class="composer" data-form="send" autocomplete="off"><div class="inwrap"><textarea id="msgIn" rows="1" placeholder="Message" aria-label="Écrire un message" maxlength="4000"></textarea>
+    <button class="ib" type="button" data-act="attach" aria-label="Joindre une photo">${I.clip}</button><button class="ib" type="button" data-act="camera" aria-label="Prendre une photo">${I.camera}</button></div>
+    <input type="file" id="fileIn" accept="image/*" hidden><input type="file" id="camIn" accept="image/*" capture="environment" hidden>
+    <button class="send" type="submit" aria-label="Envoyer">${I.send}</button></form>`;
+}
+function quoteHtml(c, id) {
+  const q = (S.msgs.get(c.id) || []).find(x => x.id === id); if (!q) return '';
+  return `<span class="quote" data-act="jump" data-id="${q.id}"><b>${esc(q.from === S.me.id ? 'Vous' : uOf(q.from).name)}</b><span>${esc(snippet(q))}</span></span>`;
+}
+function renderMessages(keep) {
+  const c = S.chats.get(S.chatId), box = $('#msgs'); if (!c || !box) return;
+  const list = S.msgs.get(c.id); if (!list) { box.innerHTML = '<p class="empty">Chargement…</p>'; return; }
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+  let h = S.more.get(c.id) ? '<button class="btn sm ghost more-old" type="button" data-act="older">Messages plus anciens</button>' : '';
+  if (!list.length) h += `<div class="sys">Début de la discussion. Les messages sont visibles uniquement par ${c.type === 'group' ? 'les membres du groupe' : 'vous deux'}.</div>`;
+  let pd = null, pf = null;
+  for (const m of list) {
+    const d = dayStart(m.at); if (d !== pd) { h += `<div class="day">${dayLabel(m.at)}</div>`; pd = d; pf = null; }
+    if (m.kind === 'sys') { h += `<div class="sys">${esc(m.text)}</div>`; pf = null; continue; }
+    const out = m.from === S.me.id, isFirst = m.from !== pf; pf = m.from;
+    const u = uOf(m.from);
+    let body;
+    if (m.deleted) body = `<span class="txt gone">${out ? 'Vous avez supprimé ce message' : 'Ce message a été supprimé'}</span>`;
+    else body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">` : '') + (m.text ? `<span class="txt">${esc(m.text)}</span>` : '');
+    h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble">
+      ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${body}<span class="meta">${hm(m.at)}${out && !m.deleted ? tick(readState(c, m)) : ''}</span>
+      ${m.deleted ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message">${I.chev}</button>`}</div></div>`;
+  }
+  const tu = typingIn(c.id); if (tu) h += `<div class="msg in first typing-b"><div class="bubble" aria-label="En train d’écrire"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
+  box.innerHTML = h;
+  if (!keep || atBottom) box.scrollTop = box.scrollHeight;
+}
+function onMsg(m, update) {
+  let c = S.chats.get(m.chatId);
+  if (!c) { S.typing.delete(m.chatId); if (m.from) S.lastFrom.set(m.chatId + ':' + m.from, Date.now()); loadChats().then(() => { renderAll(); const cc = S.chats.get(m.chatId); if (cc && m.from !== S.me.id && !update) notify(cc, m); }); return; }
+  const list = S.msgs.get(m.chatId);
+  if (list) { const i = list.findIndex(x => x.id === m.id); if (i >= 0) list[i] = m; else if (!update) list.push(m); }
+  if (!update || (c.last && c.last.id === m.id)) c.last = m;
+  if (m.from !== S.me.id && !update) {
+    S.typing.delete(m.chatId); S.lastFrom.set(m.chatId + ':' + m.from, Date.now());
+    const visible = S.chatId === m.chatId && !document.hidden && ($('.app').dataset.view === 'chat' || matchMedia('(min-width:821px)').matches);
+    if (visible) markRead(); else { c.unread = (c.unread || 0) + 1; notify(c, m); }
+  } else if (m.from === S.me.id) { const me = c.members.find(x => x.id === S.me.id); if (me) me.lastRead = Math.max(me.lastRead, m.id); }
+  if (S.chatId === m.chatId) renderMessages(true);
+  renderTabs(); if (S.tab === 'chats') renderBody();
+}
+let readT;
+function markRead() {
+  const c = S.chats.get(S.chatId), list = S.msgs.get(S.chatId); if (!c || !list || !list.length) return;
+  const last = list[list.length - 1].id; c.unread = 0; const me = c.members.find(x => x.id === S.me.id); if (me) me.lastRead = Math.max(me.lastRead, last);
+  clearTimeout(readT); readT = setTimeout(() => api(`/api/chats/${c.id}/read`, {upTo: last}).catch(() => {}), 300);
+  renderTabs(); if (S.tab === 'chats') renderBody();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.chatId) markRead(); });
+function notify(c, m) {
+  const who = m.from ? uOf(m.from).name : '', t = c.type === 'group' ? `${c.name} · ${first(who)}` : who;
+  if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+    try { const n = new Notification(t, {body: snippet(m).slice(0, 120), tag: 'tt-' + c.id, icon: '/icon.svg'}); n.onclick = () => { window.focus(); openChat(c.id); n.close(); }; } catch {}
+  } else if (!document.hidden) toast(`${t} : ${snippet(m).slice(0, 80)}`);
+}
+let typT = 0;
+async function sendText() {
+  const i = $('#msgIn'), t = i.value.trim(); if (!t || !S.chatId) return;
+  const body = {text: t}; if (S.replyTo) body.replyTo = S.replyTo;
+  i.value = ''; autoGrow(i); S.replyTo = null; renderReplyBar();
+  try { const r = await api(`/api/chats/${S.chatId}/messages`, body); onMsg(r.msg); } catch (e) { toast(e.message); i.value = t; }
+}
+function autoGrow(t) { t.style.height = '42px'; t.style.height = Math.min(130, t.scrollHeight) + 'px'; }
+function renderReplyBar() {
+  const c = S.chats.get(S.chatId), el = $('#replyBar'); if (!el || !c) return;
+  el.innerHTML = S.replyTo ? `<div class="replybar">${quoteHtml(c, S.replyTo)}<button class="ib" type="button" data-act="replyCancel" aria-label="Annuler la réponse">${I.close}</button></div>` : '';
+}
+
+/* ---------- photos ---------- */
+function shrink(file, max = 1600) {
+  return new Promise((res, rej) => {
+    if (!file || !/^image\//.test(file.type)) return rej(new Error('Choisissez une photo.'));
+    const url = URL.createObjectURL(file), im = new Image();
+    im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), cv = document.createElement('canvas'); cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k); cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url); cv.toBlob(b => b ? res(b) : rej(new Error('Photo illisible.')), 'image/jpeg', .85); };
+    im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Cette photo n’a pas pu être lue.')); };
+    im.src = url;
+  });
+}
+async function upload(blob) { return api('/api/media', blob, {raw: true, type: 'image/jpeg'}); }
+async function photoPreview(file) {
+  let blob; try { blob = await shrink(file); } catch (e) { return toast(e.message); }
+  const url = URL.createObjectURL(blob); S.pend = {blob, url};
+  layer.innerHTML = `<div class="ph-prev" role="dialog" aria-modal="true" aria-label="Envoyer une photo"><div class="bar"><button class="ib" type="button" data-act="phCancel" aria-label="Annuler">${I.close}</button><b>Envoyer à ${esc(chatTitle(S.chats.get(S.chatId)))}</b></div>
+    <div class="stage"><img src="${url}" alt="Aperçu"></div><form class="send-row" data-form="photo"><input id="phCap" maxlength="1000" placeholder="Ajouter une légende…"><button class="send" type="submit" aria-label="Envoyer">${I.send}</button></form></div>`;
+  $('#phCap').focus();
+}
+async function sendPhoto() {
+  const p = S.pend; if (!p) return; const cap = $('#phCap').value.trim(), btn = layer.querySelector('.send'); btn.disabled = true;
+  try { const up = await upload(p.blob); const r = await api(`/api/chats/${S.chatId}/messages`, {media: up.id, text: cap}); closeLayer(); onMsg(r.msg); }
+  catch (e) { toast(e.message); btn.disabled = false; }
+}
+
+/* ---------- feuilles ---------- */
+const head = t => `<div class="sheet-head"><h2>${t}</h2><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>`;
+function sheet(html, label, focus) {
+  layer.innerHTML = `<div class="layer" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(label)}">${html}</div></div>`;
+  const f = layer.querySelector(focus || '.sheet button, .sheet input'); if (f) f.focus({preventScroll: true});
+}
+function closeLayer() { clearTimeout(svT); layer.innerHTML = ''; S.sv = null; if (S.pend) { URL.revokeObjectURL(S.pend.url); S.pend = null; } }
+function confirmSheet(title, text, yes, act, id) {
+  sheet(`${head(title)}<div class="sheet-body"><p>${text}</p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="button" data-act="${act}" data-id="${id || ''}">${yes}</button></div></div>`, title);
+}
+function newChatSheet() {
+  const cs = S.contacts.contacts;
+  sheet(`${head('Nouvelle discussion')}<div class="menu"><button type="button" data-act="groupNew">${I.users}Nouveau groupe</button><button type="button" data-act="tab" data-t="contacts">${I.userplus}Inviter ou ajouter des contacts</button></div>
+    <div class="sec" style="padding-top:0">Mes contacts</div><div class="sheet-scroll">${cs.length ? cs.map(u => `<button class="row" type="button" data-act="write" data-id="${u.id}">${avOn(u)}<span class="row-name">${esc(u.name)}</span><span class="row-prev"><span>@${esc(u.handle)}</span></span></button>`).join('') : '<p class="empty">Pas encore de contact.</p>'}</div>`, 'Nouvelle discussion');
+}
+function groupSheet(chat) {
+  const inG = chat ? new Set(chat.members.map(m => m.id)) : new Set(), cs = S.contacts.contacts.filter(u => !inG.has(u.id));
+  sheet(`${head(chat ? 'Ajouter des membres' : 'Nouveau groupe')}<form data-form="${chat ? 'groupAdd' : 'group'}"><div class="sheet-body">
+    ${chat ? '' : '<div class="field"><label for="gName">Nom du groupe</label><input id="gName" maxlength="50" required placeholder="Ex. : Famille Ngosso"></div>'}
+    <span class="lbl">Membres</span>${cs.length ? `<div class="picks">${cs.map(u => `<label class="pick"><input type="checkbox" name="gm" value="${u.id}">${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint">Aucun contact à ajouter.</p>'}
+    <p class="err" id="gErr" role="alert" hidden></p><div class="actions"><button class="btn" type="submit">${chat ? 'Ajouter' : 'Créer le groupe'}</button></div></div></form>`, 'Groupe', chat ? 'input' : '#gName');
+}
+function chatMenu() {
+  const c = S.chats.get(S.chatId); if (!c) return;
+  const u = c.type === 'direct' ? uOf(c.peer) : null, blocked = u && (S.me.blocked || []).some(b => b.id === u.id);
+  sheet(`${head(esc(chatTitle(c)))}<div class="menu">
+    ${c.type === 'group' ? `<button type="button" data-act="chatInfo">${I.info}Infos du groupe</button><button type="button" data-act="groupAddOpen">${I.userplus}Ajouter des membres</button><button type="button" class="danger" data-act="leaveAsk">${I.back}Quitter le groupe</button>`
+    : `<button type="button" data-act="prof" data-id="${u.id}">${I.info}Voir le profil</button><button type="button" class="danger" data-act="${blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${I.block}${blocked ? 'Débloquer ' : 'Bloquer '}${esc(first(u.name))}</button>`}
+    <button type="button" class="danger" data-act="reportAsk" data-id="${u ? u.id : ''}" data-chat="${c.id}">${I.flag}Signaler</button></div>`, 'Options');
+}
+function groupInfo() {
+  const c = S.chats.get(S.chatId); if (!c) return;
+  sheet(`${head(esc(c.name))}<div class="sheet-body"><div class="prof">${grpAv(c, 'lg')}<b>${esc(c.name)}</b><span>Groupe · ${c.members.length} membres</span></div></div>
+    <div class="sheet-scroll">${c.members.map(m => { const u = m.id === S.me.id ? S.me : uOf(m.id); return `<button class="row" type="button" data-act="${m.id === S.me.id ? 'close' : 'prof'}" data-id="${m.id}">${avOn(u)}<span class="row-name">${esc(m.id === S.me.id ? 'Vous' : u.name)}</span><span class="row-prev"><span>${m.admin ? 'Créateur du groupe' : '@' + esc(u.handle || '')}</span></span></button>`; }).join('')}</div>`, 'Infos du groupe');
+}
+function reportSheet(userId, chatId) {
+  const reasons = ['Arnaque ou spam', 'Harcèlement ou menaces', 'Propos haineux ou racistes', 'Contenu choquant ou sexuel', 'Usurpation d’identité', 'Atteinte à un mineur', 'Autre motif'];
+  S.rep = {userId: userId || null, chatId: chatId || null};
+  sheet(`${head('Signaler')}<form data-form="report"><div class="sheet-body"><p>Votre signalement est confidentiel : la personne ne saura pas qu’il vient de vous. Le responsable de tam-tam l’examinera.</p>
+    ${reasons.map((r, i) => `<label class="pick chk"><input type="radio" name="rr" value="${esc(r)}"${i ? '' : ''}><span>${esc(r)}</span></label>`).join('')}
+    <div class="field"><label for="rrTxt">Précisions (facultatif)</label><textarea id="rrTxt" rows="3" maxlength="500"></textarea></div>
+    ${userId ? '<label class="pick chk"><input type="checkbox" id="rrBlock" checked><span>Bloquer aussi cette personne</span></label>' : ''}
+    <p class="err" id="rrErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="submit">Signaler</button></div></div></form>`, 'Signaler');
+}
+function msgMenu(id) {
+  const list = S.msgs.get(S.chatId) || [], m = list.find(x => x.id === id); if (!m || m.deleted) return;
+  sheet(`<div class="menu" style="padding-top:12px"><button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>${m.text ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
+    ${m.from === S.me.id ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde</button>` : ''}</div>`, 'Message');
+}
+
+/* ---------- statuts : création et lecture ---------- */
+const BGS = [170, 200, 260, 300, 340, 20, 45, 130];
+function stComposer() {
+  S.sc = S.sc || {aud: 'public', bg: 170, text: '', blob: null, url: null};
+  const s = S.sc, closeN = (S.me.close || []).length;
+  layer.innerHTML = `<div class="st-comp" role="dialog" aria-modal="true" aria-label="Nouveau statut"><div class="chat-head"><button class="ib" type="button" data-act="stCancel" aria-label="Annuler">${I.close}</button><b style="flex:1">Nouveau statut</b><button class="btn sm" type="button" data-act="stPublish">Publier</button></div>
+    <div class="stage"><div class="st-box" style="--h:${s.bg}">${s.url ? `<img src="${s.url}" alt="Aperçu">` : `<textarea id="stText" maxlength="700" placeholder="Écrivez votre statut…">${esc(s.text)}</textarea>`}</div></div>
+    <div class="st-tools">
+      <div class="seg" role="group" aria-label="Visibilité"><button type="button" data-act="stAud" data-a="public" aria-pressed="${s.aud === 'public'}">${I.globe}Public</button><button type="button" data-act="stAud" data-a="private" aria-pressed="${s.aud === 'private'}">${I.lock}Privé</button></div>
+      <p class="hint">${s.aud === 'private' ? `Visible seulement par votre groupe privé (${closeN} personne${closeN > 1 ? 's' : ''}). <button class="linkb" type="button" data-act="closeEdit">Choisir les personnes</button>` : 'Visible par tous vos contacts pendant 24 heures.'}</p>
+      ${s.url ? `<div class="field"><label for="stCap">Légende</label><input id="stCap" maxlength="700" value="${esc(s.text)}"></div><div><button class="btn sm ghost" type="button" data-act="stNoPhoto">Retirer la photo</button></div>`
+      : `<div class="bgs">${BGS.map(h => `<button class="sw" type="button" style="--c:hsl(${h} 55% 35%)" data-act="stBg" data-h="${h}" aria-pressed="${s.bg === h}" aria-label="Couleur de fond"></button>`).join('')}</div><div><button class="btn sm ghost" type="button" data-act="stPhoto">${I.image}Ajouter une photo</button><input type="file" id="stIn" accept="image/*" hidden></div>`}
+    </div></div>`;
+  const t = $('#stText'); if (t) t.focus();
+}
+async function stPublish() {
+  const s = S.sc; const t = ($('#stText') || $('#stCap') || {}).value; if (t != null) s.text = t;
+  if (!s.blob && !s.text.trim()) return toast('Écrivez un texte ou ajoutez une photo.');
+  if (s.aud === 'private' && !(S.me.close || []).length) return toast('Choisissez d’abord les personnes de votre groupe privé.');
+  try { let media = null; if (s.blob) media = (await upload(s.blob)).id; await api('/api/statuses', {text: s.text, bg: s.bg, media, aud: s.aud}); S.sc = null; closeLayer(); await loadStatuses(); renderStories(); toast('Statut publié pour 24 heures'); }
+  catch (e) { toast(e.message); }
+}
+let svT;
+function stOpen(uid) {
+  const g = uid === S.me.id ? {user: S.me, items: S.statuses.mine.items} : S.statuses.others.find(x => x.user.id === uid);
+  if (!g || !g.items.length) return; const i = Math.max(0, g.items.findIndex(x => !x.seen)); S.sv = {uid, i: uid === S.me.id ? 0 : i}; renderSV();
+}
+function renderSV() {
+  const v = S.sv; if (!v) return;
+  const mine = v.uid === S.me.id, g = mine ? {user: S.me, items: S.statuses.mine.items} : S.statuses.others.find(x => x.user.id === v.uid);
+  const it = g && g.items[v.i]; if (!it) return svNextUser();
+  if (!mine && !it.seen) { it.seen = true; api(`/api/statuses/${it.id}/view`, {}).catch(() => {}); }
+  const dur = 6000;
+  layer.innerHTML = `<div class="sv" style="--h:${it.bg || 170}" role="dialog" aria-modal="true" aria-label="Statut"><div class="sv-bars">${g.items.map((_, k) => `<i class="${k < v.i ? 'done' : k === v.i ? 'run' : ''}"><b${k === v.i ? ` style="animation-duration:${dur / 1000}s"` : ''}></b></i>`).join('')}</div>
+    <div class="sv-head">${avatar(g.user, 'sm')}<div class="grow"><b>${esc(mine ? 'Mon statut' : g.user.name)}</b><small>${dayLabel(it.at)}, ${hm(it.at)} · ${it.aud === 'private' ? 'Privé' : 'Public'}</small></div><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>
+    <div class="sv-stage"><div class="sv-box">${it.media ? `<img src="${esc(it.media)}" alt="">` : `<div class="sv-text">${esc(it.text)}</div>`}${it.media && it.text ? `<div class="sv-cap">${esc(it.text)}</div>` : ''}
+      <button class="sv-nav prev" type="button" data-act="svPrev" aria-label="Précédent"></button><button class="sv-nav next" type="button" data-act="svNext" aria-label="Suivant"></button></div></div>
+    ${mine ? `<div class="sv-foot"><button class="btn sm ghost" type="button" data-act="svViews">${I.eye}${(it.views || []).length} vue${(it.views || []).length > 1 ? 's' : ''}</button><button class="btn sm ghost" type="button" data-act="stNew">${I.plus}Ajouter</button><button class="btn sm ghost" type="button" data-act="stDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}</div>`;
+  clearTimeout(svT); svT = setTimeout(() => svStep(1), dur);
+}
+function svStep(d) {
+  const v = S.sv; if (!v) return; const mine = v.uid === S.me.id, g = mine ? {items: S.statuses.mine.items} : S.statuses.others.find(x => x.user.id === v.uid);
+  const n = v.i + d; if (n < 0) { v.i = 0; return renderSV(); } if (!g || n >= g.items.length) return svNextUser(); v.i = n; renderSV();
+}
+function svNextUser() {
+  const v = S.sv; if (!v || v.uid === S.me.id) { closeLayer(); renderStories(); return; }
+  const k = S.statuses.others.findIndex(x => x.user.id === v.uid), nx = S.statuses.others[k + 1];
+  for (const g of S.statuses.others) g.allSeen = g.items.every(i => i.seen);
+  if (nx) { S.sv = {uid: nx.user.id, i: 0}; renderSV(); } else { closeLayer(); renderStories(); }
+}
+
+/* ---------- réglages ---------- */
+function settingsBody() {
+  const me = S.me, p = me.pub || {}, pv = me.priv || {};
+  const f = (set, k, l, ph = '', type = 'text', max = 80) => `<div class="field"><label for="p-${k}">${l}</label>${k === 'bio' ? `<textarea id="p-${k}" data-set="${set}" data-k="${k}" rows="2" maxlength="200" placeholder="${ph}">${esc((set === 'pub' ? p : pv)[k] || '')}</textarea>` : `<input id="p-${k}" data-set="${set}" data-k="${k}" type="${type}" maxlength="${max}" placeholder="${ph}" value="${esc((set === 'pub' ? p : pv)[k] || '')}">`}</div>`;
+  const cs = S.contacts.contacts, close = new Set(me.close || []);
+  return `<div class="set">
+    <div class="set-top">${avatar(me, 'lg')}<div><b>${esc(me.name)}</b><span>@${esc(me.handle)} · ${esc(me.email)}</span></div></div>
+    <div class="set-block"><h2>Photo ou avatar</h2>${avGallery(me.avatar || {d: 'm2', c: 'turq'}, 'me')}
+      <div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="mePhoto">${I.camera}${me.photo ? 'Changer la photo' : 'Mettre une photo'}</button>${me.photo ? '<button class="btn sm ghost" type="button" data-act="meNoPhoto">Utiliser l’avatar</button>' : ''}<input type="file" id="meIn" accept="image/*" hidden></div></div>
+    <div class="set-block"><h2>${I.globe} Profil public</h2><p class="hint">Visible par les membres de tam-tam, notamment quand quelqu’un veut vous ajouter.</p>
+      <div class="field"><label for="p-name">Nom</label><input id="p-name" data-set="name" maxlength="40" value="${esc(me.name)}"></div>
+      <div class="field"><label for="p-handle">Pseudo</label><input id="p-handle" data-set="handle" maxlength="24" value="${esc(me.handle)}"></div>
+      ${f('pub', 'bio', 'Qui suis-je', 'Quelques mots sur vous')}${f('pub', 'metier', 'Métier ou études')}${f('pub', 'ville', 'Ville', 'Ex. : Dakar, Sénégal')}${f('pub', 'langues', 'Langues parlées', 'Ex. : Français, Wolof')}${f('pub', 'interets', 'Centres d’intérêt')}
+      <div class="field"><span class="lbl">Jour et mois de naissance</span><div class="bd-row"><select id="p-bd" data-set="pub" data-k="bd" aria-label="Jour"><option value="">Jour</option>${Array.from({length: 31}, (_, i) => `<option value="${i + 1}"${+p.bd === i + 1 ? ' selected' : ''}>${i + 1}</option>`).join('')}</select><select id="p-bm" data-set="pub" data-k="bm" aria-label="Mois"><option value="">Mois</option>${MOIS.map((m, i) => `<option value="${i + 1}"${+p.bm === i + 1 ? ' selected' : ''}>${m}</option>`).join('')}</select></div></div>
+      <div><button class="btn sm ghost" type="button" data-act="prof" data-id="${me.id}">${I.eye}Voir mon profil comme les autres</button></div></div>
+    <div class="set-block"><h2>${I.lock} Profil privé</h2>
+      <span class="lbl">Qui peut le voir</span><div class="chips">${[['me', 'Moi uniquement'], ['contacts', 'Tous mes contacts'], ['grp', 'Mon groupe privé']].map(([v, l]) => `<button class="chip" type="button" data-act="privTo" data-v="${v}" aria-pressed="${me.privTo === v}">${l}</button>`).join('')}</div>
+      ${f('priv', 'tel', 'Téléphone', '+221 …', 'tel')}${f('priv', 'annee', 'Année de naissance', 'Ex. : 1985', 'number')}${f('priv', 'mail', 'E-mail de contact', '', 'email')}${f('priv', 'adresse', 'Quartier ou adresse')}${f('priv', 'travail', 'Lieu de travail')}${f('priv', 'famille', 'Famille')}</div>
+    <div class="set-block"><h2>Groupe privé</h2><p class="hint">Ces contacts voient vos statuts privés${me.privTo === 'grp' ? ' et votre profil privé' : ''}.</p>
+      ${cs.length ? `<div class="picks">${cs.map(u => `<label class="pick"><input type="checkbox" name="close" value="${u.id}"${close.has(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint">Ajoutez d’abord des contacts.</p>'}</div>
+    <div class="set-block"><h2>Notifications</h2><p class="hint">Recevez une alerte quand un message arrive alors que tam-tam est ouvert en arrière-plan.</p><div><button class="btn sm ghost" type="button" data-act="notif">${'Notification' in window && Notification.permission === 'granted' ? 'Notifications activées' : 'Activer les notifications'}</button></div></div>
+    <div class="set-block"><h2>Personnes bloquées</h2>${(me.blocked || []).length ? me.blocked.map(u => `<div class="adm-row">${avatar(u, 'xs')}<span>${esc(u.name)}</span><button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button></div>`).join('') : '<p class="hint">Personne n’est bloqué.</p>'}</div>
+    <div class="set-block"><h2>Compte</h2><div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="pwSheet">${I.key}Changer le mot de passe</button><a class="btn sm ghost" href="/conditions" target="_blank" rel="noopener">Conditions et confidentialité</a><a class="btn sm ghost" href="/demo/" target="_blank" rel="noopener">Voir la maquette</a></div>
+      <div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="logout">Se déconnecter</button><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte</button></div></div>
+    ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
+    <p class="hint" style="text-align:center">tam-tam · version 1 de test</p></div>`;
+}
+let saveT, pending = {};
+function queueSave(patch) {
+  for (const k of Object.keys(patch)) { if (typeof patch[k] === 'object' && patch[k] && !Array.isArray(patch[k])) pending[k] = Object.assign(pending[k] || {}, patch[k]); else pending[k] = patch[k]; }
+  clearTimeout(saveT); saveT = setTimeout(async () => { const body = pending; pending = {}; try { const r = await api('/api/me', body); S.me = r.me; keepUsers([r.me]); } catch (e) { toast(e.message); } }, 700);
+}
+async function saveNow(body, msg) { try { const r = await api('/api/me', body); S.me = r.me; keepUsers([r.me]); renderBody(); renderHead(); if (msg) toast(msg); } catch (e) { toast(e.message); } }
+async function adminLoad() {
+  try {
+    const r = await api('/api/admin'), el = $('#adm');
+    el.innerHTML = `<h2>${I.shield} Administration</h2><p class="hint">${r.counts.users} membres · ${r.counts.chats} discussions · ${r.counts.messages} messages</p>
+      <span class="lbl">Signalements à traiter</span>${r.reports.length ? r.reports.map(x => `<div class="adm-row"><span><b>${esc(x.reason)}</b><small>par ${esc(x.by)}${x.target ? ' · contre ' + esc(x.target) : ''}${x.chat ? ' · discussion ' + esc(x.chat.name || 'à deux') : ''} · ${listTime(x.created_at)}${x.note ? ' · « ' + esc(x.note) + ' »' : ''}</small></span><button class="btn sm ghost" type="button" data-act="admDone" data-id="${x.id}">Traité</button></div>`).join('') : '<p class="hint">Aucun signalement.</p>'}
+      <span class="lbl">Membres</span>${r.users.map(u => `<div class="adm-row"><span><b>${esc(u.name)}</b>${u.online ? ' · en ligne' : ''}<small>@${esc(u.handle)} · ${esc(u.email)} · inscrit le ${new Date(u.created_at).toLocaleDateString('fr-FR')}</small></span>${u.id !== S.me.id ? `<button class="btn sm ghost" type="button" data-act="admReset" data-id="${u.id}">Lien mot de passe</button>` : ''}</div>`).join('')}`;
+  } catch (e) { toast(e.message); }
+}
+
+/* ---------- actions ---------- */
+const ACT = {
+  authMode(d) { A.mode = d.m; renderAuth(); },
+  pwShow(d, el) { const i = el.parentNode.querySelector('input'); i.type = i.type === 'password' ? 'text' : 'password'; el.textContent = i.type === 'password' ? 'Voir' : 'Masquer'; },
+  avPick(d) { if (d.who === 'auth') { A.avatar.d = d.d; $('#avg-auth').outerHTML = avGallery(A.avatar, 'auth'); } else { const a = Object.assign({}, S.me.avatar, {d: d.d}); saveNow({avatar: a, photo: S.me.photo ? null : undefined}, 'Avatar enregistré'); } },
+  avCol(d) { if (d.who === 'auth') { A.avatar.c = d.c; $('#avg-auth').outerHTML = avGallery(A.avatar, 'auth'); } else saveNow({avatar: Object.assign({}, S.me.avatar, {c: d.c})}); },
+  tab(d) { S.tab = d.t; closeLayer(); renderAll(); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
+  fab() { newChatSheet(); },
+  open(d) { openChat(+d.id); },
+  back() { S.chatId = null; $('.app').dataset.view = 'list'; renderMain(); renderBody(); },
+  async write(d) { closeLayer(); try { const r = await api('/api/chats/direct', {userId: +d.id}); keepUsers(Object.values(r.chat.users)); S.chats.set(r.chat.id, r.chat); S.tab = 'chats'; renderAll(); openChat(r.chat.id); } catch (e) { toast(e.message); } },
+  close() { closeLayer(); },
+  scrim(d, el, e) { if (e.target === el) closeLayer(); },
+  invNew: async () => { try { S.lastInvite = await api('/api/invites', {}); renderBody(); } catch (e) { toast(e.message); } },
+  invCopy() { const t = S.lastInvite.url; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('Lien copié : collez-le dans un message à vos proches.'), () => toast('Sélectionnez le lien et copiez-le.')); },
+  cRequest: d => contactAct('request', +d.id), cAccept: d => contactAct('accept', +d.id), cDecline: d => contactAct('decline', +d.id), cRemove: d => contactAct('remove', +d.id),
+  cRemoveAsk(d) { confirmSheet('Retirer ce contact ?', 'Vous ne pourrez plus vous écrire tant que l’un de vous n’aura pas renvoyé de demande.', 'Retirer', 'cRemoveYes', d.id); },
+  cRemoveYes(d) { closeLayer(); contactAct('remove', +d.id); },
+  prof(d) { profSheet(+d.id); },
+  blockAsk(d) { confirmSheet('Bloquer cette personne ?', 'Elle ne pourra plus vous écrire, vous ajouter ni voir vos statuts. Elle n’est pas prévenue.', 'Bloquer', 'blockYes', d.id); },
+  async blockYes(d) { closeLayer(); try { const r = await api('/api/block', {id: +d.id, on: true}); S.me = r.me; await Promise.all([loadChats(), loadContacts(), loadStatuses()]); renderAll(); if (S.chatId) renderMain(); toast('Personne bloquée'); } catch (e) { toast(e.message); } },
+  async unblock(d) { closeLayer(); try { const r = await api('/api/block', {id: +d.id, on: false}); S.me = r.me; await Promise.all([loadChats(), loadContacts()]); renderAll(); if (S.chatId) renderMain(); toast('Personne débloquée'); } catch (e) { toast(e.message); } },
+  reportAsk(d) { reportSheet(d.id ? +d.id : null, d.chat ? +d.chat : null); },
+  chatMenu() { chatMenu(); },
+  chatInfo() { const c = S.chats.get(S.chatId); if (!c) return; if (c.type === 'group') groupInfo(); else profSheet(c.peer); },
+  groupNew() { groupSheet(); },
+  groupAddOpen() { groupSheet(S.chats.get(S.chatId)); },
+  leaveAsk() { confirmSheet('Quitter le groupe ?', 'Vous ne recevrez plus les messages de ce groupe.', 'Quitter', 'leaveYes'); },
+  async leaveYes() { closeLayer(); try { await api(`/api/chats/${S.chatId}/leave`, {}); S.chats.delete(S.chatId); S.chatId = null; $('.app').dataset.view = 'list'; renderMain(); renderAll(); } catch (e) { toast(e.message); } },
+  attach() { $('#fileIn').click(); },
+  camera() { $('#camIn').click(); },
+  phCancel() { closeLayer(); },
+  zoom(d, el) { layer.innerHTML = `<div class="zoom" data-act="close"><img src="${esc(el.src)}" alt="Photo"><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>`; },
+  older() { loadOlder(); },
+  msgMenu(d) { msgMenu(+d.id); },
+  reply(d) { S.replyTo = +d.id; closeLayer(); renderReplyBar(); const i = $('#msgIn'); if (i) i.focus(); },
+  replyCancel() { S.replyTo = null; renderReplyBar(); },
+  jump(d) { const el = document.querySelector(`.msg[data-mid="${d.id}"]`); if (el) el.scrollIntoView({block: 'center', behavior: 'smooth'}); },
+  copy(d) { const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +d.id); closeLayer(); if (m && navigator.clipboard) navigator.clipboard.writeText(m.text || '').then(() => toast('Texte copié')); },
+  delAsk(d) { confirmSheet('Supprimer pour tout le monde ?', 'Le message sera remplacé par « Ce message a été supprimé » chez tous les membres.', 'Supprimer', 'delYes', d.id); },
+  async delYes(d) { closeLayer(); try { await api(`/api/messages/${d.id}/delete`, {}); } catch (e) { toast(e.message); } },
+  stNew(d, el, e) { e.stopPropagation(); stComposer(); },
+  stOpen(d) { stOpen(+d.u); },
+  stCancel() { if (S.sc && S.sc.url) URL.revokeObjectURL(S.sc.url); S.sc = null; closeLayer(); },
+  stAud(d) { keepSt(); S.sc.aud = d.a; stComposer(); },
+  stBg(d) { keepSt(); S.sc.bg = +d.h; stComposer(); },
+  stPhoto() { keepSt(); $('#stIn').click(); },
+  stNoPhoto() { keepSt(); URL.revokeObjectURL(S.sc.url); S.sc.blob = S.sc.url = null; stComposer(); },
+  stPublish() { stPublish(); },
+  closeEdit() { keepSt(); S.sc = S.sc; closeLayer(); S.tab = 'settings'; renderAll(); setTimeout(() => { const el = document.querySelector('input[name="close"]'); if (el) el.scrollIntoView({block: 'center'}); }, 50); toast('Cochez les personnes de votre groupe privé, puis revenez publier votre statut.'); },
+  svNext() { svStep(1); }, svPrev() { svStep(-1); },
+  svViews() {
+    const it = S.statuses.mine.items[S.sv.i]; clearTimeout(svT);
+    sheet(`${head('Vu par')}<div class="sheet-scroll">${(it.views || []).length ? it.views.map(v => `<div class="row">${avatar(v.user)}<span class="row-name">${esc(v.user.name)}</span><span class="row-prev"><span>${dayLabel(v.at)}, ${hm(v.at)}</span></span></div>`).join('') : '<p class="empty">Personne pour l’instant.</p>'}</div>`, 'Vu par');
+  },
+  stDelAsk(d) { clearTimeout(svT); confirmSheet('Supprimer ce statut ?', 'Il disparaîtra pour tous vos contacts.', 'Supprimer', 'stDelYes', d.id); },
+  async stDelYes(d) { closeLayer(); try { await api(`/api/statuses/${d.id}/delete`, {}); await loadStatuses(); renderStories(); toast('Statut supprimé'); } catch (e) { toast(e.message); } },
+  privTo(d) { saveNow({privTo: d.v}); },
+  mePhoto() { $('#meIn').click(); },
+  meNoPhoto() { saveNow({photo: null}, 'Avatar rétabli'); },
+  notif() { if (!('Notification' in window)) return toast('Votre navigateur ne permet pas les notifications.'); Notification.requestPermission().then(p => { renderBody(); toast(p === 'granted' ? 'Notifications activées' : 'Notifications refusées dans le navigateur'); }); },
+  pwSheet() { sheet(`${head('Changer le mot de passe')}<form data-form="pw"><div class="sheet-body"><div class="field"><label for="pwOld">Mot de passe actuel</label><input id="pwOld" type="password" autocomplete="current-password"></div><div class="field"><label for="pwNew">Nouveau mot de passe (8 caractères minimum)</label><input id="pwNew" type="password" autocomplete="new-password"></div><p class="err" id="pwErr" role="alert" hidden></p><div class="actions"><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Mot de passe', '#pwOld'); },
+  delSheet() { sheet(`${head('Supprimer mon compte')}<form data-form="del"><div class="sheet-body"><p>Votre compte, votre profil, vos photos et vos statuts seront effacés. Vos messages seront remplacés par « Ce message a été supprimé ». C’est définitif.</p><div class="field"><label for="delPw">Votre mot de passe pour confirmer</label><input id="delPw" type="password" autocomplete="current-password"></div><p class="err" id="delErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="submit">Supprimer définitivement</button></div></div></form>`, 'Supprimer', '#delPw'); },
+  async logout() { await api('/api/logout', {}).catch(() => {}); if (es) es.close(); S.me = null; location.href = '/'; },
+  admLoad() { adminLoad(); },
+  async admDone(d) { await api('/api/admin/report-done', {id: +d.id}).catch(e => toast(e.message)); adminLoad(); },
+  async admReset(d) { try { const r = await api('/api/admin/reset', {userId: +d.id}); sheet(`${head('Lien de réinitialisation')}<div class="sheet-body"><p>Envoyez ce lien à la personne (valable 2 jours). Il lui permet de choisir un nouveau mot de passe.</p><div class="invite-url">${esc(r.url)}</div><div class="actions"><button class="btn" type="button" data-act="copyTxt" data-t="${esc(r.url)}">${I.copy}Copier</button></div></div>`, 'Lien'); } catch (e) { toast(e.message); } },
+  copyTxt(d) { navigator.clipboard && navigator.clipboard.writeText(d.t).then(() => toast('Copié')); },
+};
+function keepSt() { const t = ($('#stText') || $('#stCap') || {}).value; if (t != null && S.sc) S.sc.text = t; }
+
+const FORMS = {
+  auth: submitAuth,
+  send: sendText,
+  photo: sendPhoto,
+  async group(f) {
+    const ids = [...f.querySelectorAll('input[name="gm"]:checked')].map(i => +i.value), name = $('#gName').value.trim(), err = $('#gErr');
+    if (!name) { err.textContent = 'Donnez un nom au groupe.'; err.hidden = false; return; }
+    if (!ids.length) { err.textContent = 'Choisissez au moins un membre.'; err.hidden = false; return; }
+    try { const r = await api('/api/chats/group', {name, members: ids}); keepUsers(Object.values(r.chat.users)); S.chats.set(r.chat.id, r.chat); closeLayer(); S.tab = 'chats'; renderAll(); openChat(r.chat.id); } catch (e) { err.textContent = e.message; err.hidden = false; }
+  },
+  async groupAdd(f) {
+    const ids = [...f.querySelectorAll('input[name="gm"]:checked')].map(i => +i.value); if (!ids.length) return closeLayer();
+    try { const r = await api(`/api/chats/${S.chatId}/members`, {add: ids}); S.chats.set(r.chat.id, r.chat); keepUsers(Object.values(r.chat.users)); closeLayer(); renderChatHead(); } catch (e) { toast(e.message); }
+  },
+  async report(f) {
+    const r = f.querySelector('input[name="rr"]:checked'), err = $('#rrErr'); if (!r) { err.textContent = 'Choisissez un motif.'; err.hidden = false; return; }
+    try {
+      await api('/api/report', {userId: S.rep.userId, chatId: S.rep.chatId, reason: r.value, note: $('#rrTxt').value});
+      const bl = $('#rrBlock'); if (bl && bl.checked) { const x = await api('/api/block', {id: S.rep.userId, on: true}); S.me = x.me; await Promise.all([loadChats(), loadContacts(), loadStatuses()]); renderAll(); if (S.chatId) renderMain(); }
+      closeLayer(); toast('Signalement envoyé. Merci.');
+    } catch (e) { err.textContent = e.message; err.hidden = false; }
+  },
+  async pw() { try { await api('/api/me/password', {old: $('#pwOld').value, pass: $('#pwNew').value}); closeLayer(); toast('Mot de passe changé'); } catch (e) { const er = $('#pwErr'); er.textContent = e.message; er.hidden = false; } },
+  async del() { try { await api('/api/me/delete', {pass: $('#delPw').value}); location.href = '/'; } catch (e) { const er = $('#delErr'); er.textContent = e.message; er.hidden = false; } },
+};
+
+/* ---------- événements ---------- */
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if (!el) return;
+  const fn = ACT[el.dataset.act]; if (!fn) return;
+  if (el.dataset.act !== 'scrim') e.preventDefault();
+  if (el.dataset.act === 'scrim' && e.target !== el) return;
+  fn(el.dataset, el, e);
+});
+document.addEventListener('submit', e => { const f = e.target.closest('form[data-form]'); if (!f) return; e.preventDefault(); const fn = FORMS[f.dataset.form]; if (fn) fn(f); });
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.id === 'q') { S.q = t.value; renderBody(); }
+  else if (t.id === 'fq') searchPeople(t.value);
+  else if (t.id === 'msgIn') { autoGrow(t); const n = Date.now(); if (n - typT > 2500 && t.value.trim()) { typT = n; api(`/api/chats/${S.chatId}/typing`, {}).catch(() => {}); } }
+  else if (t.dataset && (t.dataset.set === 'pub' || t.dataset.set === 'priv') && t.tagName !== 'SELECT') queueSave({[t.dataset.set]: {[t.dataset.k]: t.value}});
+});
+document.addEventListener('change', async e => {
+  const t = e.target;
+  if (t.id === 'fileIn' || t.id === 'camIn') { const f = t.files[0]; t.value = ''; if (f) photoPreview(f); }
+  else if (t.id === 'stIn') { const f = t.files[0]; t.value = ''; if (!f) return; try { const b = await shrink(f); S.sc.blob = b; S.sc.url = URL.createObjectURL(b); stComposer(); } catch (er) { toast(er.message); } }
+  else if (t.id === 'meIn') { const f = t.files[0]; t.value = ''; if (!f) return; try { const b = await shrink(f, 800); const up = await upload(b); saveNow({photo: up.id}, 'Photo de profil enregistrée'); } catch (er) { toast(er.message); } }
+  else if (t.name === 'close') { const ids = [...document.querySelectorAll('input[name="close"]:checked')].map(i => +i.value); saveNow({close: ids}); }
+  else if (t.dataset.set === 'name' || t.dataset.set === 'handle') saveNow({[t.dataset.set]: t.value}, 'Enregistré');
+  else if (t.tagName === 'SELECT' && t.dataset.set) queueSave({[t.dataset.set]: {[t.dataset.k]: t.value}});
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && layer.firstChild) closeLayer();
+  else if (e.key === 'Enter' && !e.shiftKey && e.target.id === 'msgIn' && !e.isComposing && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); sendText(); }
+  else if (S.sv && e.key === 'ArrowRight') svStep(1); else if (S.sv && e.key === 'ArrowLeft') svStep(-1);
+});
+document.addEventListener('contextmenu', e => { const m = e.target.closest('.msg[data-mid] .bubble'); if (!m || !S.me) return; e.preventDefault(); msgMenu(+m.parentNode.dataset.mid); });
+let pressT, pressXY = [0, 0];
+document.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse') return; const b = e.target.closest('.msg[data-mid] .bubble'); if (!b || e.target.closest('button,img')) return;
+  pressXY = [e.clientX, e.clientY]; clearTimeout(pressT); pressT = setTimeout(() => msgMenu(+b.parentNode.dataset.mid), 520);
+});
+document.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - pressXY[0], e.clientY - pressXY[1]) > 10) clearTimeout(pressT); }, true);
+['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, () => clearTimeout(pressT), true));
+setInterval(() => { if (S.me && S.tab === 'chats') renderBody(); }, 60_000);
+
+boot();

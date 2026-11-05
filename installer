@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Installe (ou met à jour) tam-tam v1 à côté du CRM et de Genius Recrutement, sans les redémarrer :
+# un conteneur fait tourner l'application, et le Caddy du CRM (déjà sur les ports 80/443)
+# reçoit un bloc pour tam-tam.alveris-consulting.com.
+# Usage : cd ~/tam-tam && git pull && bash installer
+set -euo pipefail
+DOMAINE=tam-tam.alveris-consulting.com
+APP=tam-tam-app
+VOLUME=tam-tam-data
+PROPRIETAIRE="${PROPRIETAIRE:-ngossodesire@gmail.com}"
+DOSSIER="$(cd "$(dirname "$0")" && pwd)"
+
+C=$(docker ps --format '{{.Names}}' | grep -E 'caddy' | head -n1 || true)
+[ -n "$C" ] || { echo "ERREUR : conteneur Caddy du CRM introuvable."; exit 1; }
+CF=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/etc/caddy/Caddyfile"}}{{.Source}}{{end}}{{end}}' "$C")
+if [ -z "$CF" ]; then
+  D=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/etc/caddy"}}{{.Source}}{{end}}{{end}}' "$C")
+  [ -n "$D" ] && CF="$D/Caddyfile"
+fi
+[ -n "$CF" ] && [ -f "$CF" ] || { echo "ERREUR : Caddyfile du CRM introuvable."; exit 1; }
+NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' "$C" | head -n1)
+echo "Caddy du CRM : $C — réseau : $NET"
+
+echo "Construction de tam-tam (une minute la première fois)…"
+docker build -q -t "$APP:latest" "$DOSSIER/app" >/dev/null
+docker volume create "$VOLUME" >/dev/null
+docker rm -f "$APP" >/dev/null 2>&1 || true
+docker run -d --name "$APP" --restart unless-stopped --network "$NET" \
+  -v "$VOLUME:/data" \
+  -e BASE_URL="https://$DOMAINE" -e OWNER_EMAIL="$PROPRIETAIRE" \
+  "$APP:latest" >/dev/null
+sleep 3
+docker exec "$APP" node -e "fetch('http://localhost:3000/api/meta').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" \
+  || { echo "ERREUR : tam-tam ne démarre pas. Journal :"; docker logs --tail 30 "$APP"; exit 1; }
+echo "tam-tam lancé."
+
+if ! grep -q "^$DOMAINE" "$CF"; then
+  SAUVE="$CF.avant-tamtam-$(date +%Y%m%d-%H%M%S)"
+  cp -p "$CF" "$SAUVE"
+  cat >> "$CF" <<BLOC
+
+$DOMAINE {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+	request_body {
+		max_size 8MB
+	}
+	reverse_proxy $APP:3000 {
+		flush_interval -1
+	}
+}
+BLOC
+  if ! docker exec "$C" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+    cat "$SAUVE" > "$CF"
+    echo "ERREUR : configuration refusée, le Caddyfile du CRM a été remis comme avant."
+    exit 1
+  fi
+  docker exec "$C" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1
+  echo "Adresse ajoutée : https://$DOMAINE"
+fi
+echo
+echo "TERMINE : https://$DOMAINE"
+echo "Premier compte : créez-le avec l'adresse $PROPRIETAIRE."
