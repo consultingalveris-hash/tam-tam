@@ -46,6 +46,11 @@ else
   echo "ATTENTION : relais d'appels non lancé (les appels marcheront sur la plupart des réseaux, pas tous)."; SECRET_TURN=""
 fi
 
+# Clé qui protège une seconde fois les sauvegardes de clés de chiffrement (gardée hors de la base de données).
+SECRET_BK_F=/root/.tam-tam-backup-key
+[ -s "$SECRET_BK_F" ] || { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$SECRET_BK_F"; chmod 600 "$SECRET_BK_F"; }
+SECRET_BK=$(cat "$SECRET_BK_F")
+
 echo "Construction de tam-tam (une minute la première fois)…"
 docker build -q -t "$APP:latest" "$DOSSIER/app" >/dev/null
 docker volume create "$VOLUME" >/dev/null
@@ -53,7 +58,7 @@ docker rm -f "$APP" >/dev/null 2>&1 || true
 docker run -d --name "$APP" --restart unless-stopped --network "$NET" --memory 512m \
   -v "$VOLUME:/data" \
   -e BASE_URL="https://$DOMAINE" -e OWNER_EMAIL="$PROPRIETAIRE" \
-  -e TURN_SECRET="$SECRET_TURN" -e TURN_HOST="$DOMAINE" \
+  -e TURN_SECRET="$SECRET_TURN" -e TURN_HOST="$DOMAINE" -e BACKUP_KEY="$SECRET_BK" \
   "$APP:latest" >/dev/null
 sleep 3
 docker exec "$APP" node -e "fetch('http://localhost:3000/api/meta').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" \

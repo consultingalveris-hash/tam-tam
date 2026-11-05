@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS status_views(status_id INTEGER NOT NULL REFERENCES st
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, target_user INTEGER, chat_id INTEGER, reason TEXT NOT NULL, note TEXT,
   created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0);
 `);
-for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
+for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
 db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, call_id TEXT NOT NULL, kind TEXT NOT NULL, chat_id INTEGER NOT NULL, caller INTEGER NOT NULL, callee INTEGER, video INTEGER NOT NULL, status TEXT NOT NULL, joined TEXT NOT NULL DEFAULT '[]', started INTEGER NOT NULL, answered INTEGER, ended INTEGER);
@@ -68,6 +68,14 @@ const DAY = 864e5;
 /* ---------- outils ---------- */
 const sha = s => crypto.createHash('sha256').update(s).digest('hex');
 const rnd = (n = 24) => crypto.randomBytes(n).toString('base64url');
+// Mots de passe trop faciles à deviner : refusés à la création et au changement.
+const WEAK = new Set(['12345678', '123456789', '1234567890', '87654321', '11111111', '00000000', 'password', 'password1', 'motdepasse', 'motdepasse1', 'azertyui', 'azertyuiop', 'qwertyui', 'qwertyuiop', 'iloveyou', 'senegal1', 'senegal221', 'dakar221', 'bonjour1', 'soleil123', 'jetaime1', 'abcd1234', 'abc12345', 'azerty123', 'qwerty123', 'tamtam123', 'tam-tam1', 'admin123', 'welcome1', '12341234', '123123123', 'aaaaaaaa', 'football', 'princesse']);
+function passOk(p, email) {
+  p = String(p || ''); if (p.length < 8) E(400, 'Le mot de passe doit contenir au moins 8 caractères.');
+  const l = p.toLowerCase(), local = String(email || '').split('@')[0].toLowerCase();
+  if (WEAK.has(l) || /^(.)\1+$/.test(p) || '0123456789012345678901234567890'.includes(p) || '9876543210987654321'.includes(p) || (local.length >= 4 && l.includes(local)))
+    E(400, 'Ce mot de passe est trop facile à deviner. Mélangez des lettres, des chiffres et un signe, par exemple « Baobab-2026! ».');
+}
 function hashPass(p) { const salt = crypto.randomBytes(16); const h = crypto.scryptSync(p, salt, 64); return salt.toString('hex') + ':' + h.toString('hex'); }
 function checkPass(p, stored) {
   const [s, h] = String(stored).split(':'); if (!s || !h) return false;
@@ -225,13 +233,19 @@ async function readJson(req) {
 }
 function cookies(req) { const o = {}; for (const p of (req.headers.cookie || '').split(';')) { const i = p.indexOf('='); if (i > 0) o[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim()); } return o; }
 const secure = BASE_URL.startsWith('https');
+// Une connexion reste valable 90 jours après la dernière utilisation (au lieu d'un an fixe).
+const SESSION_DAYS = 90;
 function setSession(res, userId) {
-  const tok = rnd(32); run(`INSERT INTO sessions(token,user_id,expires) VALUES(?,?,?)`, sha(tok), userId, now() + 365 * DAY);
+  const tok = rnd(32), ua = String(res.req?.headers['user-agent'] || '').slice(0, 300);
+  run(`INSERT INTO sessions(token,user_id,expires,created,seen,ua) VALUES(?,?,?,?,?,?)`, sha(tok), userId, now() + SESSION_DAYS * DAY, now(), now(), ua);
   res.setHeader('Set-Cookie', `tt_s=${tok}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${365 * 86400}${secure ? '; Secure' : ''}`);
 }
 function currentUser(req) {
   const tok = cookies(req).tt_s; if (!tok) return null;
-  return q1(`SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?`, sha(tok), now()) || null;
+  const h = sha(tok), u = q1(`SELECT u.*, s.created AS s_created, s.seen AS s_seen, s.rowid AS s_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?`, h, now());
+  if (!u) return null;
+  if (now() - u.s_seen > 3600_000) run(`UPDATE sessions SET seen=?, expires=? WHERE token=?`, now(), now() + SESSION_DAYS * DAY, h);
+  return u;
 }
 const attempts = new Map();
 function blockedNow(key, max = 10, win = 15 * 60_000) { const t = now(); return (attempts.get(key) || []).filter(x => t - x < win).length >= max; }
@@ -240,7 +254,7 @@ function tooMany(key, max = 10, win = 15 * 60_000) {
 }
 const ipOf = req => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
 function meOut(u) {
-  return { ...userCard(u, u.id), email: u.email, priv: J(u.priv, {}), privPics: picsOf(u, 'priv'), privTo: u.priv_to, admin: !!u.admin, hasHideCode: !!u.hide_code,
+  return { ...userCard(u, u.id), email: u.email, priv: J(u.priv, {}), privPics: picsOf(u, 'priv'), listed: !!u.listed, privTo: u.priv_to, admin: !!u.admin, hasHideCode: !!u.hide_code,
     close: qa(`SELECT member FROM close_group WHERE owner=?`, u.id).map(r => r.member),
     blocked: qa(`SELECT blocked FROM blocks WHERE user_id=?`, u.id).map(r => userCard(getUser(r.blocked), u.id)).filter(Boolean),
     cguAt: u.cgu_at, createdAt: u.created_at };
@@ -272,13 +286,14 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   if (gp && !body.invite && gp.invite) body.invite = gp.invite;
   if (!name) E(400, 'Indiquez votre nom.');
   if (!isEmail(email)) E(400, 'Adresse e-mail invalide.');
-  if (pass.length < 8) E(400, 'Le mot de passe doit contenir au moins 8 caractères.');
+  if (!gp) passOk(pass, email);
   if (!body.cgu) E(400, 'Acceptez les Conditions générales pour créer votre compte.');
   if (!body.age) E(400, 'tam-tam est réservé aux personnes de 16 ans et plus.');
   const first = q1(`SELECT COUNT(*) n FROM users`).n === 0;
   let inv = null;
   if (first) { if (OWNER && email !== OWNER) E(403, 'Le premier compte est réservé au propriétaire de tam-tam.'); }
-  else { inv = inviteValid(clean(body.invite, 60)); if (!inv) E(403, 'Il faut un lien d’invitation valide pour s’inscrire.'); }
+  else { inv = inviteValid(clean(body.invite, 60)); if (!inv) E(403, 'Il faut un lien d’invitation valide pour s’inscrire.');
+    if (inv.qr && q1(`SELECT COUNT(*) n FROM users WHERE invited_by=? AND created_at>?`, inv.by_user, now() - DAY).n >= 5) E(429, 'Ce code QR a déjà servi à beaucoup d’inscriptions aujourd’hui. Demandez plutôt un lien d’invitation.'); }
   if (q1(`SELECT 1 FROM users WHERE email=?`, email)) E(409, 'Un compte existe déjà avec cette adresse. Connectez-vous.');
   const av = avatarJson(body.avatar) || JSON.stringify({ v: 2, st: 'court', sk: 'c', sh: '#14b8c9' });
   const id = run(`INSERT INTO users(email,pass,name,handle,avatar,admin,invited_by,cgu_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
@@ -300,7 +315,7 @@ R('POST', /^\/api\/login$/, async ({ req, res, body }) => {
   // seuls les essais ratés comptent : se connecter et se déconnecter plusieurs fois reste possible
   if (blockedNow('login:' + ipOf(req), 20) || blockedNow('login:' + email)) E(429, 'Trop d’essais ratés. Réessayez dans 15 minutes.');
   const u = q1(`SELECT * FROM users WHERE email=?`, email);
-  if (!u || !checkPass(body.pass, u.pass)) { tooMany('login:' + ipOf(req), 20); tooMany('login:' + email); E(401, u ? 'Mot de passe incorrect. Vous pouvez utiliser « Mot de passe oublié ? ».' : 'Aucun compte tam-tam avec cette adresse. Pour en créer un, il faut un lien d’invitation d’un membre.'); }
+  if (!u || !checkPass(body.pass, u.pass)) { tooMany('login:' + ipOf(req), 20); tooMany('login:' + email); E(401, 'E-mail ou mot de passe incorrect. En cas d’oubli, utilisez « Mot de passe oublié ? ».'); }
   setSession(res, u.id); return { me: meOut(u) };
 }, false);
 
@@ -335,6 +350,7 @@ R('POST', /^\/api\/me$/, async ({ me, body }) => {
   }
   if (body.pub) { const p = J(me.pub, {}); for (const k of PUB_K) if (k in body.pub) p[k] = clean(body.pub[k], k === 'bio' ? 200 : 80); run(`UPDATE users SET pub=? WHERE id=?`, JSON.stringify(p), me.id); }
   if (body.priv) { const p = J(me.priv, {}); for (const k of PRIV_K) if (k in body.priv) p[k] = clean(body.priv[k], 120); run(`UPDATE users SET priv=? WHERE id=?`, JSON.stringify(p), me.id); }
+  if (body.listed != null) run(`UPDATE users SET listed=? WHERE id=?`, body.listed ? 1 : 0, me.id);
   if (body.privTo) { if (!['me', 'contacts', 'grp'].includes(body.privTo)) E(400, 'Choix inconnu.'); run(`UPDATE users SET priv_to=? WHERE id=?`, body.privTo, me.id); }
   if (Array.isArray(body.close)) {
     const ok = new Set(contactIds(me.id)); run(`DELETE FROM close_group WHERE owner=?`, me.id);
@@ -363,7 +379,8 @@ R('POST', /^\/api\/contacts\/share-tel$/, async ({ me, body }) => {
 // Tous les membres de Tam-Tam (profil public seulement), pour les découvrir et leur demander d'être amis.
 R('GET', /^\/api\/people$/, async ({ me, url }) => {
   const off = Math.max(0, +url.searchParams.get('off') || 0);
-  const rows = qa(`SELECT * FROM users WHERE id<>? AND id NOT IN (SELECT CASE WHEN a=? THEN b ELSE a END FROM contacts WHERE (a=? OR b=?) AND status='accepted') ORDER BY id DESC LIMIT 31 OFFSET ?`, me.id, me.id, me.id, me.id, off);
+  if (tooMany('people:' + me.id, 40, 60 * 60_000)) E(429, 'Vous avez parcouru beaucoup de profils. Faites une pause et réessayez plus tard.');
+  const rows = qa(`SELECT * FROM users WHERE id<>? AND listed=1 AND id NOT IN (SELECT CASE WHEN a=? THEN b ELSE a END FROM contacts WHERE (a=? OR b=?) AND status='accepted') ORDER BY id DESC LIMIT 31 OFFSET ?`, me.id, me.id, me.id, me.id, off);
   return { users: rows.slice(0, 30).filter(u => !blockedEither(me.id, u.id)).map(u => userCard(u, me.id)), more: rows.length > 30 };
 });
 // Message à vue unique : ouvert une fois, puis effacé du serveur quand tous les destinataires l'ont vu.
@@ -383,8 +400,16 @@ R('POST', /^\/api\/chats\/(\d+)\/shot$/, async ({ me, m, body }) => {
 });
 R('POST', /^\/api\/me\/password$/, async ({ me, body }) => {
   if (!checkPass(body.old, me.pass)) E(400, 'Le mot de passe actuel est incorrect.');
-  if (String(body.pass || '').length < 8) E(400, 'Le nouveau mot de passe doit contenir au moins 8 caractères.');
-  run(`UPDATE users SET pass=? WHERE id=?`, hashPass(body.pass), me.id); return { ok: true };
+  passOk(body.pass, me.email);
+  run(`UPDATE users SET pass=? WHERE id=?`, hashPass(body.pass), me.id);
+  run(`DELETE FROM sessions WHERE user_id=? AND rowid<>?`, me.id, me.s_id); return { ok: true };
+});
+// Appareils connectés : les voir et les déconnecter.
+R('GET', /^\/api\/sessions$/, async ({ me }) => ({ sessions: qa(`SELECT rowid AS id, created, seen, ua FROM sessions WHERE user_id=? AND expires>? ORDER BY seen DESC`, me.id, now()).map(x => ({ ...x, current: x.id === me.s_id })) }));
+R('POST', /^\/api\/sessions\/revoke$/, async ({ me, body }) => {
+  if (body.others) run(`DELETE FROM sessions WHERE user_id=? AND rowid<>?`, me.id, me.s_id);
+  else run(`DELETE FROM sessions WHERE user_id=? AND rowid=? AND rowid<>?`, me.id, +body.id, me.s_id);
+  return { ok: true };
 });
 R('POST', /^\/api\/me\/delete$/, async ({ me, body, res }) => {
   if (!checkPass(body.pass, me.pass)) E(400, 'Mot de passe incorrect.');
@@ -405,7 +430,7 @@ R('POST', /^\/api\/invites$/, async ({ me }) => {
 /* personnes et contacts */
 R('GET', /^\/api\/users\/search$/, async ({ me, url }) => {
   const q = clean(url.searchParams.get('q'), 60).toLowerCase().replace(/^@/, ''); if (q.length < 2) return { users: [] };
-  const rows = qa(`SELECT * FROM users WHERE id<>? AND (handle LIKE ? OR email=? OR lower(name) LIKE ?) LIMIT 30`, me.id, q + '%', q, '%' + q + '%');
+  const rows = qa(`SELECT * FROM users WHERE id<>? AND (handle LIKE ? OR lower(name) LIKE ?) LIMIT 30`, me.id, q + '%', '%' + q + '%');
   return { users: rows.filter(u => !blockedEither(me.id, u.id)).slice(0, 20).map(u => userCard(u, me.id)) };
 });
 R('GET', /^\/api\/users\/(\d+)$/, async ({ me, m }) => {
@@ -690,9 +715,14 @@ R('POST', /^\/api\/contacts\/share-priv$/, async ({ me, body }) => {
 /* ---------- favoris et répertoire du téléphone ---------- */
 R('POST', /^\/api\/chats\/(\d+)\/fav$/, async ({ me, m, body }) => { const c = chatFor(me, +m[1]); run(`UPDATE members SET fav=? WHERE chat_id=? AND user_id=?`, body.fav ? 1 : 0, c.id, me.id); return { ok: true }; });
 // Le téléphone envoie des empreintes des numéros (pas les numéros eux-mêmes) ; on répond lesquels ont Tam-Tam.
+const matchQuota = new Map();
 R('POST', /^\/api\/contacts\/match$/, async ({ me, body }) => {
   if (tooMany('match:' + me.id, 20, 60 * 60_000)) E(429, 'Trop de demandes. Réessayez plus tard.');
   const want = new Set((Array.isArray(body.hashes) ? body.hashes : []).slice(0, 3000).map(String));
+  // Au plus 3 000 numéros vérifiés par jour et par compte : empêche de deviner les numéros en masse.
+  const day = new Date().toISOString().slice(0, 10), q = matchQuota.get(me.id); const used = q && q.day === day ? q.n : 0;
+  if (used + want.size > 3000) E(429, 'Vous avez déjà vérifié beaucoup de numéros aujourd’hui. Réessayez demain.');
+  matchQuota.set(me.id, { day, n: used + want.size });
   const out = {};
   for (const u of qa(`SELECT * FROM users WHERE id<>? AND priv LIKE '%"tel"%'`, me.id)) {
     const t = String(J(u.priv, {}).tel || '').replace(/\D/g, ''); if (t.length < 6) continue;
@@ -835,18 +865,38 @@ R('POST', /^\/api\/statuses\/(\d+)\/delete$/, async ({ me, m }) => {
   if (s.media) dropMedia(s.media); run(`DELETE FROM statuses WHERE id=?`, s.id); pushMany(contactIds(me.id), { t: 'statuses' }); return { ok: true };
 });
 
+// Les sauvegardes de clés sont chiffrées une seconde fois avec une clé du serveur gardée hors de la base :
+// une copie volée de la base seule ne permet pas d'essayer les codes.
+const BK_KEY = /^[0-9a-f]{64}$/.test(process.env.BACKUP_KEY || '') ? Buffer.from(process.env.BACKUP_KEY, 'hex') : null;
+function wrapBk(txt) {
+  if (!BK_KEY || !txt || txt.startsWith('w1:')) return txt;
+  const iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', BK_KEY, iv), ct = Buffer.concat([c.update(txt, 'utf8'), c.final()]);
+  return 'w1:' + Buffer.concat([iv, c.getAuthTag(), ct]).toString('base64');
+}
+function unwrapBk(txt) {
+  if (!txt || !txt.startsWith('w1:')) return txt; if (!BK_KEY) return null;
+  const b = Buffer.from(txt.slice(3), 'base64'), d = crypto.createDecipheriv('aes-256-gcm', BK_KEY, b.subarray(0, 12)); d.setAuthTag(b.subarray(12, 28));
+  return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString('utf8');
+}
+if (BK_KEY) for (const r of qa(`SELECT id, keybackup FROM users WHERE keybackup IS NOT NULL AND keybackup NOT LIKE 'w1:%'`)) run(`UPDATE users SET keybackup=? WHERE id=?`, wrapBk(r.keybackup), r.id);
 /* clés de chiffrement de bout en bout : le serveur garde la clé publique et une sauvegarde chiffrée par le code du membre */
 R('POST', /^\/api\/keys$/, async ({ me, body }) => {
   const pk = body.pubkey; if (!pk || pk.kty !== 'EC' || pk.crv !== 'P-256' || typeof pk.x !== 'string' || typeof pk.y !== 'string' || pk.d) E(400, 'Clé invalide.');
   const b = body.backup; if (!b || typeof b.ct !== 'string' || typeof b.iv !== 'string' || typeof b.salt !== 'string' || !(+b.iter >= 100000)) E(400, 'Sauvegarde invalide.');
   if (JSON.stringify(b).length > 8000) E(413, 'Sauvegarde trop grande.');
   const old = me.pubkey;
-  run(`UPDATE users SET pubkey=?, keybackup=? WHERE id=?`, JSON.stringify({ kty: 'EC', crv: 'P-256', x: pk.x, y: pk.y }), JSON.stringify({ ct: b.ct, iv: b.iv, salt: b.salt, iter: +b.iter }), me.id);
+  run(`UPDATE users SET pubkey=?, keybackup=? WHERE id=?`, JSON.stringify({ kty: 'EC', crv: 'P-256', x: pk.x, y: pk.y }), wrapBk(JSON.stringify({ ct: b.ct, iv: b.iv, salt: b.salt, iter: +b.iter })), me.id);
   if (old && J(old, {}).x !== pk.x) for (const c of qa(`SELECT chat_id FROM members WHERE user_id=?`, me.id)) sysMsg(c.chat_id, `Le code de sécurité de ${me.name} a changé (nouvel appareil ou nouvelle clé).`);
   pushMany(contactIds(me.id), { t: 'contacts' });
   return { ok: true };
 });
-R('GET', /^\/api\/keys\/backup$/, async ({ me }) => ({ backup: me.keybackup ? J(me.keybackup, null) : null, pubkey: me.pubkey ? J(me.pubkey, null) : null }));
+// La sauvegarde n'est remise que juste après une connexion (moins de 30 minutes) : un cookie volé ne suffit pas.
+R('GET', /^\/api\/keys\/backup$/, async ({ me }) => {
+  const pubkey = me.pubkey ? J(me.pubkey, null) : null; if (!me.keybackup) return { backup: null, has: false, pubkey };
+  if (now() - me.s_created > 30 * 60_000) return { backup: null, has: true, stale: true, pubkey };
+  if (tooMany('kb:' + me.id, 10, DAY)) E(429, 'Trop d’essais aujourd’hui. Réessayez demain.');
+  return { backup: J(unwrapBk(me.keybackup), null), has: true, pubkey };
+});
 
 /* mot de passe oublié : code à 6 chiffres envoyé par e-mail */
 function mailSettings() { const r = q1(`SELECT v FROM settings WHERE k='mail'`); return r ? J(r.v, null) : null; }
@@ -878,7 +928,7 @@ R('POST', /^\/api\/forgot\/verify$/, async ({ req, res, body }) => {
   if (!r || r.expires < now()) E(400, 'Ce code a expiré. Demandez-en un nouveau.');
   if (r.tries >= 5) { run(`DELETE FROM codes WHERE email=?`, email); E(400, 'Trop d’essais. Demandez un nouveau code.'); }
   if (sha(String(body.code || '').trim()) !== r.code) { run(`UPDATE codes SET tries=tries+1 WHERE email=?`, email); E(400, 'Code incorrect.'); }
-  if (String(body.pass || '').length < 8) E(400, 'Le mot de passe doit contenir au moins 8 caractères.');
+  passOk(body.pass, email);
   const u = q1(`SELECT * FROM users WHERE email=?`, email); if (!u) E(400, 'Code incorrect.');
   run(`UPDATE users SET pass=? WHERE id=?`, hashPass(body.pass), u.id); run(`DELETE FROM codes WHERE email=?`, email); run(`DELETE FROM sessions WHERE user_id=?`, u.id);
   setSession(res, u.id); return { me: meOut(getUser(u.id)) };
@@ -975,8 +1025,8 @@ R('GET', /^\/api\/stream$/, async ({ me, req, res }) => {
 });
 
 /* ---------- serveur ---------- */
-const SEC = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'X-Frame-Options': 'DENY',
-  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" };
+const SEC = { ...(secure ? { 'Strict-Transport-Security': 'max-age=31536000' } : {}), 'Permissions-Policy': 'geolocation=(), payment=()', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" };
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, BASE_URL), p = url.pathname;
   try {

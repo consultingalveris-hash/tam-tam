@@ -728,6 +728,7 @@ function profileEditor() {
       ${f('pub', 'bio', 'Qui suis-je', 'Quelques mots sur vous')}${f('pub', 'metier', 'Métier ou études')}${f('pub', 'ville', 'Ville', 'Ex. : Dakar, Sénégal')}${f('pub', 'langues', 'Langues parlées', 'Ex. : Français, Wolof')}${f('pub', 'interets', 'Centres d’intérêt')}
       <div class="field"><span class="lbl">Jour et mois de naissance</span><div class="bd-row"><select id="p-bd" data-set="pub" data-k="bd" aria-label="Jour"><option value="">Jour</option>${Array.from({length: 31}, (_, i) => `<option value="${i + 1}"${+p.bd === i + 1 ? ' selected' : ''}>${i + 1}</option>`).join('')}</select><select id="p-bm" data-set="pub" data-k="bm" aria-label="Mois"><option value="">Mois</option>${MOIS.map((m, i) => `<option value="${i + 1}"${+p.bm === i + 1 ? ' selected' : ''}>${m}</option>`).join('')}</select></div></div>
       ${picsEdit('pub')}
+      <label class="pick chk"><input type="checkbox" data-act="listedTog"${me.listed !== false ? ' checked' : ''}><span>Apparaître dans la liste « Membres de Tam-Tam » (le + en haut). Décoché, on peut toujours vous trouver par votre nom ou votre pseudo exact.</span></label>
       <div><button class="btn sm ghost" type="button" data-act="prof" data-id="${me.id}">${I.eye}Voir mon profil public comme les autres</button></div></div>
 ` : `<p class="note">${I.lock}<span>Votre profil privé n’est jamais visible par des inconnus. Votre <b>numéro de téléphone</b> reste caché, même pour vos amis : vous le montrez seulement à qui vous voulez, depuis son profil (« Lui montrer mon numéro »).</span></p>
     <div class="set-block">
@@ -768,12 +769,13 @@ function settingsBody() {
     ${Priv.settingsHtml()}
     ${Device.settingsHtml()}
     <div class="set-block"><h2>Personnes bloquées</h2>${(me.blocked || []).length ? me.blocked.map(u => `<div class="adm-row">${avatar(u, 'xs')}<span>${esc(u.name)}</span><button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button></div>`).join('') : '<p class="hint">Personne n’est bloqué.</p>'}</div>
+    <div class="set-block"><h2>${I.shield} Appareils connectés</h2><p class="hint">Un téléphone perdu ou prêté ? Déconnectez-le à distance. Changer votre mot de passe déconnecte aussi tous les autres appareils.</p><div><button class="btn sm ghost" type="button" data-act="devList">Voir mes appareils connectés</button></div></div>
     <div class="set-block"><h2>Compte</h2><div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="pwSheet">${I.key}Changer le mot de passe</button><a class="btn sm ghost" href="/conditions" target="_blank" rel="noopener">Conditions et confidentialité</a><a class="btn sm ghost" href="/demo/" target="_blank" rel="noopener">Voir la maquette</a></div>
       <div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="logout">Se déconnecter</button><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte</button></div></div>
     ${me.admin ? mailBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.12</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.13</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -808,7 +810,7 @@ const ACT = {
     try { const c = await navigator.contacts.select(['name', 'tel'], {multiple: false}); const tel = c && c[0] && c[0].tel && c[0].tel[0]; if (!tel) return;
       location.href = `sms:${tel.replace(/\s+/g, '')}?body=${encodeURIComponent(inviteText())}`; } catch { toast('Le choix dans les contacts n’est pas disponible ici. Utilisez « Partager ».'); }
   },
-  keyCode() { sheet(`${head('Changer le code de sauvegarde')}<form data-form="rekey"><div class="sheet-body"><p class="hint">Le nouveau code remplace l’ancien pour retrouver vos messages sur un autre appareil.</p><div class="field"><label for="rk1">Nouveau code (6 chiffres minimum)</label><input id="rk1" type="password" inputmode="numeric" autocomplete="new-password"></div><div class="field"><label for="rk2">Confirmez</label><input id="rk2" type="password" inputmode="numeric" autocomplete="new-password"></div><p class="err" id="rkErr" role="alert" hidden></p><div class="actions"><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Code', '#rk1'); },
+  keyCode() { sheet(`${head('Changer le code de sauvegarde')}<form data-form="rekey"><div class="sheet-body"><p class="hint">Le nouveau code remplace l’ancien pour retrouver vos messages sur un autre appareil.</p><div class="field"><label for="rk1">Nouveau code (8 caractères minimum)</label><input id="rk1" type="password" autocomplete="new-password"></div><div class="field"><label for="rk2">Confirmez</label><input id="rk2" type="password" autocomplete="new-password"></div><p class="err" id="rkErr" role="alert" hidden></p><div class="actions"><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Code', '#rk1'); },
   forgot() { const em = ($('#aMail') || {}).value; if (em) A.fmail = em.trim(); A.mode = 'forgot'; A.step = 1; renderAuth(); },
   async gLoad() { try { S.gset = await api('/api/admin/google'); const el = $('#gBox'); if (el) el.outerHTML = googleBox(); } catch (e) { toast(e.message); } },
   async gOff() { try { await api('/api/admin/google', {off: true}); S.gset = await api('/api/admin/google'); $('#gBox').outerHTML = googleBox(); toast('Connexion Google désactivée'); } catch (e) { toast(e.message); } },
@@ -918,6 +920,17 @@ const ACT = {
   profTab(d) { S.profTab = d.t; renderBody(); },
   goProfile() { S.tab = 'chats'; S.filt = 'me'; renderAll(); },
   notif() { if (!('Notification' in window)) return toast('Votre navigateur ne permet pas les notifications.'); Notification.requestPermission().then(p => { renderBody(); toast(p === 'granted' ? 'Notifications activées' : 'Notifications refusées dans le navigateur'); }); },
+  async devList() {
+    let r; try { r = await api('/api/sessions'); } catch (e) { return toast(e.message); }
+    const name = ua => { ua = ua || ''; const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iPhone / iPad' : /Windows/.test(ua) ? 'Ordinateur Windows' : /Mac OS/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : 'Appareil';
+      const br = /Brave/.test(ua) ? 'Brave' : /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : ''; return os + (br ? ' · ' + br : ''); };
+    const when = t => t ? `${dayLabel(t)}, ${hm(t)}` : 'avant novembre 2026';
+    sheet(`${head('Appareils connectés')}<div class="sheet-body">${r.sessions.map(x => `<div class="adm-row"><span class="grow"><b>${esc(name(x.ua))}</b>${x.current ? ' <small>(cet appareil)</small>' : ''}<br><small class="hint">Dernière utilisation : ${esc(when(x.seen))}</small></span>${x.current ? '' : `<button class="btn sm ghost" type="button" data-act="devOut" data-id="${x.id}">Déconnecter</button>`}</div>`).join('')}
+      ${r.sessions.length > 1 ? '<div class="actions"><button class="btn danger" type="button" data-act="devOthers">Déconnecter tous les autres appareils</button></div>' : '<p class="hint">Aucun autre appareil n’est connecté.</p>'}</div>`, 'Appareils connectés');
+  },
+  async devOut(d) { try { await api('/api/sessions/revoke', {id: +d.id}); toast('Appareil déconnecté'); ACT.devList(); } catch (e) { toast(e.message); } },
+  async devOthers() { try { await api('/api/sessions/revoke', {others: true}); toast('Tous les autres appareils sont déconnectés'); ACT.devList(); } catch (e) { toast(e.message); } },
+  listedTog() { saveNow({listed: !S.me.listed}, S.me.listed ? 'Vous n’apparaissez plus dans la liste des membres' : 'Vous apparaissez dans la liste des membres'); },
   pwSheet() { sheet(`${head('Changer le mot de passe')}<form data-form="pw"><div class="sheet-body"><div class="field"><label for="pwOld">Mot de passe actuel</label><input id="pwOld" type="password" autocomplete="current-password"></div><div class="field"><label for="pwNew">Nouveau mot de passe (8 caractères minimum)</label><input id="pwNew" type="password" autocomplete="new-password"></div><p class="err" id="pwErr" role="alert" hidden></p><div class="actions"><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Mot de passe', '#pwOld'); },
   delSheet() { sheet(`${head('Supprimer mon compte')}<form data-form="del"><div class="sheet-body"><p>Votre compte, votre profil, vos photos et vos statuts seront effacés. Vos messages seront remplacés par « Ce message a été supprimé ». C’est définitif.</p><div class="field"><label for="delPw">Votre mot de passe pour confirmer</label><input id="delPw" type="password" autocomplete="current-password"></div><p class="err" id="delErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="submit">Supprimer définitivement</button></div></div></form>`, 'Supprimer', '#delPw'); },
   async logout() { await Device.disableHere(); await api('/api/logout', {}).catch(() => {}); if (es) es.close(); S.me = null; location.href = '/'; },
@@ -931,7 +944,7 @@ function keepSt() { const t = ($('#stText') || $('#stCap') || {}).value; if (t !
 const FORMS = {
   auth: submitAuth,
   keys: submitKeys,
-  async rekey() { const a = $('#rk1').value, b = $('#rk2').value, er = $('#rkErr'); if (!/^\d{6,}$/.test(a)) { er.textContent = 'Le code doit contenir au moins 6 chiffres.'; er.hidden = false; return; } if (a !== b) { er.textContent = 'Les deux codes ne sont pas identiques.'; er.hidden = false; return; }
+  async rekey() { const a = $('#rk1').value, b = $('#rk2').value, er = $('#rkErr'); if (codeWeak(a)) { er.textContent = codeWeak(a); er.hidden = false; return; } if (a !== b) { er.textContent = 'Les deux codes ne sont pas identiques.'; er.hidden = false; return; }
     try { await api('/api/keys', {pubkey: E2E.pubJwk, backup: await E2E.backup(a)}); closeLayer(); toast('Code de sauvegarde changé'); } catch (e) { er.textContent = e.message; er.hidden = false; } },
   async mail(f) { const v = id => $('#' + id).value.trim(), er = $('#mlErr'), ok = $('#mlOk'); er.hidden = true; ok.hidden = true;
     try { await api('/api/admin/mail', {host: v('mlHost'), port: +v('mlPort'), user: v('mlUser'), pass: $('#mlPass').value, from: v('mlFrom'), test: true}); ok.textContent = `Réglage enregistré. Un e-mail de test a été envoyé à ${S.me.email}.`; ok.hidden = false; $('#mlPass').value = ''; }
@@ -1009,8 +1022,16 @@ document.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - press
 setInterval(() => { if (S.me && S.tab === 'chats') renderBody(); }, 60_000);
 
 /* ---------- clés de chiffrement : création ou récupération ---------- */
+// Code de sauvegarde : 8 caractères au moins, pas une suite évidente (les anciens codes restent valables).
+function codeWeak(c) {
+  c = String(c || ''); if (c.length < 8) return 'Le code doit contenir au moins 8 caractères (lettres, chiffres ou signes).';
+  if (/^(.)\1+$/.test(c) || '01234567890123456789'.includes(c) || '98765432109876543210'.includes(c)) return 'Ce code est trop facile à deviner. Mélangez lettres et chiffres, par exemple « Baobab-2026 ».';
+  return '';
+}
 async function keySetup(reupload) {
-  let bk = null; try { bk = (await api('/api/keys/backup')).backup; } catch {}
+  let r = null; try { r = await api('/api/keys/backup'); } catch (e) { r = {err: e.message}; }
+  if (!reupload && r && (r.stale || r.err)) { S.ks = {mode: 'stale', msg: r.err}; return renderKeySetup(); }
+  const bk = r && r.backup;
   const mode = reupload ? 'new' : bk ? 'restore' : 'new';
   S.ks = {mode, bk};
   renderKeySetup();
@@ -1019,16 +1040,19 @@ function renderKeySetup(msg) {
   const k = S.ks, top = `<div class="auth-top">${LOGO}<h1 class="brand">${WORD}</h1></div>`;
   const h = k.mode === 'restore'
     ? `<h2>${I.lock} Retrouver vos messages</h2><p class="hint">Vos messages sont chiffrés de bout en bout. Sur ce nouvel appareil ou ce navigateur, entrez votre code de sauvegarde pour les relire.</p>
-      <div class="field"><label for="kCode">Code de sauvegarde</label><input id="kCode" type="password" inputmode="numeric" autocomplete="off"></div>
+      <div class="field"><label for="kCode">Code de sauvegarde</label><input id="kCode" type="password" autocomplete="off"></div>
       <p class="err" id="kErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Retrouver mes messages</button>
       <button class="linkb" type="button" data-act="ksLost">J’ai oublié mon code</button>`
+    : k.mode === 'stale'
+    ? `<h2>${I.lock} Reconnexion nécessaire</h2><p class="hint">${k.msg ? esc(k.msg) : 'Pour votre sécurité, vos messages ne peuvent être récupérés que juste après une connexion avec votre mot de passe.'}</p>
+      <p class="hint">Reconnectez-vous, puis entrez votre code de sauvegarde.</p><button class="btn" type="button" data-act="logout">Se reconnecter</button>`
     : k.mode === 'lost'
     ? `<h2>Code oublié</h2><p>Sans le code, les anciens messages chiffrés ne peuvent plus être relus sur cet appareil. Personne ne peut les récupérer, pas même le responsable de tam-tam.</p><p class="hint">Vous pouvez repartir avec une nouvelle clé : vos contacts verront que votre code de sécurité a changé, et les nouveaux messages seront lisibles.</p>
       <div class="actions"><button class="btn ghost" type="button" data-act="ksBack">Réessayer mon code</button><button class="btn danger" type="button" data-act="ksNew">Repartir avec une nouvelle clé</button></div>`
     : `<h2>${I.lock} Protéger vos messages</h2><p class="hint">tam-tam chiffre vos messages et vos photos de bout en bout : seuls les appareils des personnes qui discutent peuvent les lire, pas même le serveur.</p>
       <p class="hint">Choisissez un <b>code de sauvegarde</b>. Il vous servira à retrouver vos messages si vous changez de téléphone. Notez-le en lieu sûr : personne ne pourra le retrouver pour vous.</p>
-      <div class="field"><label for="kCode">Code de sauvegarde <span class="req">· au moins 6 chiffres</span></label><input id="kCode" type="password" inputmode="numeric" autocomplete="new-password" placeholder="6 chiffres ou plus"></div>
-      <div class="field"><label for="kCode2">Confirmez le code</label><input id="kCode2" type="password" inputmode="numeric" autocomplete="new-password"></div>
+      <div class="field"><label for="kCode">Code de sauvegarde <span class="req">· au moins 8 caractères</span></label><input id="kCode" type="password" autocomplete="new-password" placeholder="Ex. : Baobab-2026"></div>
+      <div class="field"><label for="kCode2">Confirmez le code</label><input id="kCode2" type="password" autocomplete="new-password"></div>
       <p class="err" id="kErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Activer le chiffrement</button>`;
   root.innerHTML = `<div class="auth"><form class="auth-card" data-form="keys" novalidate>${top}${h}</form></div>`;
   const f = root.querySelector('input'); if (f) f.focus();
@@ -1040,7 +1064,7 @@ async function submitKeys() {
     if (k.mode === 'restore') {
       if (!await E2E.restore(S.me.id, code, k.bk)) { if (btn) btn.disabled = false; return renderKeySetup('Code incorrect. Vérifiez et réessayez.'); }
     } else {
-      if (!/^\d{6,}$/.test(code)) { if (btn) btn.disabled = false; return renderKeySetup('Le code doit contenir au moins 6 chiffres.'); }
+      if (codeWeak(code)) { if (btn) btn.disabled = false; return renderKeySetup(codeWeak(code)); }
       if (code !== $('#kCode2').value) { if (btn) btn.disabled = false; return renderKeySetup('Les deux codes ne sont pas identiques.'); }
       if (!E2E.ready() || S.ks.fresh) await E2E.create(S.me.id);
       await api('/api/keys', {pubkey: E2E.pubJwk, backup: await E2E.backup(code)});
