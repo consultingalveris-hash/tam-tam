@@ -1,12 +1,13 @@
 // tam-tam — version 1 (serveur)
 // Comptes sur invitation, demandes d'ami, discussions en temps réel (SSE), photos, statuts 24 h, blocage, signalement.
-// Aucune dépendance : Node 22 (node:sqlite intégré).
+// Node 22 (node:sqlite intégré) ; nodemailer pour les e-mails, web-push pour les notifications.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import nodemailer from 'nodemailer';
+import webpush from 'web-push';
 
 const ROOT = path.dirname(new URL(import.meta.url).pathname);
 const PORT = +process.env.PORT || 3000;
@@ -53,6 +54,7 @@ CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, targ
 for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`]) { try { db.exec(sql); } catch {} }
 db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, keys TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS gpending(token TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, sub TEXT NOT NULL, invite TEXT, expires INTEGER NOT NULL);`);
 const q1 = (sql, ...a) => db.prepare(sql).get(...a);
 const qa = (sql, ...a) => db.prepare(sql).all(...a);
@@ -436,6 +438,7 @@ R('POST', /^\/api\/call\/signal$/, async ({ me, body }) => {
   const ev = { t: 'call', type, callId, chatId: cid, from: me.id, video: !!body.video, data };
   if (type === 'ring' && !online(to)) {
     sysMsg(cid, `${body.video ? 'Appel vidéo' : 'Appel vocal'} manqué de ${me.name.split(' ')[0]}`);
+    webPush(to, { title: me.name, body: `${body.video ? 'Appel vidéo' : 'Appel vocal'} manqué`, tag: 'call-' + cid, url: '/?chat=' + cid }, true);
     return { ok: true, offline: true };
   }
   push(to, ev);
@@ -445,6 +448,83 @@ R('POST', /^\/api\/call\/signal$/, async ({ me, body }) => {
     sysMsg(cid, d > 0 ? `${v} · ${d >= 60 ? Math.floor(d / 60) + ' min ' + String(d % 60).padStart(2, '0') + ' s' : d + ' s'}` : `${v} manqué de ${me.name.split(' ')[0]}`);
   }
   return { ok: true };
+});
+
+/* ---------- notifications sur le téléphone, même quand tam-tam est fermé ---------- */
+function vapid() {
+  let r = q1(`SELECT v FROM settings WHERE k='vapid'`), v = r ? J(r.v, null) : null;
+  if (!v) { v = webpush.generateVAPIDKeys(); run(`INSERT OR REPLACE INTO settings(k,v) VALUES('vapid',?)`, JSON.stringify(v)); }
+  return v;
+}
+const VAPID = vapid();
+webpush.setVapidDetails('mailto:' + (OWNER || 'contact@alveris-consulting.com'), VAPID.publicKey, VAPID.privateKey);
+// Le contenu des messages reste chiffré : la notification dit seulement qui écrit.
+function webPush(uid, payload, always = false) {
+  if (!always && online(uid)) return;
+  for (const sub of qa(`SELECT * FROM push_subs WHERE user_id=?`, uid)) {
+    webpush.sendNotification({ endpoint: sub.endpoint, keys: J(sub.keys, {}) }, JSON.stringify(payload), { TTL: 6 * 3600, urgency: 'high' })
+      .catch(e => { if (e && (e.statusCode === 404 || e.statusCode === 410)) run(`DELETE FROM push_subs WHERE endpoint=?`, sub.endpoint); });
+  }
+}
+R('GET', /^\/api\/push\/key$/, async () => ({ key: VAPID.publicKey }));
+R('POST', /^\/api\/push\/sub$/, async ({ me, body }) => {
+  const s = body.sub || {}, ep = String(s.endpoint || '');
+  if (!/^https:\/\/[^\s]{10,800}$/.test(ep) || !s.keys || typeof s.keys.p256dh !== 'string' || typeof s.keys.auth !== 'string') E(400, 'Abonnement invalide.');
+  run(`INSERT OR REPLACE INTO push_subs(endpoint,user_id,keys,created_at) VALUES(?,?,?,?)`, ep, me.id, JSON.stringify({ p256dh: s.keys.p256dh.slice(0, 200), auth: s.keys.auth.slice(0, 100) }), now());
+  return { ok: true };
+});
+R('POST', /^\/api\/push\/unsub$/, async ({ me, body }) => { run(`DELETE FROM push_subs WHERE endpoint=? AND user_id=?`, String(body.endpoint || ''), me.id); return { ok: true }; });
+R('POST', /^\/api\/push\/test$/, async ({ me }) => { webPush(me.id, { title: 'tam-tam', body: 'Les notifications fonctionnent sur cet appareil 🥁', tag: 'test', url: '/' }, true); return { ok: true }; });
+
+/* ---------- appels de groupe (jusqu'à 8) : le serveur tient la liste des participants ---------- */
+const GMAX = 8, gcalls = new Map(); // callId -> {chatId, video, parts:Set, started}
+const gcallOf = chatId => [...gcalls.entries()].find(([, g]) => g.chatId === chatId);
+function gstate(g, id) { pushMany(memberIds(g.chatId), { t: 'gcall', type: 'state', callId: id, chatId: g.chatId, video: g.video, parts: [...g.parts] }); }
+function gleave(uid, id) {
+  const g = gcalls.get(id); if (!g || !g.parts.has(uid)) return;
+  g.parts.delete(uid);
+  for (const p of g.parts) push(p, { t: 'gcall', type: 'left', callId: id, user: uid });
+  if (!g.parts.size) {
+    gcalls.delete(id); const d = Math.round((now() - g.started) / 1000);
+    sysMsg(g.chatId, `Appel de groupe terminé · ${d >= 60 ? Math.floor(d / 60) + ' min' : d + ' s'}`);
+  }
+  gstate(g, id);
+}
+R('POST', /^\/api\/gcall\/start$/, async ({ me, body }) => {
+  const c = chatFor(me, +body.chatId); if (c.type !== 'group') E(400, 'Les appels de groupe se font dans un groupe.');
+  const ex = gcallOf(c.id); if (ex) return { callId: ex[0], existing: true };
+  if (tooMany('gcall:' + me.id, 10, 10 * 60_000)) E(429, 'Trop d’appels. Patientez quelques minutes.');
+  const id = crypto.randomBytes(9).toString('base64url'), video = !!body.video;
+  gcalls.set(id, { chatId: c.id, video, parts: new Set(), started: now() });
+  const fn = me.name.split(' ')[0];
+  sysMsg(c.id, `${fn} a lancé un appel ${video ? 'vidéo' : 'vocal'} de groupe`);
+  for (const uid of memberIds(c.id)) if (uid !== me.id) {
+    push(uid, { t: 'gcall', type: 'ring', callId: id, chatId: c.id, from: me.id, video });
+    webPush(uid, { title: c.name || 'Groupe', body: `${fn} lance un appel ${video ? 'vidéo' : 'vocal'} de groupe`, tag: 'gcall-' + c.id, url: '/?chat=' + c.id });
+  }
+  return { callId: id };
+});
+R('POST', /^\/api\/gcall\/join$/, async ({ me, body }) => {
+  const id = String(body.callId || ''), g = gcalls.get(id); if (!g) E(404, 'Cet appel est terminé.');
+  chatFor(me, g.chatId);
+  if (!g.parts.has(me.id) && g.parts.size >= GMAX) E(409, `L’appel est complet (${GMAX} personnes au maximum).`);
+  const others = [...g.parts].filter(x => x !== me.id);
+  g.parts.add(me.id);
+  for (const p of others) push(p, { t: 'gcall', type: 'joined', callId: id, user: me.id });
+  gstate(g, id);
+  return { parts: others, video: g.video, chatId: g.chatId };
+});
+R('POST', /^\/api\/gcall\/signal$/, async ({ me, body }) => {
+  const id = String(body.callId || ''), g = gcalls.get(id), to = +body.to, type = String(body.type || '');
+  if (!g || !g.parts.has(me.id) || !g.parts.has(to) || !['offer', 'answer', 'ice', 'media'].includes(type)) E(400, 'Signal d’appel invalide.');
+  const data = body.data == null ? null : JSON.parse(JSON.stringify(body.data).slice(0, 60_000));
+  push(to, { t: 'gcall', type, callId: id, from: me.id, data });
+  return { ok: true };
+});
+R('POST', /^\/api\/gcall\/leave$/, async ({ me, body }) => { gleave(me.id, String(body.callId || '')); return { ok: true }; });
+R('GET', /^\/api\/gcall\/active$/, async ({ me }) => {
+  const mine = new Set(qa(`SELECT chat_id FROM members WHERE user_id=?`, me.id).map(r => r.chat_id));
+  return { calls: [...gcalls.entries()].filter(([, g]) => mine.has(g.chatId)).map(([id, g]) => ({ callId: id, chatId: g.chatId, video: g.video, parts: [...g.parts] })) };
 });
 
 function chatFor(me, id) { const c = q1(`SELECT * FROM chats WHERE id=?`, id); if (!c || !isMember(id, me.id)) E(404, 'Discussion introuvable.'); return c; }
@@ -488,6 +568,10 @@ R('POST', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, body }) => {
   run(`UPDATE members SET last_read=? WHERE chat_id=? AND user_id=?`, id, c.id, me.id);
   const msg = msgOut(q1(`SELECT * FROM messages WHERE id=?`, id));
   pushMany(memberIds(c.id), { t: 'msg', msg });
+  const fn = me.name.split(' ')[0];
+  for (const uid of memberIds(c.id)) if (uid !== me.id) webPush(uid, c.type === 'group'
+    ? { title: c.name || 'Groupe', body: `${fn} : ${media ? '📷 Photo' : 'nouveau message'}`, tag: 'chat-' + c.id, url: '/?chat=' + c.id }
+    : { title: me.name, body: media ? '📷 Photo' : 'Nouveau message', tag: 'chat-' + c.id, url: '/?chat=' + c.id });
   return { msg };
 });
 R('POST', /^\/api\/chats\/(\d+)\/read$/, async ({ me, m, body }) => {
@@ -701,7 +785,10 @@ R('GET', /^\/api\/stream$/, async ({ me, req, res }) => {
   if (first) presence(me.id);
   req.on('close', () => {
     set.delete(res);
-    if (!set.size) { streams.delete(me.id); run(`UPDATE users SET last_seen=? WHERE id=?`, now(), me.id); presence(me.id); }
+    if (!set.size) {
+      streams.delete(me.id); run(`UPDATE users SET last_seen=? WHERE id=?`, now(), me.id); presence(me.id);
+      setTimeout(() => { if (!online(me.id)) for (const [id, g] of gcalls) if (g.parts.has(me.id)) gleave(me.id, id); }, 20_000);
+    }
   });
   return null;
 });

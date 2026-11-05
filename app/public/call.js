@@ -19,7 +19,7 @@ const Call = {
   /* ---------- appeler ---------- */
   async start(video) {
     const chat = S.chats.get(S.chatId); if (!chat || chat.type !== 'direct') return;
-    if (this.c) return toast('Un appel est déjà en cours.');
+    if (this.c || GCall.c) return toast('Un appel est déjà en cours.');
     if (chat.blocked) return toast('Appel impossible : cette discussion est bloquée.');
     this.c = {id: this.rid(), chatId: chat.id, peer: chat.peer, video, out: true, state: 'calling', q: [], mic: true, cam: video};
     this.render();
@@ -38,7 +38,7 @@ const Call = {
   async onSignal(ev) {
     const c = this.c;
     if (ev.type === 'ring') {
-      if (c) { api('/api/call/signal', {type: 'busy', callId: ev.callId, chatId: ev.chatId, to: ev.from, video: ev.video}).catch(() => {}); return; }
+      if (c || GCall.c) { api('/api/call/signal', {type: 'busy', callId: ev.callId, chatId: ev.chatId, to: ev.from, video: ev.video}).catch(() => {}); return; }
       this.c = {id: ev.callId, chatId: ev.chatId, peer: ev.from, video: ev.video, out: false, state: 'incoming', q: [], mic: true, cam: ev.video};
       this.render(); this.tone('ring'); this.notify(ev);
       this.c.timer = setTimeout(() => { if (this.c && this.c.state === 'incoming' && this.c.id === ev.callId) this.cleanup(); }, 50000);

@@ -375,3 +375,27 @@ body.in-call{overflow:hidden}
 .crop-tools{display:flex;align-items:center;gap:10px;color:var(--fg-2);font-size:20px}
 .crop-tools input{flex:1;accent-color:var(--accent)}
 .req{font-weight:600;color:var(--accent-strong);text-transform:none;letter-spacing:0}
+
+/* ---------- installation, notifications ---------- */
+.inst,.gban{display:flex;align-items:center;gap:12px;margin:8px 12px;padding:12px 14px;border-radius:16px;background:var(--accent-soft);color:var(--fg)}
+.inst img{border-radius:12px;flex:none}
+.inst>div,.gban>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;font-size:14px}
+.inst span,.gban span{color:var(--fg-2);font-size:13px}
+.gban{background:#e6f7ee}.gban>svg{flex:none;width:22px;height:22px;stroke:#1f8a52}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .gban{background:#123326} }
+:root[data-theme="dark"] .gban{background:#123326}
+.gjoin{background:#2fb36b;color:#fff;display:inline-flex;gap:6px;align-items:center}.gjoin svg{width:16px;height:16px}
+.steps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:10px;font-size:15px;line-height:1.45}
+/* ---------- appels de groupe ---------- */
+.gcall .call-in{justify-content:flex-start;gap:12px;padding-top:calc(env(safe-area-inset-top,0px) + 16px)}
+.g-top{display:flex;flex-direction:column;align-items:center;gap:2px}.g-top b{font:700 19px "Bricolage Grotesque",Figtree,sans-serif}.g-top span{font-size:13px;opacity:.85}
+.g-grid{flex:1;width:100%;max-width:1100px;display:grid;gap:8px;grid-template-columns:repeat(2,minmax(0,1fr));align-content:center;min-height:0}
+.g-grid.n1{grid-template-columns:minmax(0,420px);justify-content:center}
+.g-grid.n2{grid-template-columns:minmax(0,1fr)}
+@media (min-width:700px){.g-grid.n2{grid-template-columns:repeat(2,minmax(0,1fr))}.g-grid.n5,.g-grid.n6{grid-template-columns:repeat(3,minmax(0,1fr))}.g-grid.n7,.g-grid.n8{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.gt{position:relative;aspect-ratio:4/3;border-radius:16px;overflow:hidden;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center}
+.gt video{width:100%;height:100%;object-fit:cover}.gt.me video{transform:scaleX(-1)}
+.gt-av .av{width:clamp(56px,14vw,96px);height:clamp(56px,14vw,96px)}
+.gt-name{position:absolute;left:8px;bottom:8px;padding:3px 9px;border-radius:10px;background:rgba(0,0,0,.45);font-size:13px}
+.gt audio{display:none}
+.g-wait{margin:0;text-align:center;opacity:.85}

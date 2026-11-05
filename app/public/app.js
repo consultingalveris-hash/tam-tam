@@ -86,6 +86,7 @@ function avGallery(sel, who) {
 /* ---------- connexion et inscription ---------- */
 const A = {mode: 'login', avatar: {v: 2, st: 'court', sk: 'c', sh: '#14b8c9', f: false, b: false, g: false, e: false}};
 async function boot() {
+  S.pendingChat = +((/[?&]chat=(\d+)/.exec(location.search) || [])[1] || 0);
   const p = location.pathname, inv = (p.match(/^\/invite\/([A-Za-z0-9_-]+)$/) || [])[1], rst = (p.match(/^\/reset\/([A-Za-z0-9_-]+)$/) || [])[1];
   if (inv) S.invite = inv;
   if (rst) { A.mode = 'reset'; A.token = rst; return renderAuth(); }
@@ -161,6 +162,8 @@ async function startApp() {
   renderMain();
   await Promise.all([loadChats(), loadContacts(), loadStatuses()]).catch(e => toast(e.message));
   renderAll(); connect(); if (S.locked) showLock();
+  GCall.loadActive();
+  if (S.pendingChat && S.chats.has(S.pendingChat)) openChat(S.pendingChat); S.pendingChat = 0;
 }
 function connect() {
   if (es) es.close();
@@ -178,6 +181,7 @@ function onEvent(ev) {
   else if (ev.t === 'chats') loadChats().then(() => { if (S.tab === 'chats') renderBody(); });
   else if (ev.t === 'statuses') loadStatuses().then(renderStories);
   else if (ev.t === 'presence') { const u = S.users.get(ev.id); if (u) { u.online = ev.online; u.lastSeen = ev.lastSeen; } if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }
+  else if (ev.t === 'gcall') GCall.onEvent(ev).catch(e => { console.error(e); toast('Problème pendant l’appel de groupe.'); });
   else if (ev.t === 'call') Call.onSignal(ev).catch(e => { console.error(e); toast('Problème pendant l’appel.'); Call.hangup(); });
   else if (ev.t === 'report' && S.me.admin) toast('Nouveau signalement reçu (Réglages, Administration)');
 }
@@ -219,7 +223,7 @@ function renderHead() {
 }
 function renderBody() {
   const b = $('#body'); if (!b) return;
-  if (S.tab === 'chats') b.innerHTML = chatRows();
+  if (S.tab === 'chats') b.innerHTML = Device.banner() + gcallBanner() + chatRows();
   else if (S.tab === 'contacts') b.innerHTML = contactsBody();
   else { b.innerHTML = settingsBody(); fillFp(); }
 }
@@ -351,6 +355,7 @@ function renderChatHead() {
   h.innerHTML = `<button class="ib back" type="button" data-act="back" aria-label="Retour">${I.back}</button>
     <button class="chat-id" type="button" data-act="chatInfo">${c.type === 'group' ? grpAv(c, 'sm') : avatar(uOf(c.peer), 'sm')}<span style="min-width:0"><b>${esc(chatTitle(c))}</b>${sub}</span></button>
     ${c.type === 'direct' && !c.blocked ? `<button class="ib" type="button" data-act="callVideo" aria-label="Appel vidéo">${I.video}</button><button class="ib" type="button" data-act="callAudio" aria-label="Appel vocal">${I.phone}</button>` : ''}
+    ${c.type === 'group' ? (GCall.active(c.id) && !(GCall.c && GCall.c.chatId === c.id) ? `<button class="btn sm gjoin" type="button" data-act="gcallJoin" data-id="${GCall.active(c.id).callId}">${I.phone}Rejoindre</button>` : `<button class="ib" type="button" data-act="gcallVideo" aria-label="Appel vidéo de groupe">${I.video}</button><button class="ib" type="button" data-act="gcallAudio" aria-label="Appel vocal de groupe">${I.phone}</button>`) : ''}
     <button class="ib" type="button" data-act="chatMenu" aria-label="Options de la discussion">${I.more}</button>`;
 }
 function renderComposer() {
@@ -666,14 +671,14 @@ function settingsBody() {
       <p>Votre code de sécurité : <b class="fp" id="myFp">…</b></p><p class="hint">Comparez-le avec celui qu’un proche voit sur votre profil pour vérifier que personne ne s’est glissé entre vous.</p>
       <div><button class="btn sm ghost" type="button" data-act="keyCode">${I.key}Changer le code de sauvegarde</button></div></div>
     ${lockSettingsHtml()}
-    <div class="set-block"><h2>Notifications</h2><p class="hint">Recevez une alerte quand un message arrive alors que tam-tam est ouvert en arrière-plan.</p><div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="soundToggle">${Sound.on() ? '🔔 Son des messages : activé' : '🔕 Son des messages : coupé'}</button><button class="btn sm ghost" type="button" data-act="notif">${'Notification' in window && Notification.permission === 'granted' ? 'Notifications activées' : 'Activer les notifications'}</button></div></div>
+    ${Device.settingsHtml()}
     <div class="set-block"><h2>Personnes bloquées</h2>${(me.blocked || []).length ? me.blocked.map(u => `<div class="adm-row">${avatar(u, 'xs')}<span>${esc(u.name)}</span><button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button></div>`).join('') : '<p class="hint">Personne n’est bloqué.</p>'}</div>
     <div class="set-block"><h2>Compte</h2><div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="pwSheet">${I.key}Changer le mot de passe</button><a class="btn sm ghost" href="/conditions" target="_blank" rel="noopener">Conditions et confidentialité</a><a class="btn sm ghost" href="/demo/" target="_blank" rel="noopener">Voir la maquette</a></div>
       <div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="logout">Se déconnecter</button><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte</button></div></div>
     ${me.admin ? mailBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">tam-tam · version 1.5</p></div>`;
+    <p class="hint" style="text-align:center">tam-tam · version 1.6</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -788,7 +793,7 @@ const ACT = {
   notif() { if (!('Notification' in window)) return toast('Votre navigateur ne permet pas les notifications.'); Notification.requestPermission().then(p => { renderBody(); toast(p === 'granted' ? 'Notifications activées' : 'Notifications refusées dans le navigateur'); }); },
   pwSheet() { sheet(`${head('Changer le mot de passe')}<form data-form="pw"><div class="sheet-body"><div class="field"><label for="pwOld">Mot de passe actuel</label><input id="pwOld" type="password" autocomplete="current-password"></div><div class="field"><label for="pwNew">Nouveau mot de passe (8 caractères minimum)</label><input id="pwNew" type="password" autocomplete="new-password"></div><p class="err" id="pwErr" role="alert" hidden></p><div class="actions"><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Mot de passe', '#pwOld'); },
   delSheet() { sheet(`${head('Supprimer mon compte')}<form data-form="del"><div class="sheet-body"><p>Votre compte, votre profil, vos photos et vos statuts seront effacés. Vos messages seront remplacés par « Ce message a été supprimé ». C’est définitif.</p><div class="field"><label for="delPw">Votre mot de passe pour confirmer</label><input id="delPw" type="password" autocomplete="current-password"></div><p class="err" id="delErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="submit">Supprimer définitivement</button></div></div></form>`, 'Supprimer', '#delPw'); },
-  async logout() { await api('/api/logout', {}).catch(() => {}); if (es) es.close(); S.me = null; location.href = '/'; },
+  async logout() { await Device.disableHere(); await api('/api/logout', {}).catch(() => {}); if (es) es.close(); S.me = null; location.href = '/'; },
   admLoad() { adminLoad(); },
   async admDone(d) { await api('/api/admin/report-done', {id: +d.id}).catch(e => toast(e.message)); adminLoad(); },
   async admReset(d) { try { const r = await api('/api/admin/reset', {userId: +d.id}); sheet(`${head('Lien de réinitialisation')}<div class="sheet-body"><p>Envoyez ce lien à la personne (valable 2 jours). Il lui permet de choisir un nouveau mot de passe.</p><div class="invite-url">${esc(r.url)}</div><div class="actions"><button class="btn" type="button" data-act="copyTxt" data-t="${esc(r.url)}">${I.copy}Copier</button></div></div>`, 'Lien'); } catch (e) { toast(e.message); } },
