@@ -430,3 +430,27 @@ body.in-call{overflow:hidden}
 .privbar span{flex:1}.privbar>svg{width:18px;height:18px}
 /* nom écrit seul, sans logo */
 .title .brand{font-size:26px}
+
+/* ---------- champs : on voit qu'on est en train d'écrire ---------- */
+input,textarea{caret-color:var(--accent-strong)}
+.search{transition:background .15s, box-shadow .15s;border:2px solid transparent}
+.search:focus-within{background:var(--surface);border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.search:focus-within>svg{stroke:var(--accent-strong)}
+.field input:focus,.field textarea:focus,.field select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.composer textarea:focus,.composer input:focus{box-shadow:none}
+mark{background:#ffe08a;color:inherit;border-radius:3px;padding:0 1px}
+/* ---------- contacts en listes déroulantes ---------- */
+.drop{margin:8px 12px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--surface)}
+.drop>summary{display:flex;align-items:center;gap:10px;padding:13px 16px;font-weight:700;cursor:pointer;list-style:none}
+.drop>summary::-webkit-details-marker{display:none}
+.drop>summary::after{content:"";margin-left:auto;width:9px;height:9px;border-right:2px solid var(--fg-2);border-bottom:2px solid var(--fg-2);transform:rotate(45deg);transition:transform .15s}
+.drop[open]>summary::after{transform:rotate(-135deg)}
+.drop>summary svg{width:20px;height:20px;stroke:var(--accent-strong)}
+.drop .row{padding-left:14px;padding-right:14px}
+.ib-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.ib-head .btn svg{width:18px;height:18px}
+/* ---------- code QR ---------- */
+.qrbox{width:min(260px,70vw);padding:12px;background:#fff;border-radius:18px;box-shadow:0 2px 12px var(--shadow)}
+.qrbox svg{width:100%;height:auto;display:block}
+.qrvid{width:min(320px,80vw);aspect-ratio:1;object-fit:cover;border-radius:18px;background:#000}
+.qrnote{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:12px;background:var(--surface-2);font-size:14px}

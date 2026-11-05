@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import nodemailer from 'nodemailer';
 import webpush from 'web-push';
+import QRCode from 'qrcode';
 
 const ROOT = path.dirname(new URL(import.meta.url).pathname);
 const PORT = +process.env.PORT || 3000;
@@ -51,7 +52,7 @@ CREATE TABLE IF NOT EXISTS status_views(status_id INTEGER NOT NULL REFERENCES st
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, target_user INTEGER, chat_id INTEGER, reason TEXT NOT NULL, note TEXT,
   created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0);
 `);
-for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`]) { try { db.exec(sql); } catch {} }
+for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`]) { try { db.exec(sql); } catch {} }
 db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, call_id TEXT NOT NULL, kind TEXT NOT NULL, chat_id INTEGER NOT NULL, caller INTEGER NOT NULL, callee INTEGER, video INTEGER NOT NULL, status TEXT NOT NULL, joined TEXT NOT NULL DEFAULT '[]', started INTEGER NOT NULL, answered INTEGER, ended INTEGER);
@@ -128,6 +129,7 @@ function userCard(u, me) {
     const mine = new Set(contactIds(me)); card.mutual = contactIds(u.id).filter(x => mine.has(x)).length;
     card.blocked = iBlocked(me, u.id);
     if (canSeePriv(u, me)) card.priv = J(u.priv, {});
+    if (card.rel === 'contact') { const l = limOf(me, u.id); if (l === me) card.limMine = true; else if (l === u.id) card.limTheirs = true; }
   }
   return card;
 }
@@ -135,6 +137,7 @@ function canSeePriv(u, me) {
   if (u.id === me) return true;
   if (u.priv_to === 'me') return false;
   if (relation(me, u.id) !== 'contact' || blockedEither(me, u.id)) return false;
+  if (limOf(me, u.id) === u.id) return false;
   if (u.priv_to === 'grp') return !!q1(`SELECT 1 FROM close_group WHERE owner=? AND member=?`, u.id, me);
   return true;
 }
@@ -227,7 +230,13 @@ function meOut(u) {
     blocked: qa(`SELECT blocked FROM blocks WHERE user_id=?`, u.id).map(r => userCard(getUser(r.blocked), u.id)).filter(Boolean),
     cguAt: u.cgu_at, createdAt: u.created_at };
 }
-function inviteValid(code) { const i = code && q1(`SELECT * FROM invites WHERE code=?`, code); return i && i.expires > now() && i.uses < i.max_uses ? i : null; }
+function inviteValid(code) {
+  if (!code) return null;
+  const i = q1(`SELECT * FROM invites WHERE code=?`, code); if (i) return i.expires > now() && i.uses < i.max_uses ? i : null;
+  // le code QR personnel d'un membre vaut aussi invitation
+  const o = q1(`SELECT id FROM users WHERE qr_token=?`, code); return o ? { code, by_user: o.id, qr: true } : null;
+}
+const limOf = (x, y) => { const [a, b] = pair(x, y); return q1(`SELECT lim FROM contacts WHERE a=? AND b=?`, a, b)?.lim || 0; };
 
 /* ---------- routes ---------- */
 const routes = [];
@@ -261,9 +270,10 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
     email, hashPass(pass), name, slugHandle(name), av, first ? 1 : 0, inv ? inv.by_user : null, now(), now()).lastInsertRowid;
   if (gp) { run(`UPDATE users SET google_sub=? WHERE id=?`, gp.sub, Number(id)); run(`DELETE FROM gpending WHERE token=?`, gp.token); }
   if (inv) {
-    run(`UPDATE invites SET uses=uses+1 WHERE code=?`, inv.code);
+    if (!inv.qr) run(`UPDATE invites SET uses=uses+1 WHERE code=?`, inv.code);
     // La personne qui invite et l'invité deviennent contacts directement : l'invitation vaut acceptation.
-    const [a, b] = pair(Number(id), inv.by_user); run(`INSERT OR IGNORE INTO contacts(a,b,status,requester,created_at) VALUES(?,?,'accepted',?,?)`, a, b, inv.by_user, now());
+    // Par code QR, celui qui partage son code ne montre que son profil public.
+    const [a, b] = pair(Number(id), inv.by_user); run(`INSERT OR IGNORE INTO contacts(a,b,status,requester,created_at,lim) VALUES(?,?,'accepted',?,?,?)`, a, b, inv.by_user, now(), inv.qr ? inv.by_user : 0);
     push(inv.by_user, { t: 'contacts' });
   }
   setSession(res, Number(id));
@@ -600,6 +610,29 @@ R('POST', /^\/api\/private\/code$/, async ({ me, body }) => {
   run(`UPDATE users SET hide_code=? WHERE id=?`, hashPass(code), me.id); return { ok: true };
 });
 
+/* ---------- code QR personnel : se connecter en scannant ---------- */
+function qrUrl(me) {
+  let t = getUser(me.id).qr_token; if (!t) { t = rnd(12); run(`UPDATE users SET qr_token=? WHERE id=?`, t, me.id); }
+  return `${BASE_URL}/add/${t}`;
+}
+R('GET', /^\/api\/qr$/, async ({ me }) => { const url = qrUrl(me); return { url, svg: await QRCode.toString(url, { type: 'svg', margin: 1, errorCorrectionLevel: 'M', color: { dark: '#0f2430', light: '#ffffff' } }) }; });
+R('POST', /^\/api\/qr\/reset$/, async ({ me }) => { run(`UPDATE users SET qr_token=? WHERE id=?`, rnd(12), me.id); const url = qrUrl(me); return { url, svg: await QRCode.toString(url, { type: 'svg', margin: 1, color: { dark: '#0f2430', light: '#ffffff' } }) }; });
+R('POST', /^\/api\/qr\/connect$/, async ({ me, body }) => {
+  const o = q1(`SELECT * FROM users WHERE qr_token=?`, clean(body.token, 40)); if (!o) E(404, 'Ce code QR n’est plus valable. Demandez-en un nouveau.');
+  if (o.id === me.id) E(400, 'C’est votre propre code QR.');
+  if (blockedEither(me.id, o.id)) E(403, 'Connexion impossible avec cette personne.');
+  if (tooMany('qr:' + me.id, 30, 60 * 60_000)) E(429, 'Trop d’essais. Réessayez plus tard.');
+  const [a, b] = pair(me.id, o.id), ex = q1(`SELECT * FROM contacts WHERE a=? AND b=?`, a, b);
+  if (!ex) run(`INSERT INTO contacts(a,b,status,requester,created_at,lim) VALUES(?,?,'accepted',?,?,?)`, a, b, me.id, now(), o.id);
+  else if (ex.status !== 'accepted') run(`UPDATE contacts SET status='accepted', lim=? WHERE a=? AND b=?`, o.id, a, b);
+  push(o.id, { t: 'contacts' }); push(me.id, { t: 'contacts' });
+  return { user: userCard(o, me.id), already: !!(ex && ex.status === 'accepted') };
+});
+R('POST', /^\/api\/contacts\/share-priv$/, async ({ me, body }) => {
+  const id = +body.id, [a, b] = pair(me.id, id);
+  run(`UPDATE contacts SET lim=0 WHERE a=? AND b=? AND lim=?`, a, b, me.id); push(id, { t: 'contacts' }); return { ok: true };
+});
+
 function chatFor(me, id) { const c = q1(`SELECT * FROM chats WHERE id=?`, id); if (!c || !isMember(id, me.id)) E(404, 'Discussion introuvable.'); return c; }
 R('POST', /^\/api\/chats\/(\d+)\/members$/, async ({ me, m, body }) => {
   const c = chatFor(me, +m[1]); if (c.type !== 'group') E(400, 'Seuls les groupes acceptent de nouveaux membres.');
@@ -886,7 +919,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/demo' ) { res.writeHead(301, { Location: '/demo/' }); return res.end(); }
     if (p === '/demo/') return serveFile(res, path.join(PUB, 'demo/index.html'), { 'X-Robots-Tag': 'noindex' });
     if (p === '/conditions') return serveFile(res, path.join(PUB, 'conditions.html'), SEC);
-    if (p === '/' || /^\/(invite|reset)\/[A-Za-z0-9_-]+$/.test(p)) return serveFile(res, path.join(PUB, 'app.html'), SEC);
+    if (p === '/' || /^\/(invite|reset|add)\/[A-Za-z0-9_-]+$/.test(p)) return serveFile(res, path.join(PUB, 'app.html'), SEC);
     const f = path.normalize(path.join(PUB, p)); if (!f.startsWith(PUB + path.sep) || f.includes(path.join(PUB, 'demo'))) return send(res, 404, 'Page introuvable');
     if (fs.existsSync(f) && fs.statSync(f).isFile()) return serveFile(res, f, SEC);
     send(res, 404, 'Page introuvable');

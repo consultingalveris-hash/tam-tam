@@ -89,6 +89,7 @@ async function boot() {
   S.pendingChat = +((/[?&]chat=(\d+)/.exec(location.search) || [])[1] || 0);
   const p = location.pathname, inv = (p.match(/^\/invite\/([A-Za-z0-9_-]+)$/) || [])[1], rst = (p.match(/^\/reset\/([A-Za-z0-9_-]+)$/) || [])[1];
   if (inv) S.invite = inv;
+  const qr = (p.match(/^\/add\/([A-Za-z0-9_-]+)$/) || [])[1]; if (qr) { S.qrAdd = qr; S.invite = qr; }
   if (rst) { A.mode = 'reset'; A.token = rst; return renderAuth(); }
   const qs = new URLSearchParams(location.search), gtok = qs.get('g'), gerr = qs.get('g_err');
   if (gtok || gerr) history.replaceState(null, '', location.pathname);
@@ -165,6 +166,7 @@ async function startApp() {
   GCall.loadActive(); Call.checkPending(); Device.badge();
   if (S.lock.type === 'off') return requireLock();
   if (S.pendingChat && S.chats.has(S.pendingChat)) openChat(S.pendingChat); S.pendingChat = 0;
+  if (S.qrAdd) { const t = S.qrAdd; S.qrAdd = null; Qr.connect(t); }
 }
 function connect() {
   if (es) es.close();
@@ -247,7 +249,13 @@ function chatRows() {
   const q = S.q.trim().toLowerCase();
   let list = [...S.chats.values()].filter(c => (c.last || c.type === 'group' || c.id === S.chatId) && (!c.hidden || S.showHidden));
   Priv.watch(q);
-  if (q && !(S.showHidden && Priv.isCode(q))) list = list.filter(c => chatTitle(c).toLowerCase().includes(q));
+  const hitMsg = {};
+  if (q && !(S.showHidden && Priv.isCode(q))) {
+    Find.preload(q);
+    list = list.filter(c => { if (chatTitle(c).toLowerCase().includes(q)) return true;
+      const m = (S.msgs.get(c.id) || []).slice().reverse().find(m => !m.deleted && m.kind !== 'sys' && typeof m.text === 'string' && m.text.toLowerCase().includes(q));
+      if (m) { hitMsg[c.id] = m; return true; } return false; });
+  }
   if (S.showHidden) list.sort((a, b) => (b.hidden ? 1 : 0) - (a.hidden ? 1 : 0));
   list.sort((a, b) => (b.last?.at || b.createdAt) - (a.last?.at || a.createdAt));
   const privBar = S.showHidden ? `<div class="privbar">${I.lock}<span>Discussions privées affichées</span><button class="btn sm ghost" type="button" data-act="privHide">Masquer</button></div>` : '';
@@ -256,6 +264,7 @@ function chatRows() {
   return privBar + list.map(c => {
     const m = c.last, tu = typingIn(c.id), u = c.type === 'direct' ? uOf(c.peer) : null;
     let prev = esc(snippet(m));
+    if (hitMsg[c.id]) prev = Find.mark(hitMsg[c.id].text, q);
     if (tu) prev = `<span class="typing-t">${c.type === 'group' ? esc(first(uOf(tu).name)) + ' écrit…' : 'écrit…'}</span>`;
     else if (m && c.type === 'group' && m.from && m.kind !== 'sys') prev = esc(m.from === S.me.id ? 'Vous' : first(uOf(m.from).name)) + ' : ' + prev;
     const mine = m && m.from === S.me.id && !m.deleted && m.kind !== 'sys';
@@ -281,19 +290,22 @@ function relBtn(u) {
   if (u.rel === 'sent') return `<button class="btn sm ghost" type="button" data-act="cRemove" data-id="${u.id}">Annuler</button>`;
   return `<button class="btn sm" type="button" data-act="cRequest" data-id="${u.id}">${I.plus}Ajouter</button>`;
 }
+const pseudoRow = u => `<div class="row">${avOn(u)}<button class="row-name linkless" type="button" data-act="prof" data-id="${u.id}" style="border:0;background:none;padding:0;text-align:left;display:flex;flex-direction:column;align-items:flex-start;min-width:0"><b>@${esc(u.handle)}</b><small style="color:var(--fg-2);font-weight:400">${esc(u.name)}${u.mutual ? ` · ${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun` : ''}</small></button><span class="row-end">${relBtn(u)}</span></div>`;
 const userRow = (u, extra) => `<div class="row">${avOn(u)}<button class="row-name linkless" type="button" data-act="prof" data-id="${u.id}" style="border:0;background:none;padding:0;text-align:left">${esc(u.name)}</button><span class="row-end">${extra || relBtn(u)}</span>
   <span class="row-prev"><span>@${esc(u.handle)}${u.pub && u.pub.ville ? ' · ' + esc(u.pub.ville) : ''}${u.mutual ? ` · ${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun` : ''}</span></span></div>`;
 function contactsBody() {
   const C = S.contacts;
-  return `<div class="invite-box"><b>Invitez vos proches</b><span class="hint">Seules les personnes qui ont un lien d’invitation peuvent s’inscrire. La personne invitée devient directement votre contact.</span>
+  return `<div class="invite-box"><div class="ib-head"><b>Invitez vos proches</b><button class="btn sm ghost" type="button" data-act="qrShow">${I.qr}Mon code QR</button></div><span class="hint">Seules les personnes qui ont un lien d’invitation peuvent s’inscrire. La personne invitée devient directement votre contact.</span>
       ${S.lastInvite ? `<div class="invite-url">${esc(S.lastInvite.url)}</div><div class="actions" style="justify-content:flex-start"><button class="btn sm" type="button" data-act="invCopy">${I.copy}Copier le lien</button><a class="btn sm ghost" href="https://wa.me/?text=${encodeURIComponent(inviteText())}" target="_blank" rel="noopener">WhatsApp</a>${navigator.share ? '<button class="btn sm ghost" type="button" data-act="invShare">Partager… (SMS, e-mail, autres)</button>' : ''}${'contacts' in navigator && navigator.contacts && navigator.contacts.select ? '<button class="btn sm ghost" type="button" data-act="invContacts">Choisir dans mes contacts</button>' : ''}</div><span class="hint">Valable 14 jours, pour 20 personnes au plus.</span>`
       : `<div><button class="btn" type="button" data-act="invNew">${I.userplus}Créer un lien d’invitation</button></div>`}</div>
     <div style="padding:0 16px"><label class="search">${I.search}<span class="sr">Chercher un membre</span><input id="fq" type="search" placeholder="Chercher un membre : nom, @pseudo ou e-mail" autocomplete="off" value="${esc(S.fq || '')}"></label></div>
     <div id="fres">${S.fres ? (S.fres.length ? S.fres.map(u => userRow(u)).join('') : '<p class="empty">Personne ne correspond.</p>') : ''}</div>
     ${C.incoming.length ? `<div class="sec">Demandes reçues · ${C.incoming.length}</div>${C.incoming.map(u => userRow(u, `<button class="btn sm ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button><button class="btn sm" type="button" data-act="cAccept" data-id="${u.id}">Accepter</button>`)).join('')}` : ''}
-    <div class="sec">Mes contacts · ${C.contacts.length}</div>${C.contacts.length ? C.contacts.map(u => userRow(u)).join('') : '<p class="empty">Pas encore de contact. Envoyez un lien d’invitation à vos proches.</p>'}
-    ${C.outgoing.length ? `<div class="sec">Demandes envoyées</div>${C.outgoing.map(u => userRow(u)).join('')}` : ''}
-    ${C.suggestions.length ? `<div class="sec">Vous les connaissez peut-être</div>${C.suggestions.map(u => userRow(u)).join('')}` : ''}<div style="height:20px"></div>`;
+    <details class="drop" open><summary>${I.userplus}Trouver des amis${C.suggestions.length ? ` · ${C.suggestions.length}` : ''}</summary>
+      ${C.suggestions.length ? C.suggestions.map(u => pseudoRow(u)).join('') : '<p class="empty">Pas de suggestion pour l’instant. Cherchez un membre par son nom ou son @pseudo ci-dessus.</p>'}</details>
+    ${C.outgoing.length ? `<details class="drop"><summary>${I.clock || ''}Demandes envoyées · ${C.outgoing.length}</summary>${C.outgoing.map(u => pseudoRow(u)).join('')}</details>` : ''}
+    <details class="drop"><summary>${I.users}Mes contacts · ${C.contacts.length}</summary>${C.contacts.length ? C.contacts.map(u => pseudoRow(u)).join('') : '<p class="empty">Pas encore de contact. Envoyez un lien d’invitation à vos proches.</p>'}</details>
+    <p class="hint" style="padding:0 16px">Pour retrouver une discussion, tapez un nom ou un mot de la conversation dans la recherche de l’onglet <b>Discussions</b>.</p><div style="height:20px"></div>`;
 }
 let fqT;
 async function searchPeople(q) {
@@ -320,6 +332,8 @@ async function profSheet(id) {
   sheet(`${head('Profil')}<div class="sheet-body"><div class="prof">${avatar(u, 'xl')}<b>${esc(u.name)}</b><span>@${esc(u.handle)}</span>${u.rel === 'contact' ? `<small>${u.online ? 'En ligne' : seenLabel(u.lastSeen)}</small>` : ''}${u.mutual ? `<small>${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun</small>` : ''}</div>
     ${dl(PUB_L.map(([k, l]) => [l, p[k]]).concat([['Anniversaire', bd]])) || '<p class="hint" style="text-align:center">Profil public encore vide.</p>'}
     ${u.rel === 'contact' && u.pubkey ? `<p class="hint">${I.shield} Code de sécurité de ${esc(first(u.name))} : <b class="fp" id="peerFp">…</b></p>` : ''}
+    ${u.limTheirs ? `<p class="hint">${I.lock} Ajouté par code QR : vous voyez seulement son profil public.</p>` : ''}
+    ${u.limMine ? `<div class="qrnote"><span>${I.lock} Contact ajouté avec votre code QR : ${esc(first(u.name))} ne voit pas votre profil privé (téléphone, adresse…).</span><button class="btn sm ghost" type="button" data-act="sharePriv" data-id="${u.id}">Lui montrer mon profil privé</button></div>` : ''}
     ${u.priv ? `<span class="lbl">${I.lock} Profil privé</span>${dl(PRIV_L.map(([k, l]) => [l, u.priv[k]])) || '<p class="hint">Rien de renseigné.</p>'}` : ''}
     ${u.rel === 'sent' ? '<p class="hint">Demande envoyée : vous pourrez échanger quand elle sera acceptée.</p>' : u.rel === 'none' ? '<p class="hint">Après votre demande, cette personne doit l’accepter pour que vous puissiez échanger.</p>' : ''}
     ${u.rel === 'me' ? '<p class="hint" style="text-align:center">C’est ainsi que les autres membres voient votre profil.</p>' : `<div class="actions">${u.rel === 'received' ? `<button class="btn ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button>` : ''}${u.blocked ? '' : relBtn(u).replace(/btn sm/g, 'btn')}</div>
@@ -555,9 +569,10 @@ function chatMenu() {
   const u = c.type === 'direct' ? uOf(c.peer) : null, blocked = u && (S.me.blocked || []).some(b => b.id === u.id);
   sheet(`${head(esc(chatTitle(c)))}<div class="menu">
     ${c.type === 'group' ? `<button type="button" data-act="chatInfo">${I.info}Infos du groupe</button><button type="button" data-act="groupAddOpen">${I.userplus}Ajouter des membres</button><button type="button" class="danger" data-act="leaveAsk">${I.back}Quitter le groupe</button>`
-    : `<button type="button" data-act="prof" data-id="${u.id}">${I.info}Voir le profil</button><button type="button" class="danger" data-act="${blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${I.block}${blocked ? 'Débloquer ' : 'Bloquer '}${esc(first(u.name))}</button>`}
+    : `<button type="button" data-act="prof" data-id="${u.id}">${I.info}Voir le profil</button>`}
     <button type="button" data-act="privToggle">${I.lock}${c.hidden ? 'Ne plus rendre privée' : 'Rendre la discussion privée'}</button>
-    <button type="button" class="danger" data-act="reportAsk" data-id="${u ? u.id : ''}" data-chat="${c.id}">${I.flag}Signaler</button></div>`, 'Options');
+    <button type="button" class="danger" data-act="reportAsk" data-id="${u ? u.id : ''}" data-chat="${c.id}">${I.flag}Signaler</button>
+    ${u ? `<button type="button" class="danger" data-act="${blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${I.block}${blocked ? 'Débloquer ' : 'Bloquer '}${esc(first(u.name))}</button>` : ''}</div>`, 'Options');
 }
 function groupInfo() {
   const c = S.chats.get(S.chatId); if (!c) return;
@@ -688,7 +703,7 @@ function settingsBody() {
     ${me.admin ? mailBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.8</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.9</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -944,12 +959,24 @@ function bindPad(id, done) {
   const pad = $('#' + id); if (!pad) return; let seq = [], on = false;
   const dots = [...pad.querySelectorAll('.pd')], line = pad.querySelector('polyline');
   const center = i => { const r = pad.getBoundingClientRect(), d = dots[i].getBoundingClientRect(); return [(d.left + d.width / 2 - r.left) / r.width * 300, (d.top + d.height / 2 - r.top) / r.height * 300]; };
-  const hit = (x, y) => dots.findIndex(d => { const b = d.getBoundingClientRect(); return x > b.left - 14 && x < b.right + 14 && y > b.top - 14 && y < b.bottom + 14; });
-  const draw = () => { line.setAttribute('points', seq.map(i => center(i).join(',')).join(' ')); dots.forEach((d, i) => d.classList.toggle('on', seq.includes(i))); };
-  const add = e => { const i = hit(e.clientX, e.clientY); if (i >= 0 && !seq.includes(i)) { seq.push(i); draw(); if (navigator.vibrate) navigator.vibrate(8); } };
+  // zone ronde autour de chaque point : un trait en diagonale ne touche plus les voisins par erreur
+  const hit = (x, y) => { const r = pad.getBoundingClientRect(), rad = r.width / 3 * 0.3; return dots.findIndex(d => { const b = d.getBoundingClientRect(); return Math.hypot(x - (b.left + b.width / 2), y - (b.top + b.height / 2)) < rad; }); };
+  const draw = (fx, fy) => { const pts = seq.map(i => center(i).join(',')); if (on && fx != null) { const r = pad.getBoundingClientRect(); pts.push(`${(fx - r.left) / r.width * 300},${(fy - r.top) / r.height * 300}`); } line.setAttribute('points', pts.join(' ')); dots.forEach((d, i) => d.classList.toggle('on', seq.includes(i))); };
+  const add = e => {
+    const i = hit(e.clientX, e.clientY);
+    if (i >= 0) {
+      if (seq.length >= 2 && i === seq[seq.length - 2]) { seq.pop(); if (navigator.vibrate) try { navigator.vibrate(6); } catch {} }   // revenir sur le point précédent l'efface
+      else if (!seq.includes(i)) {
+        const last = seq[seq.length - 1];
+        if (last != null) { const mid = (last + i) / 2; if (Number.isInteger(mid) && (last % 3) + (i % 3) === 2 * (mid % 3) && !seq.includes(mid)) seq.push(mid); }  // point sauté au milieu
+        seq.push(i); if (navigator.vibrate) try { navigator.vibrate(8); } catch {}
+      }
+    }
+    draw(e.clientX, e.clientY);
+  };
   pad.addEventListener('pointerdown', e => { e.preventDefault(); on = true; seq = []; pad.setPointerCapture(e.pointerId); add(e); });
   pad.addEventListener('pointermove', e => { if (on) add(e); });
-  const end = () => { if (!on) return; on = false; const s2 = seq.slice(); setTimeout(() => { seq = []; draw(); }, 350); if (s2.length) done(s2); };
+  const end = () => { if (!on) return; on = false; draw(); const s2 = seq.slice(); setTimeout(() => { seq = []; draw(); }, 350); if (s2.length) done(s2); };
   pad.addEventListener('pointerup', end); pad.addEventListener('pointercancel', end);
 }
 function showLock(msg) {

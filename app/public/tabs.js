@@ -29,11 +29,19 @@ const Calls = {
     const hits = S.contacts.contacts.filter(u => { const t = ((u.priv || {}).tel || '').replace(/\D/g, ''); return t && t.includes(n); }).slice(0, 4);
     return hits.map(u => `<button class="cl sug" type="button" data-act="clContact" data-id="${u.id}">${avatar(u, 'sm')}<div class="cl-t"><b>${esc(u.name)}</b><span>${esc(u.priv.tel)}</span></div>${I.phone}</button>`).join('');
   },
+  q: '',
+  found() {
+    const q = this.q.trim().toLowerCase().replace(/^@/, ''); if (!q) return null;
+    return S.contacts.contacts.filter(u => u.name.toLowerCase().includes(q) || (u.handle || '').toLowerCase().includes(q)).slice(0, 30)
+      .map(u => `<div class="cl">${avatar(u, 'sm')}<div class="cl-t"><b>${esc(u.name)}</b><span>@${esc(u.handle)}</span></div>
+        <button class="ib" type="button" data-act="clContact" data-id="${u.id}" data-video="1" aria-label="Appel vidéo">${I.video}</button><button class="ib" type="button" data-act="clContact" data-id="${u.id}" aria-label="Appel vocal">${I.phone}</button></div>`).join('') || '<p class="empty">Aucun contact ne correspond.</p>';
+  },
   body() {
     if (!this.log) { this.load(); }
-    const list = (this.log || []).map(c => this.row(c)).join('');
+    const f = this.found(), list = (this.log || []).map(c => this.row(c)).join('');
     return `<div class="calls">
-      <div class="cl-list">${this.log ? (list || '<p class="empty">Aucun appel pour l’instant. Vos appels vocaux et vidéo apparaîtront ici.</p>') : '<p class="empty">Chargement…</p>'}</div>
+      <div style="padding:6px 16px 4px"><label class="search">${I.search}<span class="sr">Chercher quelqu’un à appeler</span><input id="cq" type="search" placeholder="Appeler quelqu’un : nom ou @pseudo" autocomplete="off" value="${esc(this.q)}"></label></div>
+      <div class="cl-list" id="clList">${f != null ? f : this.log ? (list || '<p class="empty">Aucun appel pour l’instant. Vos appels vocaux et vidéo apparaîtront ici.</p>') : '<p class="empty">Chargement…</p>'}</div>
       <div class="dial" aria-label="Clavier">
         <div class="dial-sug" id="dialSug">${this.suggest()}</div>
         <div class="dial-top"><input id="dialIn" type="tel" inputmode="none" autocomplete="off" placeholder="Composez ou collez un numéro" value="${esc(this.num)}" aria-label="Numéro">
@@ -61,7 +69,10 @@ const Calls = {
       <button class="btn ghost" type="button" data-act="dialInvite" data-tel="${esc(tel)}">${I.userplus}L’inviter sur tam-tam par SMS</button></div></div>`, 'Numéro inconnu');
   },
 };
-document.addEventListener('input', e => { if (e.target.id === 'dialIn') Calls.setNum(e.target.value); });
+document.addEventListener('input', e => {
+  if (e.target.id === 'dialIn') Calls.setNum(e.target.value);
+  if (e.target.id === 'cq') { Calls.q = e.target.value; const f = Calls.found(); $('#clList').innerHTML = f != null ? f : (Calls.log || []).map(c => Calls.row(c)).join('') || '<p class="empty">Aucun appel pour l’instant.</p>'; }
+});
 Object.assign(ACT, {
   dialKey(d) { Calls.setNum(Calls.num + d.k); if (navigator.vibrate && navigator.userActivation && navigator.userActivation.hasBeenActive) try { navigator.vibrate(10); } catch {} },
   dialBack() { Calls.setNum(Calls.num.slice(0, -1)); },
@@ -70,7 +81,7 @@ Object.assign(ACT, {
   async dialInvite(d) {
     try { if (!S.lastInvite) S.lastInvite = await api('/api/invites', {}); closeLayer(); location.href = `sms:${d.tel}?body=${encodeURIComponent(inviteText())}`; } catch (e) { toast(e.message); }
   },
-  async clContact(d) { try { await Calls.openDirect(+d.id); Call.start(false); } catch (e) { toast(e.message); } },
+  async clContact(d) { try { Calls.q = ''; await Calls.openDirect(+d.id); Call.start(!!d.video); } catch (e) { toast(e.message); } },
   async clCall(d) {
     const id = +d.chat; if (!S.chats.has(id)) return toast('Cette discussion n’existe plus.');
     S.tab = 'chats'; renderAll(); await openChat(id);
@@ -131,4 +142,58 @@ Object.assign(ACT, {
   privToggle() { Priv.toggle(); },
   privHide() { Priv.hide(); },
   privCodeChange() { Priv.codeSheet(null, true); },
+});
+
+/* ---------- recherche d'un mot dans les conversations ---------- */
+const Find = {
+  done: new Set(), busy: false,
+  // les messages sont chiffrés : la recherche se fait sur l'appareil, après les avoir déchiffrés
+  async preload(q) {
+    if (this.busy || q.length < 2) return; this.busy = true;
+    let changed = false;
+    for (const c of S.chats.values()) { if (S.msgs.has(c.id) || this.done.has(c.id)) continue; this.done.add(c.id); await loadMessages(c.id); changed = true; }
+    this.busy = false; if (changed && S.tab === 'chats' && S.q.trim()) renderBody();
+  },
+  mark(text, q) {
+    const t = String(text), i = t.toLowerCase().indexOf(q), from = Math.max(0, i - 24), part = t.slice(from, i + q.length + 50);
+    const j = i - from; return (from ? '…' : '') + esc(part.slice(0, j)) + '<mark>' + esc(part.slice(j, j + q.length)) + '</mark>' + esc(part.slice(j + q.length));
+  },
+};
+
+/* ---------- code QR personnel ---------- */
+const Qr = {
+  async show(reset) {
+    let r; try { r = await api(reset ? '/api/qr/reset' : '/api/qr', reset ? {} : undefined); } catch (e) { return toast(e.message); }
+    const scan = 'BarcodeDetector' in window;
+    sheet(`${head('Mon code QR')}<div class="sheet-body" style="align-items:center;text-align:center">
+      <div class="qrbox">${r.svg}</div>
+      <p class="hint">Faites scanner ce code avec l’appareil photo d’un téléphone : la personne devient votre contact sur Tam-Tam. Elle peut vous écrire et vous appeler, mais <b>ne voit que votre profil public</b> : ni votre téléphone, ni votre adresse.</p>
+      <div class="actions" style="justify-content:center;flex-wrap:wrap">${scan ? `<button class="btn" type="button" data-act="qrScan">${I.camera}Scanner un code</button>` : ''}<button class="btn ghost" type="button" data-act="qrCopy" data-url="${esc(r.url)}">${I.copy}Copier le lien</button><button class="btn ghost" type="button" data-act="qrReset">Changer mon code</button></div>
+      ${scan ? '' : '<p class="hint">Pour scanner le code d’un ami, ouvrez l’appareil photo de votre téléphone et visez son code.</p>'}</div>`, 'Mon code QR');
+  },
+  async scan() {
+    let stream; try { stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}}); } catch { return toast('Autorisez l’appareil photo pour scanner un code.'); }
+    sheet(`${head('Scanner un code QR')}<div class="sheet-body" style="align-items:center"><video id="qrVid" class="qrvid" autoplay playsinline muted></video><p class="hint">Visez le code QR de votre ami.</p></div>`, 'Scanner');
+    const v = $('#qrVid'); v.srcObject = stream; const det = new BarcodeDetector({formats: ['qr_code']});
+    const stop = () => stream.getTracks().forEach(t => t.stop());
+    const loop = async () => {
+      if (!document.body.contains(v)) return stop();
+      try { const codes = await det.detect(v); const m = codes.map(c => /\/add\/([A-Za-z0-9_-]+)/.exec(c.rawValue)).find(Boolean); if (m) { stop(); closeLayer(); return this.connect(m[1]); } } catch {}
+      setTimeout(loop, 300);
+    };
+    v.onloadeddata = loop;
+  },
+  async connect(token) {
+    history.replaceState(null, '', '/');
+    try {
+      const r = await api('/api/qr/connect', {token}); keepUsers([r.user]); await loadContacts();
+      toast(r.already ? `${r.user.name} est déjà votre contact.` : `Vous êtes maintenant en contact avec ${r.user.name}.`);
+      ACT.write({id: r.user.id});
+    } catch (e) { toast(e.message); }
+  },
+};
+Object.assign(ACT, {
+  qrShow() { Qr.show(); }, qrReset() { Qr.show(true); }, qrScan() { Qr.scan(); },
+  qrCopy(d) { (navigator.clipboard ? navigator.clipboard.writeText(d.url) : Promise.reject()).then(() => toast('Lien copié.'), () => toast(d.url)); },
+  async sharePriv(d) { try { await api('/api/contacts/share-priv', {id: +d.id}); toast('Votre profil privé est maintenant visible pour ce contact.'); profSheet(+d.id); } catch (e) { toast(e.message); } },
 });
