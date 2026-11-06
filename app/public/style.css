@@ -583,3 +583,7 @@ mark{background:#ffe08a;color:inherit;border-radius:3px;padding:0 1px}
 .fix-box small{color:var(--fg-2);font-size:12px}
 .fix-box p{margin:2px 0 0;white-space:pre-wrap}
 .trl{flex-wrap:wrap;row-gap:2px}.trl .linkb{white-space:nowrap}
+.tr-hide .linkb{display:flex;align-items:center;gap:6px;text-decoration:none;font-weight:600}
+.tr-hide svg{width:16px;height:16px}
+.msg.in .tr-recv{background:var(--surface-2);color:var(--fg)}
+.pick.learn{padding:10px 12px;border-radius:12px;background:var(--accent-soft)}

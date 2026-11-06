@@ -124,7 +124,7 @@ function renderAuth(msg) {
     <span class="lbl">Votre avatar</span>${avGallery(A.avatar, 'auth')}
     <label class="pick chk"><input type="checkbox" id="aAge"><span>J’ai 16 ans ou plus.</span></label>
     <label class="pick chk"><input type="checkbox" id="aCgu"><span>J’ai lu et j’accepte les <a href="/conditions" target="_blank" rel="noopener">Conditions générales et la Politique de confidentialité</a>.</span></label>
-    <label class="pick chk"><input type="checkbox" id="aTrc"><span>Facultatif : j’accepte que mes messages traduits et mes corrections servent, <b>sans mon nom</b>, à améliorer la traduction de Tam-Tam (langues africaines notamment). Modifiable à tout moment dans les Réglages.</span></label>
+
     <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Créer mon compte</button>` : ''}
     <button class="linkb" type="button" data-act="authMode" data-m="login">J’ai déjà un compte : me connecter</button>`;
   else h = `<h2>Bienvenue</h2><p class="hint">La messagerie qui fait vivre nos langues. Connectez-vous pour retrouver vos proches.</p>
@@ -145,7 +145,7 @@ async function submitAuth() {
     if (A.mode === 'forgot' && A.step === 1) { A.fmail = v('fMail').trim(); await api('/api/forgot', {email: A.fmail}); A.step = 2; return renderAuth(); }
     if (A.mode === 'forgot') r = await api('/api/forgot/verify', {email: A.fmail, code: v('fCode'), pass: v('aPass')});
     else if (A.mode === 'reset') r = await api('/api/reset', {token: A.token, pass: v('aPass')});
-    else if (A.mode === 'register') r = await api('/api/register', {name: v('aName'), email: v('aMail'), pass: v('aPass'), gtok: A.g ? A.g.tok : undefined, avatar: A.avatar, age: $('#aAge').checked, cgu: $('#aCgu').checked, trc: !!($('#aTrc') && $('#aTrc').checked), invite: S.invite});
+    else if (A.mode === 'register') r = await api('/api/register', {name: v('aName'), email: v('aMail'), pass: v('aPass'), gtok: A.g ? A.g.tok : undefined, avatar: A.avatar, age: $('#aAge').checked, cgu: $('#aCgu').checked,  invite: S.invite});
     else r = await api('/api/login', {email: v('aMail'), pass: v('aPass')});
     S.me = r.me; keepUsers([r.me]); history.replaceState(null, '', '/'); start();
   } catch (e) { err(e.message); if (btn) btn.disabled = false; }
@@ -164,7 +164,7 @@ async function startApp() {
   root.innerHTML = `<div class="app" data-view="list"><aside class="side" id="side"><div class="head" id="head"></div><div class="body" id="body"></div><nav class="tabs" id="tabs" aria-label="Rubriques"></nav><button class="fab" id="fab" type="button" data-act="fab" aria-label="Nouvelle discussion">${I.newchat}</button></aside><main class="main" id="main"></main></div>`;
   renderMain();
   await Promise.all([loadChats(), loadContacts(), loadStatuses()]).catch(e => toast(e.message));
-  api('/api/translate/status').then(r => { Tr.st = r; renderComposer(); if (r.on && S.me.trConsent == null) setTimeout(trConsentAsk, 1500); }).catch(() => {});
+  api('/api/translate/status').then(r => { Tr.st = r; renderComposer(); }).catch(() => {});
   renderAll(); connect(); if (S.locked) showLock();
   GCall.loadActive(); Call.checkPending(); Device.badge();
   if (S.lock.type === 'off') return requireLock();
@@ -570,7 +570,7 @@ async function sendText() {
   i.value = ''; autoGrow(i); syncSend(); const reply = S.replyTo; S.replyTo = null; renderReplyBar();
   try {
     let payload = {t}; const out = Tr.outL(c.id);
-    if (out && Tr.st && Tr.st.on && !S.once) {
+    if (out && Tr.st && Tr.st.on && S.me.trConsent && !S.once) {
       try {
         const ctx = (S.msgs.get(c.id) || []).filter(x => x.kind === 'text' && x.text && !x.once).slice(-4).map(x => x.text);
         const r = await Tr.fetch(t, out, ctx);
@@ -683,7 +683,7 @@ function reportSheet(userId, chatId) {
 }
 function msgMenu(id) {
   const list = S.msgs.get(S.chatId) || [], m = list.find(x => x.id === id); if (!m || m.deleted) return;
-  sheet(`<div class="menu" style="padding-top:12px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once && !m.locked && m.from !== S.me.id && Tr.st && Tr.st.on ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}${Tr.shown.has(id) ? 'Voir la traduction' : 'Traduire'}</button>` : ''}${m.text && !m.once ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
+  sheet(`<div class="menu" style="padding-top:12px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once && !m.locked && m.from !== S.me.id && Tr.st && Tr.st.on && S.me.trConsent ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}${Tr.shown.has(id) ? 'Voir la traduction' : 'Traduire'}</button>` : ''}${m.text && !m.once ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
     ${m.from === S.me.id ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde</button>` : ''}</div>`, 'Message');
 }
 
@@ -848,17 +848,18 @@ const Tr = {
   async run(id, silent, l) {
     l = l || this.view(S.chatId);
     const m = (S.msgs.get(S.chatId) || []).find(x => x.id === id); if (!m || !m.text) return false;
+    const srcText = m.orig != null ? m.orig : m.text;
     if (this.get(id, l)) { this.shown.add(id); if (!silent) renderMessages(true); return true; } // déjà traduit : rien n'est recompté
     try {
       const list = S.msgs.get(S.chatId) || [], i = list.indexOf(m), ctx = list.slice(Math.max(0, i - 4), i).filter(x => x.kind === 'text' && x.text && !x.once).map(x => x.text);
-      const r = await this.fetch(m.text, l, ctx); this.put(id, l, {text: r.text, from: r.from}); this.shown.add(id);
-      if (r.fresh) this.give(m.text, r.from, r.text, l, 'mt', m.from);
+      const r = await this.fetch(srcText, l, ctx); this.put(id, l, {text: r.text, from: r.from}); this.shown.add(id);
+      if (r.fresh) this.give(srcText, r.from, r.text, l, 'mt', m.from);
       if (!silent) renderMessages(true); return true;
     }
     catch (e) { toast(e.message); return false; }
   },
   async autoRun(c) {
-    const l = c && this.inL(c.id); if (!l || this.busy || !this.st || !this.st.on) return;
+    const l = c && this.inL(c.id); if (!l || this.busy || !this.st || !this.st.on || !S.me.trConsent || this.learn(c.id)) return;
     const todo = (S.msgs.get(c.id) || []).filter(m => m.from && m.from !== S.me.id && !m.once && !m.deleted && !m.locked && m.kind === 'text' && m.text && m.text.trim().length > 1 && m.tlang !== l && !this.shown.has(m.id) && !this.off.has(m.id)).slice(-30);
     if (!todo.length) return; this.busy = true;
     try { for (const m of todo) { if (S.chatId !== c.id || this.inL(c.id) !== l) break; if (this.get(m.id, l)) { this.shown.add(m.id); continue; } if (!await this.run(m.id, true, l)) break; } }
@@ -870,40 +871,53 @@ const Tr = {
   note(txt, act, id, lbl, more) { return `<span class="trl">${I.translate}${txt} · <button class="linkb" type="button" data-act="${act}" data-id="${id}">${lbl}</button>${more || ''}</span>`; },
   fixBtn(id, lbl) { return ` · <button class="linkb" type="button" data-act="trFix" data-id="${id}">✎ ${lbl || 'Corriger'}</button>`; },
   from(l) { const n = l && LANG_FR[l]; return n ? (/^[aeiouhé]/.test(n) ? 'de l’' : 'du ') + n.replace(/ \(essai\)$/, '') : ''; },
-  html(m) {
-    const l = this.view(S.chatId), t = this.shown.has(m.id) && this.get(m.id, l);
-    if (!t || t.from === l || t.text.trim() === m.text.trim()) return '';
-    const fx = this.fix(m.id);
-    return `<span class="trl-txt">${esc(fx ? fx.text : t.text)}</span>${this.note((fx ? 'Corrigé par vous' : 'Traduit') + (this.from(t.from) ? ' ' + esc(this.from(t.from)) : ''), 'trOrig', m.id, 'Voir l’original', this.fixBtn(m.id))}`;
-  },
-  // Texte d'une bulle, avec les traductions.
+  // Mode apprentissage : le message reste dans sa langue, la traduction est cachée jusqu'à ce qu'on la demande.
+  learn(cid) { return this.ls('tt-trlearn:' + cid) === '1'; },
+  setLearn(cid, on) { this.ls('tt-trlearn:' + cid, on ? '1' : ''); },
+  open: new Set(),
+  // Texte d'une bulle : le message, la traduction juste en dessous et « Votre correction » (modèle unique).
   txt(m) {
-    const L = l => (LANG_FR[l] || l || '').replace(/ \(essai\)$/, ''), flip = this.flip.has(m.id);
-    if (m.orig != null && m.tlang) {
-      if (m.from === S.me.id) {
-        const who = (() => { const c = S.chats.get(m.chatId); return c && c.type === 'direct' ? first(chatTitle(c)) : 'Vos contacts'; })();
-        return `<span class="trl-txt">${esc(m.orig)}</span><span class="tr-recv"><small>${I.translate}${esc(who)} a reçu (${esc(L(m.tlang))})${m.fx ? ' · corrigé' : ''} :</small><span>${esc(m.text)}</span><button class="linkb" type="button" data-act="trFix" data-id="${m.id}">✎ Votre correction</button></span>`;
+    const L = l => (LANG_FR[l] || l || '').replace(/ \(essai\)$/, ''), cid = m.chatId || S.chatId;
+    const box = (label, text, extra) => `<span class="tr-recv"><small>${I.translate}${label}</small><span>${esc(text)}</span>${extra || ''}<button class="linkb" type="button" data-act="trFix" data-id="${m.id}">✎ Votre correction</button></span>`;
+    if (m.from === S.me.id) {
+      if (m.orig != null && m.tlang) {
+        const c = S.chats.get(m.chatId), who = c && c.type === 'direct' ? first(chatTitle(c)) : 'Vos contacts';
+        return `<span class="trl-txt">${esc(m.orig)}</span>${box(`${esc(who)} a reçu (${esc(L(m.tlang))})${m.fx ? ' · corrigé' : ''} :`, m.text)}`;
       }
-      const more = this.html(m); if (more && !flip) return more;
-      const fx = this.fix(m.id);
-      return flip ? `<span class="trl-txt">${esc(m.orig)}</span>${this.note('Original' + (m.olang ? ' (' + esc(L(m.olang)) + ')' : ''), 'trFlip', m.id, 'Voir la traduction')}`
-        : `<span class="trl-txt">${esc(fx ? fx.text : m.text)}</span>${this.note((fx ? 'Corrigé par vous' : m.fx ? 'Corrigé par l’expéditeur' : 'Traduit' + (this.from(m.olang) ? ' ' + esc(this.from(m.olang)) : '') + ' par l’expéditeur'), 'trFlip', m.id, 'Voir l’original', this.fixBtn(m.id))}`;
+      return `<span class="txt">${esc(m.text)}</span>`;
     }
-    return this.html(m) || `<span class="txt">${esc(m.text)}</span>`;
+    // Sans traduction (refusée ou non activée) : le message tel qu'il a été écrit.
+    const plain = `<span class="txt">${esc(m.orig != null ? m.orig : m.text)}</span>`;
+    if (!S.me.trConsent) return plain;
+    const inL = this.inL(cid), fx = this.fix(m.id);
+    if (this.learn(cid) && inL) {
+      // Je m'exerce : je lis le message reçu ; la traduction dans ma langue n'apparaît que si je la demande.
+      const t = m.orig != null && m.olang === inL ? {text: m.orig, from: m.olang} : this.get(m.id, inL);
+      const shown = this.open.has(m.id) && t;
+      return `<span class="txt">${esc(m.text)}</span>` + (shown ? box(`Traduction (${esc(L(inL))})${fx ? ' · corrigée par vous' : ''} :`, fx ? fx.text : t.text)
+        : `<span class="tr-recv tr-hide"><button class="linkb" type="button" data-act="trReveal" data-id="${m.id}">${I.eye}Voir la traduction en ${esc(L(inL))}</button></span>`);
+    }
+    if (m.orig != null && m.tlang && (!inL || inL === m.tlang)) {
+      // Traduit par l'expéditeur : l'original en haut, la traduction reçue en dessous.
+      return `<span class="trl-txt">${esc(m.orig)}</span>${box(`Traduction (${esc(L(m.tlang))})${fx ? ' · corrigée par vous' : m.fx ? ' · corrigée par l’expéditeur' : ''} :`, fx ? fx.text : m.text)}`;
+    }
+    const src = m.orig != null ? m.orig : m.text, tl = inL || (this.shown.has(m.id) ? this.lang() : ''), t = tl && this.get(m.id, tl);
+    if (!t || t.from === tl || t.text.trim() === src.trim()) return plain;
+    return `<span class="trl-txt">${esc(src)}</span>${box(`Traduction (${esc(L(tl))})${fx ? ' · corrigée par vous' : ''} :`, fx ? fx.text : t.text)}`;
   },
-  label(cid) { const a = this.inL(cid), b = this.outL(cid); return a || b ? `<span>${a ? a.toUpperCase() : '—'}</span><i aria-hidden="true">⇄</i><span>${b ? b.toUpperCase() : '—'}</span>` : ''; },
+  label(cid) { const a = this.inL(cid), b = this.outL(cid); if (!S.me.trConsent) return ''; return a || b ? `<span>${a ? a.toUpperCase() : '—'}</span><i aria-hidden="true">⇄</i><span>${b ? b.toUpperCase() : '—'}</span>` : ''; },
   settingsHtml() {
     if (!this.st || !this.st.on) return '';
     return `<div class="set-block"><h2>${I.translate} Traduction</h2><p class="hint">Dans une discussion, touchez le bouton 文A à gauche de la zone d’écriture : choisissez la langue dans laquelle <b>vous</b> recevez les messages, et celle dans laquelle <b>votre contact</b> reçoit les vôtres. Le texte traduit passe par le service de traduction : il n’est plus protégé de bout en bout.</p>
-      <label class="pick chk"><input type="checkbox" data-act="trConsentTog"${S.me.trConsent ? ' checked' : ''}><span>Contribuer à la base de traduction de Tam-Tam : mes messages traduits et mes corrections sont gardés <b>sans mon nom</b> pour améliorer la traduction.</span></label>
+      <label class="pick chk"><input type="checkbox" data-act="trConsentTog"${S.me.trConsent ? ' checked' : ''}><span><b>Utiliser la traduction.</b> J’accepte que mes messages traduits et mes corrections servent, sans mon nom, à enrichir la base de traduction de Tam-Tam (article 13 des Conditions générales). Décoché : aucune traduction, les messages s’affichent tels qu’ils ont été écrits.</span></label>
       <div class="field"><label for="trLang">Langue pour « Traduire » sur un message</label><select id="trLang">${this.st.langs.map(l => `<option value="${l}"${l === this.lang() ? ' selected' : ''}>${LANG_FR[l] || l}</option>`).join('')}</select></div></div>`;
   },
 };
-function trConsentAsk() {
-  if (layer.innerHTML || !S.me || S.me.trConsent != null) return;
-  sheet(`${head('Aidez Tam-Tam à mieux traduire')}<div class="sheet-body"><p>Tam-Tam veut construire sa propre base de traduction, notamment pour les <b>langues africaines</b> que les grands services traduisent mal.</p>
-    <p class="hint">Si vous acceptez, vos messages traduits et vos corrections sont gardés <b>sans votre nom ni identifiant</b> (numéros, e-mails et liens retirés) pour améliorer la traduction. Vos autres messages restent chiffrés et illisibles pour Tam-Tam. Vous pouvez changer d’avis à tout moment dans Réglages → Traduction.</p>
-    <div class="actions"><button class="btn ghost" type="button" data-act="trConsentNo">Non merci</button><button class="btn" type="button" data-act="trConsentYes">J’accepte de contribuer</button></div></div>`, 'Contribution');
+function trConsentAsk(open) {
+  sheet(`${head('Activer la traduction')}<div class="sheet-body"><p>La traduction de Tam-Tam s’améliore grâce à ses utilisateurs, notamment pour les <b>langues africaines</b>.</p>
+    <p class="hint">En l’activant, vous acceptez que vos messages traduits et vos corrections soient gardés <b>sans votre nom ni identifiant</b> (numéros, e-mails et liens retirés) pour enrichir la base de traduction de Tam-Tam (article 13 des <a href="/conditions" target="_blank" rel="noopener">Conditions générales</a>). Vos autres messages restent chiffrés et illisibles pour Tam-Tam.</p>
+    <p class="hint">Si vous refusez, vous ne recevez aucune traduction : les messages s’affichent tels qu’ils ont été écrits. Vous pouvez changer d’avis à tout moment dans Réglages → Traduction.</p>
+    <div class="actions"><button class="btn ghost" type="button" data-act="trConsentNo">Non, pas de traduction</button><button class="btn" type="button" data-act="trConsentYes"${open ? ' data-open="1"' : ''}>J’accepte et j’active</button></div></div>`, 'Traduction');
 }
 function trSheet() {
   const c = S.chats.get(S.chatId); if (!c || !Tr.st) return;
@@ -915,6 +929,7 @@ function trSheet() {
   sheet(`${head('Langues de cette discussion')}<div class="sheet-body tr-body"><div class="tr-fixed">
     <div class="seg tr-seg" role="tablist"><button type="button" role="tab" data-act="trSide" data-v="in" aria-selected="${side === 'in'}"><small>Je reçois en</small><b>${Tr.inL(c.id) ? esc(L(Tr.inL(c.id))) : 'pas de traduction'}</b></button><button type="button" role="tab" data-act="trSide" data-v="out" aria-selected="${side === 'out'}"><small>Mon contact reçoit en</small><b>${Tr.outL(c.id) ? esc(L(Tr.outL(c.id))) : 'pas de traduction'}</b></button></div>
     <div class="tr-hint"><p class="hint">${side === 'in' ? 'Choisissez la langue dans laquelle <b>vous recevez</b> les messages de cette discussion. Ils seront traduits automatiquement.' : `Choisissez la langue dans laquelle <b>${who}</b> vos messages. Vous écrivez dans votre langue, Tam-Tam envoie la traduction.`}</p><button class="btn sm" type="button" data-act="close">Terminé</button></div>
+    ${side === 'in' && cur ? `<label class="pick chk learn"><input type="checkbox" data-act="trLearn"${Tr.learn(c.id) ? ' checked' : ''}><span><b>Mode apprentissage</b> : je reçois les messages dans leur langue d’origine pour m’exercer ; la traduction en ${esc(L(cur).toLowerCase())} reste cachée sous « Voir la traduction ».</span></label>` : ''}
     <button type="button" class="lang-opt none" data-act="trPick" data-v="" aria-pressed="${!cur}">Pas de traduction<small>—</small></button></div>
     <div class="tr-scroll"><span class="lbl">Langues les plus utilisées</span><div class="lang-grid">${top.map(btn).join('')}</div>
     <span class="lbl">Autres langues</span><div class="lang-grid">${rest.map(btn).join('')}</div></div></div>`, 'Langues');
@@ -966,14 +981,14 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.19</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.20</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
   for (const k of Object.keys(patch)) { if (typeof patch[k] === 'object' && patch[k] && !Array.isArray(patch[k])) pending[k] = Object.assign(pending[k] || {}, patch[k]); else pending[k] = patch[k]; }
   clearTimeout(saveT); saveT = setTimeout(async () => { const body = pending; pending = {}; try { const r = await api('/api/me', body); S.me = r.me; keepUsers([r.me]); } catch (e) { toast(e.message); } }, 700);
 }
-async function saveNow(body, msg) { try { const r = await api('/api/me', body); S.me = r.me; keepUsers([r.me]); renderBody(); renderHead(); if (msg) toast(msg); } catch (e) { toast(e.message); } }
+async function saveNow(body, msg) { try { const r = await api('/api/me', body); S.me = r.me; keepUsers([r.me]); renderBody(); renderHead(); if ('trConsent' in body && S.chatId) { renderComposer(); renderMessages(true); } if (msg) toast(msg); } catch (e) { toast(e.message); } }
 async function adminLoad() {
   try {
     const r = await api('/api/admin'), el = $('#adm');
@@ -1045,7 +1060,9 @@ const ACT = {
   trProv(d) { S.trProv = d.v; const el = $('#trBox'); if (el) el.outerHTML = trBox(); },
   trMsg(d) { closeLayer(); Tr.off.delete(+d.id); Tr.run(+d.id); },
   trOrig(d) { Tr.shown.delete(+d.id); Tr.off.add(+d.id); renderMessages(true); },
-  trAuto() { S.trSide = S.trSide || 'in'; trSheet(); },
+  trAuto() { if (!S.me.trConsent) return trConsentAsk(true); S.trSide = S.trSide || 'in'; trSheet(); },
+  async trReveal(d) { const id = +d.id, m = (S.msgs.get(S.chatId) || []).find(x => x.id === id), inL = Tr.inL(S.chatId); if (!m) return; Tr.open.add(id); if (!(m.orig != null && m.olang === inL) && !Tr.get(id, inL)) await Tr.run(id, true, inL); renderMessages(true); },
+  trLearn() { const c = S.chats.get(S.chatId); if (!c) return; Tr.setLearn(c.id, !Tr.learn(c.id)); Tr.open.clear(); renderMessages(true); trSheet(); if (!Tr.learn(c.id)) Tr.autoRun(c); },
   trSide(d) { S.trSide = d.v; trSheet(); },
   trPick(d) {
     const c = S.chats.get(S.chatId); if (!c) return;
@@ -1057,7 +1074,7 @@ const ACT = {
     const mine = m.from === S.me.id, L = l => (LANG_FR[l] || l || '').replace(/ \(essai\)$/, '');
     let src, sl, tgt, tl;
     if (m.orig != null && m.tlang) { src = m.orig; sl = m.olang; tgt = (!mine && Tr.fix(id)) ? Tr.fix(id).text : m.text; tl = m.tlang; }
-    else { const v = Tr.view(S.chatId), t = Tr.get(id, v); if (!t) return; src = m.text; sl = t.from; tgt = Tr.fix(id) ? Tr.fix(id).text : t.text; tl = v; }
+    else { const v = Tr.inL(S.chatId) || Tr.view(S.chatId), t = Tr.get(id, v); if (!t) return; src = m.text; sl = t.from; tgt = Tr.fix(id) ? Tr.fix(id).text : t.text; tl = v; }
     S.fixing = {id, src, sl, tgt, tl, mine};
     sheet(`${head(mine ? 'Corriger la traduction de mon message' : 'Corriger cette traduction')}<form class="sheet-body" data-form="trFixSave">
       <div class="fix-box"><small>${mine ? 'Ce que vous avez écrit' : 'Message reçu'}${sl ? ' (' + esc(L(sl)) + ')' : ''}</small><p>${esc(src)}</p></div>
@@ -1066,8 +1083,8 @@ const ACT = {
       <p class="hint">${mine ? 'Votre contact verra aussitôt la version corrigée.' : 'Vous verrez désormais votre version.'} ${S.me.trConsent ? 'Merci : votre correction enrichit la base de traduction de Tam-Tam, sans votre nom.' : 'Pour que vos corrections enrichissent aussi la base de traduction de Tam-Tam, activez la contribution dans Réglages → Traduction.'}</p>
       <div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="submit">Enregistrer ma correction</button></div></form>`, 'Correction', '#fixIn');
   },
-  trConsentYes() { closeLayer(); saveNow({trConsent: true}, 'Merci ! Vos traductions et corrections aideront Tam-Tam, sans votre nom.'); },
-  trConsentNo() { closeLayer(); saveNow({trConsent: false}, 'C’est noté. Vous pouvez changer d’avis dans Réglages → Traduction.'); },
+  async trConsentYes(d) { closeLayer(); await saveNow({trConsent: true}, 'Traduction activée. Merci de contribuer à la base de Tam-Tam !'); renderComposer(); if (S.chatId) { renderMessages(true); if (d.open) { S.trSide = 'in'; trSheet(); } } },
+  async trConsentNo() { closeLayer(); await saveNow({trConsent: false}, 'Pas de traduction : vous recevez les messages tels qu’ils ont été écrits.'); if (S.chatId) { renderComposer(); renderMessages(true); } },
   trConsentTog() { saveNow({trConsent: !S.me.trConsent}); },
   trFlip(d) { const id = +d.id; Tr.flip.has(id) ? Tr.flip.delete(id) : Tr.flip.add(id); renderMessages(true); },
   async trLoad() { try { S.trset = await api('/api/admin/translate'); const el = $('#trBox'); if (el) el.outerHTML = trBox(); } catch (e) { toast(e.message); } },
