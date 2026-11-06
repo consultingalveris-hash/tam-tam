@@ -559,3 +559,8 @@ mark{background:#ffe08a;color:inherit;border-radius:3px;padding:0 1px}
 .tr-tog{display:flex;align-items:center;gap:3px;width:auto;padding:0 8px;border-radius:20px;flex:none;align-self:center;font:700 12px/1 var(--font-body);color:var(--fg-2)}
 .tr-tog svg{width:18px;height:18px}
 .tr-tog[aria-pressed="true"]{color:var(--accent-strong);background:var(--accent-soft)}
+.lang-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.lang-opt{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--fg);font:inherit;font-size:14px;cursor:pointer;text-align:left}
+.lang-opt small{color:var(--fg-2);font-size:11px;font-weight:700}
+.lang-opt:hover{border-color:var(--accent)}
+.lang-opt[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);font-weight:700}

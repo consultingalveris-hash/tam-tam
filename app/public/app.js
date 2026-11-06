@@ -398,7 +398,7 @@ function renderComposer() {
     el.innerHTML = `<div class="blocked-bar">${I.block}<span>${mine ? `Vous avez bloqué ${esc(first(u.name))}.` : 'Vous ne pouvez plus écrire à cette personne.'}</span>${mine ? `<button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button>` : ''}</div>`; return;
   }
   const trOn = Tr.auto(c.id);
-  el.innerHTML = `<form class="composer" data-form="send" autocomplete="off">${Tr.st && Tr.st.on ? `<button class="ib tr-tog" type="button" data-act="trAuto" aria-pressed="${trOn}" aria-label="${trOn ? 'Arrêter la traduction automatique' : 'Traduire automatiquement cette discussion'}" title="${trOn ? 'Traduction automatique activée' : 'Traduire automatiquement les messages reçus'}">${I.translate}<span>${Tr.lang().toUpperCase()}</span></button>` : ''}<div class="inwrap"><textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
+  el.innerHTML = `<form class="composer" data-form="send" autocomplete="off">${Tr.st && Tr.st.on ? `<button class="ib tr-tog" type="button" data-act="trAuto" aria-pressed="${trOn}" aria-label="${trOn ? 'Arrêter la traduction automatique' : 'Traduire automatiquement cette discussion'}" title="${trOn ? 'Traduction automatique activée' : 'Traduire automatiquement les messages reçus'}">${I.translate}${trOn ? `<span>${Tr.lang().toUpperCase()}</span>` : ''}</button>` : ''}<div class="inwrap"><textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
     <button class="ib" type="button" data-act="attach" aria-label="Joindre une photo">${I.clip}</button><button class="ib" type="button" data-act="camera" aria-label="Prendre une photo">${I.camera}</button><button class="ib once-tog" type="button" data-act="onceTog" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique : le message ne peut être ouvert qu’une fois"><span class="one" aria-hidden="true">1</span></button></div>
     <input type="file" id="fileIn" accept="image/*" hidden><input type="file" id="camIn" accept="image/*" capture="environment" hidden>
     <button class="send" id="sendBtn" type="button" data-act="recStart" aria-label="Enregistrer un message vocal">${I.mic}</button></form>`;
@@ -472,7 +472,7 @@ function renderMessages(keep) {
     if (m.deleted) body = `<span class="txt gone">${out ? 'Vous avez supprimé ce message' : 'Ce message a été supprimé'}</span>`;
     else if (m.once) body = onceBubble(m, out);
     else if (m.kind === 'audio') body = `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
-    else body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? (Tr.shown.has(m.id) && Tr.get(m.id) ? Tr.html(m) : `<span class="txt">${esc(m.text)}</span>`) : '');
+    else body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? (Tr.html(m) || `<span class="txt">${esc(m.text)}</span>`) : '');
     h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble">
       ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${body}<span class="meta">${hm(m.at)}${out && !m.deleted ? tick(readState(c, m)) : ''}</span>
       ${m.deleted ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message">${I.chev}</button>`}</div></div>`;
@@ -804,7 +804,7 @@ function picsView(list, title) {
   return `<span class="lbl">${title}</span><div class="ph3">${l.map((u, i) => `<button class="ph3-img" type="button" data-act="picView" data-src="${esc(u)}" aria-label="Agrandir la photo ${i + 1}"><img src="${esc(u)}" alt=""></button>`).join('')}</div>`;
 }
 /* ---------- traduction à la demande ---------- */
-const LANG_FR = {fr: 'français', en: 'anglais', wo: 'wolof', ff: 'peul (pulaar)', bm: 'bambara', ln: 'lingala', sw: 'swahili', ha: 'haoussa', yo: 'yoruba', ig: 'igbo', ee: 'ewe', ak: 'twi', rw: 'kinyarwanda', sg: 'sango', ar: 'arabe', pt: 'portugais', es: 'espagnol', de: 'allemand', it: 'italien', zh: 'chinois', ru: 'russe', tr: 'turc', nl: 'néerlandais', hi: 'hindi', am: 'amharique', so: 'somali', zu: 'zoulou', xh: 'xhosa', mg: 'malgache', rn: 'kirundi', kg: 'kikongo', ts: 'tsonga', tn: 'tswana', st: 'sotho', sn: 'shona', ny: 'chichewa', om: 'oromo', ti: 'tigrigna', lg: 'luganda', ki: 'kikuyu'};
+const LANG_FR = {bas: 'bassa (essai)', dua: 'duala (essai)', ewo: 'ewondo (essai)', srr: 'sérère (essai)', mnk: 'mandinka (essai)', snk: 'soninké (essai)', dyo: 'diola (essai)', fan: 'fang (essai)', bum: 'boulou (essai)', mos: 'mooré (essai)', fon: 'fon (essai)', dyu: 'dioula (essai)', kab: 'kabyle (essai)', tzm: 'tamazight (essai)', ber: 'berbère (essai)', kri: 'krio (essai)', fr: 'français', en: 'anglais', wo: 'wolof', ff: 'peul (pulaar)', bm: 'bambara', ln: 'lingala', sw: 'swahili', ha: 'haoussa', yo: 'yoruba', ig: 'igbo', ee: 'ewe', ak: 'twi', rw: 'kinyarwanda', sg: 'sango', ar: 'arabe', pt: 'portugais', es: 'espagnol', de: 'allemand', it: 'italien', zh: 'chinois', ru: 'russe', tr: 'turc', nl: 'néerlandais', hi: 'hindi', am: 'amharique', so: 'somali', zu: 'zoulou', xh: 'xhosa', mg: 'malgache', rn: 'kirundi', kg: 'kikongo', ts: 'tsonga', tn: 'tswana', st: 'sotho', sn: 'shona', ny: 'chichewa', om: 'oromo', ti: 'tigrigna', lg: 'luganda', ki: 'kikuyu'};
 const Tr = {
   st: null,
   lang() { try { return localStorage.getItem('tt-trlang') || 'fr'; } catch { return 'fr'; } },
@@ -847,7 +847,7 @@ const Tr = {
     catch (e) { toast(e.message); return false; }
   },
   html(m) {
-    const t = this.shown.has(m.id) && this.get(m.id); if (!t) return '';
+    const t = this.shown.has(m.id) && this.get(m.id); if (!t || t.from === this.lang() || t.text.trim() === m.text.trim()) return '';
     const l = t.from && LANG_FR[t.from], from = l ? (/^[aeiouhé]/.test(l) ? 'de l’' : 'du ') + l : '';
     return `<span class="trl-txt">${esc(t.text)}</span><span class="trl">${I.translate}Traduit${from ? ' ' + esc(from) : ''} · <button class="linkb" type="button" data-act="trOrig" data-id="${m.id}">Voir l’original</button></span>`;
   },
@@ -903,7 +903,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.17</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.17.1</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -982,7 +982,18 @@ const ACT = {
   trProv(d) { S.trProv = d.v; const el = $('#trBox'); if (el) el.outerHTML = trBox(); },
   trMsg(d) { closeLayer(); Tr.off.delete(+d.id); Tr.run(+d.id); },
   trOrig(d) { Tr.shown.delete(+d.id); Tr.off.add(+d.id); renderMessages(true); },
-  trAuto() { const c = S.chats.get(S.chatId); if (!c) return; const on = !Tr.auto(c.id); Tr.setAuto(c.id, on); renderComposer(); if (on) { toast(`Traduction automatique en ${LANG_FR[Tr.lang()] || Tr.lang()} activée pour cette discussion`); Tr.off.clear(); Tr.autoRun(c); } else { toast('Traduction automatique arrêtée'); for (const m of S.msgs.get(c.id) || []) Tr.shown.delete(m.id); renderMessages(true); } },
+  trAuto() {
+    const c = S.chats.get(S.chatId); if (!c) return; const on = Tr.auto(c.id), cur = Tr.lang();
+    const top = ['fr', 'en', 'wo', 'ff', 'ar', 'pt', 'es', 'sw', 'ln', 'bm', 'ha', 'yo'], rest = (Tr.st.langs || []).filter(l => !top.includes(l)).sort((a, b) => (LANG_FR[a] || a).localeCompare(LANG_FR[b] || b, 'fr'));
+    const btn = l => `<button type="button" class="lang-opt" data-act="trPick" data-v="${l}" aria-pressed="${on && l === cur}">${esc((LANG_FR[l] || l).replace(/^./, x => x.toUpperCase()))}<small>${l.toUpperCase()}</small></button>`;
+    sheet(`${head('Traduire cette discussion')}<div class="sheet-body"><p class="hint">Les messages reçus dans cette discussion seront traduits automatiquement dans la langue choisie. Les messages déjà dans cette langue ne sont pas traduits.</p>
+      ${on ? `<button class="btn ghost" type="button" data-act="trStop">${I.close}Arrêter la traduction (actuellement : ${esc(LANG_FR[cur] || cur)})</button>` : ''}
+      <span class="lbl">Langues les plus utilisées</span><div class="lang-grid">${top.filter(l => (Tr.st.langs || []).includes(l)).map(btn).join('')}</div>
+      <span class="lbl">Autres langues</span><div class="lang-grid">${rest.map(btn).join('')}</div></div>`, 'Traduire');
+  },
+  trPick(d) { const c = S.chats.get(S.chatId); if (!c) return; closeLayer(); Tr.setLang(d.v); Tr.setAuto(c.id, true); Tr.shown.clear(); Tr.off.clear(); renderComposer(); renderMessages(true); toast(`Traduction automatique en ${LANG_FR[d.v] || d.v} activée pour cette discussion`); Tr.autoRun(c); },
+  trStop() { const c = S.chats.get(S.chatId); if (!c) return; closeLayer(); Tr.setAuto(c.id, false); for (const m of S.msgs.get(c.id) || []) Tr.shown.delete(m.id); renderComposer(); renderMessages(true); toast('Traduction automatique arrêtée'); },
+  trAutoOld() { const c = S.chats.get(S.chatId); if (!c) return; const on = !Tr.auto(c.id); Tr.setAuto(c.id, on); renderComposer(); if (on) { toast(`Traduction automatique en ${LANG_FR[Tr.lang()] || Tr.lang()} activée pour cette discussion`); Tr.off.clear(); Tr.autoRun(c); } else { toast('Traduction automatique arrêtée'); for (const m of S.msgs.get(c.id) || []) Tr.shown.delete(m.id); renderMessages(true); } },
   async trLoad() { try { S.trset = await api('/api/admin/translate'); const el = $('#trBox'); if (el) el.outerHTML = trBox(); } catch (e) { toast(e.message); } },
   async trOff() { try { await api('/api/admin/translate', {off: true}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction désactivée'); } catch (e) { toast(e.message); } },
   recStart() { Rec.start(); }, recCancel() { Rec.cancel(); }, recSend() { Rec.send(); },

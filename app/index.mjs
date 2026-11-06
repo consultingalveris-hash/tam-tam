@@ -994,8 +994,11 @@ const usdSpent = () => +(q1(`SELECT v FROM settings WHERE k=?`, usdKey())?.v || 
 const usdAdd = u => { const inT = +(u && u.input_tokens) || 0, outT = +(u && u.output_tokens) || 0; const micro = Math.ceil(inT * PRICE_IN + outT * PRICE_OUT);
   run(`INSERT OR REPLACE INTO settings(k,v) VALUES(?,?)`, usdKey(), String(Math.round(usdSpent() * 1e6) + micro)); };
 const trKey = () => trConf().key;
+// Langues que seul Claude sait traduire (qualité variable, marquées « essai » dans l'application).
+const TR_LANGS_CLAUDE = ['bas', 'dua', 'ewo', 'srr', 'mnk', 'snk', 'dyo', 'fan', 'bum', 'mos', 'fon', 'dyu', 'kab', 'tzm', 'ber', 'kri'];
+const trLangs = c => c.provider === 'claude' ? TR_LANGS.concat(TR_LANGS_CLAUDE) : TR_LANGS;
 const CLAUDE_URL = process.env.CLAUDE_URL || 'https://api.anthropic.com/v1/messages';
-const LANG_EN = { fr: 'French', en: 'English', wo: 'Wolof', ff: 'Fula (Pulaar)', bm: 'Bambara', ln: 'Lingala', sw: 'Swahili', ha: 'Hausa', yo: 'Yoruba', ig: 'Igbo', ee: 'Ewe', ak: 'Twi', rw: 'Kinyarwanda', sg: 'Sango', ar: 'Arabic', pt: 'Portuguese', es: 'Spanish', de: 'German', it: 'Italian', zh: 'Chinese', ru: 'Russian', tr: 'Turkish', nl: 'Dutch', hi: 'Hindi', am: 'Amharic', so: 'Somali', zu: 'Zulu', xh: 'Xhosa', mg: 'Malagasy', rn: 'Kirundi', kg: 'Kikongo', ts: 'Tsonga', tn: 'Tswana', st: 'Sotho', sn: 'Shona', ny: 'Chichewa', om: 'Oromo', ti: 'Tigrinya', lg: 'Luganda', ki: 'Kikuyu' };
+const LANG_EN = { bas: 'Basaa (Bassa, Cameroon)', dua: 'Duala (Cameroon)', ewo: 'Ewondo (Cameroon)', srr: 'Serer (Senegal)', mnk: 'Mandinka', snk: 'Soninke', dyo: 'Jola-Fonyi (Diola)', fan: 'Fang', bum: 'Bulu (Cameroon)', mos: 'Mooré (Burkina Faso)', fon: 'Fon (Benin)', dyu: 'Dioula (Jula)', kab: 'Kabyle', tzm: 'Central Atlas Tamazight', ber: 'Berber', kri: 'Krio (Sierra Leone)', fr: 'French', en: 'English', wo: 'Wolof', ff: 'Fula (Pulaar)', bm: 'Bambara', ln: 'Lingala', sw: 'Swahili', ha: 'Hausa', yo: 'Yoruba', ig: 'Igbo', ee: 'Ewe', ak: 'Twi', rw: 'Kinyarwanda', sg: 'Sango', ar: 'Arabic', pt: 'Portuguese', es: 'Spanish', de: 'German', it: 'Italian', zh: 'Chinese', ru: 'Russian', tr: 'Turkish', nl: 'Dutch', hi: 'Hindi', am: 'Amharic', so: 'Somali', zu: 'Zulu', xh: 'Xhosa', mg: 'Malagasy', rn: 'Kirundi', kg: 'Kikongo', ts: 'Tsonga', tn: 'Tswana', st: 'Sotho', sn: 'Shona', ny: 'Chichewa', om: 'Oromo', ti: 'Tigrinya', lg: 'Luganda', ki: 'Kikuyu' };
 // Traduit avec le moteur choisi ; renvoie { text, from }.
 async function trCall(c, text, to) {
   if (c.provider === 'claude') {
@@ -1013,11 +1016,11 @@ async function trCall(c, text, to) {
 }
 const trMonth = () => 'tr:' + new Date().toISOString().slice(0, 7);
 const trUsed = () => +(q1(`SELECT v FROM settings WHERE k=?`, trMonth())?.v || 0);
-R('GET', /^\/api\/translate\/status$/, async () => { const c = trConf(); return { on: !!c.key, left: c.provider === 'claude' ? (usdSpent() < c.budget ? 1 : 0) : Math.max(0, TR_CAP - trUsed()), langs: TR_LANGS }; });
+R('GET', /^\/api\/translate\/status$/, async () => { const c = trConf(); return { on: !!c.key, left: c.provider === 'claude' ? (usdSpent() < c.budget ? 1 : 0) : Math.max(0, TR_CAP - trUsed()), langs: trLangs(c) }; });
 R('POST', /^\/api\/translate$/, async ({ me, body }) => {
   const key = trKey(); if (!key) E(503, 'La traduction n’est pas encore activée sur Tam-Tam.');
   const text = String(body.text || '').slice(0, 2000).trim(), to = String(body.to || 'fr');
-  if (!text) E(400, 'Rien à traduire.'); if (!TR_LANGS.includes(to)) E(400, 'Langue non prise en charge.');
+  if (!text) E(400, 'Rien à traduire.'); if (!trLangs(trConf()).includes(to)) E(400, 'Langue non prise en charge.');
   if (tooMany('tr:' + me.id, 120, 60 * 60_000)) E(429, 'Trop de traductions d’un coup. Réessayez dans un moment.');
   const conf = trConf(), used = trUsed();
   if (conf.provider === 'claude' ? usdSpent() >= conf.budget : used + text.length > TR_CAP) E(429, 'Traduction indisponible jusqu’au 1er du mois : la réserve de ce mois est épuisée.');
