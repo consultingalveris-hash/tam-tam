@@ -45,7 +45,7 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git fetch origin android-builds || true
           if git rev-parse --verify origin/android-builds >/dev/null 2>&1; then git checkout -B android-builds origin/android-builds; else git checkout --orphan android-builds; git rm -rf . > /dev/null; fi
-          rm -f *.aab *.apk
+          git clean -fdxq; rm -rf mobile *.aab *.apk
           cp /tmp/out/* .
           echo "Version $V – $(date -u +%F)" > LISEZMOI.txt
           git add -A && git commit -m "Application Android, version $V" && git push origin android-builds
