@@ -953,7 +953,7 @@ function trBox() {
   if (!t) return `<div class="set-block" id="trBox"><h2>${I.translate} Traduction</h2><p class="hint">Permet de traduire un message reçu. Plafond : 480 000 caractères par mois, puis la traduction s’arrête jusqu’au 1er du mois suivant.</p><div><button class="btn sm ghost" type="button" data-act="trLoad">Afficher les réglages</button></div></div>`;
   const cl = t.provider === 'claude' || (!t.has && (S.trProv || 'claude') === 'claude');
   const pct = cl ? Math.min(100, Math.round((t.spent || 0) / (t.budget || 1) * 100)) : Math.min(100, Math.round(t.used / t.cap * 100));
-  const usage = cl ? `Ce mois-ci : <b>${(t.spent || 0).toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} $</b> dépensés sur ${t.budget.toLocaleString('fr-FR', {minimumFractionDigits: 2})} $ (${pct} %), soit ${t.used.toLocaleString('fr-FR')} caractères traduits. Le budget atteint, la traduction s’arrête jusqu’au 1er du mois.`
+  const usage = cl ? `Ce mois-ci : <b>${(t.spent || 0).toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} $</b> dépensés sur ${t.budget.toLocaleString('fr-FR', {minimumFractionDigits: 2})} $ (${pct} %), soit ${t.used.toLocaleString('fr-FR')} caractères traduits. Base : ${(t.corpus && t.corpus.mt) || 0} traductions, ${(t.corpus && t.corpus.fix) || 0} corrections, ${t.promoted || 0} devenues communes. Le budget atteint, la traduction s’arrête jusqu’au 1er du mois.`
     : `Ce mois-ci : ${t.used.toLocaleString('fr-FR')} caractères traduits sur ${t.cap.toLocaleString('fr-FR')} gratuits (${pct} %). Au-delà, la traduction s’arrête jusqu’au 1er du mois.`;
   const pv = S.trProv || t.provider || 'claude';
   return `<form class="set-block" id="trBox" data-form="trset" autocomplete="off"><h2>${I.translate} Traduction</h2>
@@ -994,7 +994,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.21</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.22</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1220,8 +1220,15 @@ const FORMS = {
         await api(`/api/messages/${f.id}/reseal`, {enc: env}); if (m) { m.text = v; m.fx = true; }
       } else Tr.ls('tt-fix:' + f.id, JSON.stringify({text: v}));
       await Tr.minePut(f.src, f.tl, {text: v, from: f.sl || ''}).catch(() => {});
+      // Vote : à partir de 3 personnes avec la même correction, elle devient la traduction commune.
+      let promoted = false;
+      if (S.me.trConsent) try {
+        const k = await Tr.keys(f.src, f.tl), cid = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('tt-fix|' + Tr.norm(v))))].map(b => b.toString(16).padStart(2, '0')).join('');
+        const r = await api('/api/translate/vote', {id: k.id, cid});
+        if (r.promote) { const iv = crypto.getRandomValues(new Uint8Array(12)), ct = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, k.key, new TextEncoder().encode(JSON.stringify({text: v, from: f.sl || null})))); await api('/api/translate/promote', {id: k.id, cid, iv: Tr.b64(iv), ct: Tr.b64(ct)}); promoted = true; }
+      } catch {}
       Tr.give(f.src, f.sl, v, f.tl, 'fix', f.mine ? S.me.id : ((S.msgs.get(S.chatId) || []).find(x => x.id === f.id) || {}).from);
-      closeLayer(); renderMessages(true); toast('Correction enregistrée : vous la retrouverez à chaque fois que cette phrase reviendra.');
+      closeLayer(); renderMessages(true); toast(promoted ? 'Correction enregistrée. Plusieurs personnes ont proposé la même : elle devient la traduction pour tout le monde !' : 'Correction enregistrée : vous la retrouverez à chaque fois que cette phrase reviendra.');
     } catch (e) { toast(e.message); }
   },
   send: sendText,
