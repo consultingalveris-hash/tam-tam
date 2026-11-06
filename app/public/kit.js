@@ -44,6 +44,7 @@ const I = {
 };
 const LOGO = `<svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2.5c7.7 0 14 5.6 14 12.5s-6.3 12.5-14 12.5c-1.6 0-3.2-.25-4.6-.7L5 29.5l1.7-5.3C3.8 21.9 2 18.6 2 15 2 8.1 8.3 2.5 16 2.5z" fill="var(--accent)"/><path d="M9.5 10.5h13c0 4.2-2.6 5.6-3.9 7.3l1.6 4.7h-8.4l1.6-4.7c-1.3-1.7-3.9-3.1-3.9-7.3z" fill="#fff"/><path d="M11.6 13.6l2.9 3.7M20.4 13.6l-2.9 3.7M16 13.4v3.9" fill="none" stroke="var(--accent)" stroke-width="1" stroke-linecap="round"/><ellipse cx="16" cy="10.5" rx="6.5" ry="2.4" fill="var(--brand-2)" stroke="#fff" stroke-width="1.2"/></svg>`;
 const WORD = 'Tam<i>-</i>Tam';
+const BRAND = (cls = '') => `<img class="brand-logo ${cls}" src="/logo-tamtam.svg" alt="Tam-Tam" draggable="false">`;
 I.camera = svg('<path d="M4 8h3l1.5-2.5h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>');
 I.clip = svg('<path d="M21 11.5 12.4 20a5.5 5.5 0 0 1-7.8-7.8l8.9-8.9a3.7 3.7 0 0 1 5.2 5.2l-8.9 8.9a1.8 1.8 0 0 1-2.6-2.6L15.4 6.6"/>');
 I.gal = svg('<rect x="7" y="3" width="14" height="14" rx="2"/><path d="M3 7v12a2 2 0 0 0 2 2h12"/><path d="m7 14 4-4 3 3 2-2 5 5"/>');

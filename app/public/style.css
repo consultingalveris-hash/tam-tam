@@ -597,3 +597,9 @@ mark{background:#ffe08a;color:inherit;border-radius:3px;padding:0 1px}
 .sheet-body .nocopy{position:relative}
 .nocopy input,.nocopy textarea{-webkit-user-select:text;user-select:text}
 .sheet-body.nocopy .pic-big{pointer-events:none}
+/* logo Tam-Tam (turquoise) */
+.brand-h{margin:0;line-height:0}
+.brand-logo{display:block;height:40px;width:auto;-webkit-user-drag:none;user-select:none}
+.auth-top .brand-logo{height:70px}
+.lock-card .auth-top .brand-logo{height:60px}
+.brand-logo.empty{height:120px;opacity:.9;margin-bottom:6px}

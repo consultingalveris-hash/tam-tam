@@ -103,7 +103,7 @@ async function boot() {
 const gIcon = () => '<svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
 const gBtn = () => (A.meta || {}).google ? `<a class="btn gbtn" href="/api/oauth/google/start${S.invite ? '?invite=' + encodeURIComponent(S.invite) : ''}">${gIcon()}Continuer avec Google</a><div class="or"><span>ou</span></div>` : '';
 function renderAuth(msg) {
-  const m = A.meta || {}, top = `<div class="auth-top">${LOGO}<h1 class="brand">${WORD}</h1></div>`;
+  const m = A.meta || {}, top = `<div class="auth-top"><h1 class="brand-h">${BRAND()}</h1></div>`;
   let h;
   if (A.mode === 'forgot') h = A.step === 1
     ? `<h2>Mot de passe oublié</h2><p class="hint">Entrez l’adresse e-mail de votre compte : nous vous envoyons un code à 6 chiffres.</p>
@@ -240,7 +240,7 @@ function filtChips() {
 function renderHead() {
   const h = $('#head');
   if (S.tab === 'chats') {
-    h.innerHTML = `<div class="title"><h1 class="brand">${WORD}</h1><span class="grow"></span><button class="ib dotted" type="button" data-act="addOpen" aria-label="Ajouter des amis${S.contacts.incoming.length ? ` (${S.contacts.incoming.length} demande${S.contacts.incoming.length > 1 ? 's' : ''})` : ''}" title="Ajouter des amis">${I.userplus}${S.contacts.incoming.length ? `<span class="badge">${S.contacts.incoming.length}</span>` : ''}</button><button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button></div>
+    h.innerHTML = `<div class="title"><h1 class="brand-h">${BRAND()}</h1><span class="grow"></span><button class="ib dotted" type="button" data-act="addOpen" aria-label="Ajouter des amis${S.contacts.incoming.length ? ` (${S.contacts.incoming.length} demande${S.contacts.incoming.length > 1 ? 's' : ''})` : ''}" title="Ajouter des amis">${I.userplus}${S.contacts.incoming.length ? `<span class="badge">${S.contacts.incoming.length}</span>` : ''}</button><button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button></div>
       <div class="stories" id="stories" aria-label="Statuts"></div>
       <label class="search">${I.search}<span class="sr">Rechercher</span><input id="q" type="search" placeholder="Rechercher une discussion" value="${esc(S.q)}" autocomplete="off"></label>
       <div class="chips filt" id="filts" role="group" aria-label="Filtrer les discussions">${filtChips()}</div>`;
@@ -390,7 +390,7 @@ async function loadOlder() {
 function renderMain() {
   const main = $('#main'); if (!main) return;
   const c = S.chats.get(S.chatId);
-  if (!c) { main.innerHTML = `<div class="chat-empty">${LOGO}<b>${WORD}</b><span>Choisissez une discussion, ou invitez vos proches depuis l’onglet Contacts.</span></div>`; return; }
+  if (!c) { main.innerHTML = `<div class="chat-empty">${BRAND('empty')}<span>Choisissez une discussion, ou invitez vos proches depuis l’onglet Contacts.</span></div>`; return; }
   main.innerHTML = `<header class="chat-head" id="chatHead"></header><div class="msgs${c.hidden ? ' nocopy' : ''}" id="msgs" tabindex="0" aria-label="Messages"></div><div id="replyBar"></div><div id="compose"></div>`;
   renderChatHead(); renderComposer(); renderMessages();
   $('#msgs').addEventListener('scroll', e => { if (e.target.scrollTop < 40 && S.more.get(S.chatId) && !S.loadingOld) { S.loadingOld = true; loadOlder().finally(() => { S.loadingOld = false; }); } });
@@ -1086,7 +1086,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.23</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.24</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1412,7 +1412,7 @@ async function keySetup(reupload) {
   renderKeySetup();
 }
 function renderKeySetup(msg) {
-  const k = S.ks, top = `<div class="auth-top">${LOGO}<h1 class="brand">${WORD}</h1></div>`;
+  const k = S.ks, top = `<div class="auth-top"><h1 class="brand-h">${BRAND()}</h1></div>`;
   const h = k.mode === 'restore'
     ? `<h2>${I.lock} Retrouver vos messages</h2><p class="hint">Vos messages sont chiffrés de bout en bout. Sur ce nouvel appareil ou ce navigateur, entrez votre code de sauvegarde pour les relire.</p>
       <div class="field"><label for="kCode">Code de sauvegarde</label><input id="kCode" type="password" autocomplete="off"></div>
@@ -1486,7 +1486,7 @@ function showLock(msg) {
   const L = S.lock; S.lockTries = S.lockTries || 0;
   let el = $('#lockScreen'); if (!el) { el = document.createElement('div'); el.id = 'lockScreen'; el.className = 'lock-screen'; document.body.appendChild(el); }
   const wait = Math.ceil(((S.lockUntil || 0) - Date.now()) / 1000);
-  el.innerHTML = `<div class="lock-card" role="dialog" aria-modal="true" aria-label="tam-tam est verrouillé"><div class="auth-top">${LOGO}<h1 class="brand">${WORD}</h1></div>
+  el.innerHTML = `<div class="lock-card" role="dialog" aria-modal="true" aria-label="tam-tam est verrouillé"><div class="auth-top"><h1 class="brand-h">${BRAND()}</h1></div>
     ${avatar(S.me, 'lg')}<b>${esc(S.me.name)}</b><p class="hint">${wait > 0 ? `Trop d’essais. Réessayez dans ${wait} s.` : 'Dessinez votre schéma pour ouvrir tam-tam.'}</p>
     ${patternPad('lockPad')}<p class="err" id="lkErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p>
     ${L.bio ? `<button class="btn" type="button" data-act="lockBio">${I.key}Utiliser l’empreinte ou le visage</button>` : ''}
@@ -1511,7 +1511,7 @@ function lockSettingsHtml() {
 /* Verrouillage obligatoire : sans lui, une notification ouvrirait les messages à n'importe qui. */
 function requireLock(step, first, msg) {
   let el = $('#lockScreen'); if (!el) { el = document.createElement('div'); el.id = 'lockScreen'; el.className = 'lock-screen'; document.body.appendChild(el); }
-  el.innerHTML = `<div class="lock-card" role="dialog" aria-modal="true" aria-label="Protéger tam-tam"><div class="auth-top">${LOGO}<h1 class="brand">${WORD}</h1></div>
+  el.innerHTML = `<div class="lock-card" role="dialog" aria-modal="true" aria-label="Protéger tam-tam"><div class="auth-top"><h1 class="brand-h">${BRAND()}</h1></div>
     <h2 style="margin:0">${I.lock} Protégez vos messages</h2>
     <p class="hint">${step === 2 ? 'Dessinez le même schéma pour confirmer.' : 'Choisissez un schéma de déverrouillage : tam-tam le demandera à chaque ouverture, même depuis une notification. Reliez au moins 4 points sans lever le doigt.'}</p>
     ${patternPad('reqPad')}<p class="err" id="rqErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p></div>`;
