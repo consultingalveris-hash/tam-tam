@@ -652,6 +652,15 @@ function onceDone() {
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden && S.onceMsg) onceDone(); });
 // Capture d'écran repérée au clavier (ordinateur) : l'autre personne est prévenue.
+/* Application Android : blocage des captures dans les zones privées, signalement ailleurs. */
+if (window.TamTamAndroid) {
+  let secOn = null;
+  const secCheck = () => { const on = !!document.querySelector('.nocopy, .once-view');
+    if (on !== secOn) { secOn = on; try { window.TamTamAndroid.setSecure(on); } catch {} } };
+  let secT = 0; new MutationObserver(() => { if (!secT) secT = setTimeout(() => { secT = 0; secCheck(); }, 120); }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden'] });
+  secCheck();
+  window.addEventListener('tt-shot', () => { if (S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
+}
 document.addEventListener('keyup', e => { if (e.key === 'PrintScreen' && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
 document.addEventListener('keydown', e => { if (e.metaKey && e.shiftKey && ['3', '4', '5', 's', 'S'].includes(e.key) && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
 function closeLayer() { if (S.onceMsg) return onceDone(); clearTimeout(svT); layer.innerHTML = ''; S.sv = null; if (S.pend) { URL.revokeObjectURL(S.pend.url); S.pend = null; } }
@@ -1086,7 +1095,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.24</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.25</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {

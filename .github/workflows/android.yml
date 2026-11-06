@@ -1,0 +1,51 @@
+name: Application Android
+
+# Fabrique l'application Android de Tam-Tam à chaque modification du dossier « mobile ».
+# Le fichier pour le Play Store (.aab) sort non signé : la signature se fait hors de GitHub,
+# pour que la clé de l'application ne soit jamais stockée ici.
+on:
+  push:
+    branches: [main]
+    paths: ['mobile/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Préparer le projet
+        working-directory: mobile
+        run: npm ci && npx cap sync android
+      - name: Outils Android
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" > /dev/null
+      - name: Fabriquer
+        working-directory: mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon bundleRelease assembleDebug -PttVersionCode=${{ github.run_number }} -PttVersionName=1.0.${{ github.run_number }}
+      - name: Ranger les fichiers dans la branche android-builds
+        run: |
+          V=${{ github.run_number }}
+          mkdir -p /tmp/out
+          cp mobile/android/app/build/outputs/bundle/release/app-release.aab /tmp/out/tam-tam-$V-non-signe.aab
+          cp mobile/android/app/build/outputs/apk/debug/app-debug.apk /tmp/out/tam-tam-$V-test.apk
+          git config user.name "Tam-Tam build"
+          git config user.email "actions@users.noreply.github.com"
+          git fetch origin android-builds || true
+          if git rev-parse --verify origin/android-builds >/dev/null 2>&1; then git checkout -B android-builds origin/android-builds; else git checkout --orphan android-builds; git rm -rf . > /dev/null; fi
+          rm -f *.aab *.apk
+          cp /tmp/out/* .
+          echo "Version $V – $(date -u +%F)" > LISEZMOI.txt
+          git add -A && git commit -m "Application Android, version $V" && git push origin android-builds
