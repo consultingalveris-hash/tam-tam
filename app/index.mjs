@@ -1000,7 +1000,7 @@ const LANG_EN = { fr: 'French', en: 'English', wo: 'Wolof', ff: 'Fula (Pulaar)',
 async function trCall(c, text, to) {
   if (c.provider === 'claude') {
     const r = await fetch(CLAUDE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': c.key, 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(20_000),
-      body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-haiku-5-5', max_tokens: 1500, temperature: 0,
+      body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-haiku-5-5', max_tokens: 1500,
         system: `You translate chat messages into ${LANG_EN[to] || to}. Reply with JSON only: {"from":"<ISO 639-1 code of the source language>","text":"<translation>"}. Keep the tone, emojis and names. Never add comments. If the message is already in ${LANG_EN[to] || to}, return it unchanged.`,
         messages: [{ role: 'user', content: text }] }) });
     const j = await r.json().catch(() => ({})); if (!r.ok) return { err: (j.error && j.error.message) || 'HTTP ' + r.status };
