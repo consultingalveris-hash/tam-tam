@@ -201,7 +201,7 @@ async function reveal(m) {
   const r = await E2E.open(m.enc, S.me.id);
   if (r.err === 'absent') { m.text = '🔒 Message chiffré avant votre arrivée, ou pour une ancienne clé'; m.locked = true; }
   else if (r.err) { m.text = '🔒 Message illisible sur cet appareil'; m.locked = true; }
-  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; }
+  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; }
   return m;
 }
 async function loadChats() { const r = await api('/api/chats'); const map = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); await reveal(c.last); map.set(c.id, c); } S.chats = map; }
@@ -397,8 +397,8 @@ function renderComposer() {
     const u = uOf(c.peer), mine = (S.me.blocked || []).some(b => b.id === c.peer);
     el.innerHTML = `<div class="blocked-bar">${I.block}<span>${mine ? `Vous avez bloqué ${esc(first(u.name))}.` : 'Vous ne pouvez plus écrire à cette personne.'}</span>${mine ? `<button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button>` : ''}</div>`; return;
   }
-  const trOn = Tr.auto(c.id);
-  el.innerHTML = `<form class="composer" data-form="send" autocomplete="off">${Tr.st && Tr.st.on ? `<button class="ib tr-tog" type="button" data-act="trAuto" aria-pressed="${trOn}" aria-label="${trOn ? 'Arrêter la traduction automatique' : 'Traduire automatiquement cette discussion'}" title="${trOn ? 'Traduction automatique activée' : 'Traduire automatiquement les messages reçus'}">${I.translate}${trOn ? `<span>${Tr.lang().toUpperCase()}</span>` : ''}</button>` : ''}<div class="inwrap"><textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
+  const trOn = !!(Tr.inL(c.id) || Tr.outL(c.id));
+  el.innerHTML = `<form class="composer" data-form="send" autocomplete="off">${Tr.st && Tr.st.on ? `<button class="ib tr-tog" type="button" data-act="trAuto" aria-pressed="${trOn}" aria-label="Langues de cette discussion" title="Langues de traduction de cette discussion">${I.translate}${Tr.label(c.id)}</button>` : ''}<div class="inwrap"><textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
     <button class="ib" type="button" data-act="attach" aria-label="Joindre une photo">${I.clip}</button><button class="ib" type="button" data-act="camera" aria-label="Prendre une photo">${I.camera}</button><button class="ib once-tog" type="button" data-act="onceTog" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique : le message ne peut être ouvert qu’une fois"><span class="one" aria-hidden="true">1</span></button></div>
     <input type="file" id="fileIn" accept="image/*" hidden><input type="file" id="camIn" accept="image/*" capture="environment" hidden>
     <button class="send" id="sendBtn" type="button" data-act="recStart" aria-label="Enregistrer un message vocal">${I.mic}</button></form>`;
@@ -472,7 +472,7 @@ function renderMessages(keep) {
     if (m.deleted) body = `<span class="txt gone">${out ? 'Vous avez supprimé ce message' : 'Ce message a été supprimé'}</span>`;
     else if (m.once) body = onceBubble(m, out);
     else if (m.kind === 'audio') body = `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
-    else body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? (Tr.html(m) || `<span class="txt">${esc(m.text)}</span>`) : '');
+    else body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? Tr.txt(m) : '');
     h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble">
       ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${body}<span class="meta">${hm(m.at)}${out && !m.deleted ? tick(readState(c, m)) : ''}</span>
       ${m.deleted ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message">${I.chev}</button>`}</div></div>`;
@@ -568,7 +568,12 @@ async function sendText() {
   const i = $('#msgIn'), t = i.value.trim(), c = S.chats.get(S.chatId); if (!t || !c) return;
   i.value = ''; autoGrow(i); syncSend(); const reply = S.replyTo; S.replyTo = null; renderReplyBar();
   try {
-    const {env} = await E2E.seal({t}, recipients(c));
+    let payload = {t}; const out = Tr.outL(c.id);
+    if (out && Tr.st && Tr.st.on && !S.once) {
+      try { const r = await Tr.fetch(t, out); if (r && r.text && r.from !== out && r.text.trim() !== t) payload = {t: r.text, o: t, ol: r.from || '', tl: out}; }
+      catch (e) { toast('Message envoyé sans traduction : ' + e.message); }
+    }
+    const {env} = await E2E.seal(payload, recipients(c));
     const body = {enc: env}; if (reply) body.replyTo = reply; if (S.once) { body.once = true; S.once = false; renderComposer(); }
     const r = await api(`/api/chats/${c.id}/messages`, body); onMsg(r.msg);
   } catch (e) { toast(e.message); i.value = t; syncSend(); }
@@ -807,56 +812,89 @@ function picsView(list, title) {
 const LANG_FR = {bas: 'bassa (essai)', dua: 'duala (essai)', ewo: 'ewondo (essai)', srr: 'sérère (essai)', mnk: 'mandinka (essai)', snk: 'soninké (essai)', dyo: 'diola (essai)', fan: 'fang (essai)', bum: 'boulou (essai)', mos: 'mooré (essai)', fon: 'fon (essai)', dyu: 'dioula (essai)', kab: 'kabyle (essai)', tzm: 'tamazight (essai)', ber: 'berbère (essai)', kri: 'krio (essai)', fr: 'français', en: 'anglais', wo: 'wolof', ff: 'peul (pulaar)', bm: 'bambara', ln: 'lingala', sw: 'swahili', ha: 'haoussa', yo: 'yoruba', ig: 'igbo', ee: 'ewe', ak: 'twi', rw: 'kinyarwanda', sg: 'sango', ar: 'arabe', pt: 'portugais', es: 'espagnol', de: 'allemand', it: 'italien', zh: 'chinois', ru: 'russe', tr: 'turc', nl: 'néerlandais', hi: 'hindi', am: 'amharique', so: 'somali', zu: 'zoulou', xh: 'xhosa', mg: 'malgache', rn: 'kirundi', kg: 'kikongo', ts: 'tsonga', tn: 'tswana', st: 'sotho', sn: 'shona', ny: 'chichewa', om: 'oromo', ti: 'tigrigna', lg: 'luganda', ki: 'kikuyu'};
 const Tr = {
   st: null,
-  lang() { try { return localStorage.getItem('tt-trlang') || 'fr'; } catch { return 'fr'; } },
-  setLang(l) { try { localStorage.setItem('tt-trlang', l); } catch {} },
-  get(id) { try { return JSON.parse(localStorage.getItem(`tt-tr:${id}:${this.lang()}`) || 'null'); } catch { return null; } },
-  put(id, v) { try { localStorage.setItem(`tt-tr:${id}:${this.lang()}`, JSON.stringify(v)); } catch {} },
-  shown: new Set(),
-  // Traduction automatique d'une discussion (réglée par discussion, sur cet appareil).
-  auto(cid) { try { return localStorage.getItem('tt-trauto:' + cid) === '1'; } catch { return false; } },
-  setAuto(cid, on) { try { on ? localStorage.setItem('tt-trauto:' + cid, '1') : localStorage.removeItem('tt-trauto:' + cid); } catch {} },
-  busy: false,
-  async autoRun(c) {
-    if (!c || !this.auto(c.id) || this.busy || !this.st || !this.st.on) return;
-    const todo = (S.msgs.get(c.id) || []).filter(m => m.from && m.from !== S.me.id && !m.once && !m.deleted && !m.locked && m.kind === 'text' && m.text && m.text.trim().length > 1 && !this.shown.has(m.id) && !this.off.has(m.id)).slice(-30);
-    if (!todo.length) return; this.busy = true;
-    try { for (const m of todo) { if (S.chatId !== c.id || !this.auto(c.id)) break; if (this.get(m.id)) { this.shown.add(m.id); continue; } const ok = await this.run(m.id, true); if (!ok) break; } }
-    finally { this.busy = false; } if (S.chatId === c.id) renderMessages(true);
-  },
-  off: new Set(),
+  ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { return null; } },
+  // Langue par défaut pour « Traduire » sur un message (menu du message).
+  lang() { return this.ls('tt-trlang') || 'fr'; },
+  setLang(l) { this.ls('tt-trlang', l); },
+  // Par discussion : la langue dans laquelle JE reçois, et celle dans laquelle MON CONTACT reçoit.
+  inL(cid) { return this.ls('tt-trin:' + cid) || (this.ls('tt-trauto:' + cid) === '1' ? this.lang() : ''); },
+  outL(cid) { return this.ls('tt-trout:' + cid) || ''; },
+  setIn(cid, l) { this.ls('tt-trauto:' + cid, ''); this.ls('tt-trin:' + cid, l); },
+  setOut(cid, l) { this.ls('tt-trout:' + cid, l); },
+  view(cid) { return this.inL(cid) || this.lang(); },
+  get(id, l) { try { return JSON.parse(this.ls(`tt-tr:${id}:${l}`) || 'null'); } catch { return null; } },
+  put(id, l, v) { this.ls(`tt-tr:${id}:${l}`, JSON.stringify(v)); },
+  shown: new Set(), off: new Set(), flip: new Set(), busy: false,
   // Empreinte et clé tirées du texte : seul quelqu'un qui a déjà le message peut retrouver sa traduction.
   async keys(text, lang) {
     const h = async p => new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(p + '|' + lang + '|' + text)));
     const id = [...await h('tt-tr-id')].map(b => b.toString(16).padStart(2, '0')).join('');
     return {id, key: await crypto.subtle.importKey('raw', await h('tt-tr-key'), 'AES-GCM', false, ['encrypt', 'decrypt'])};
   },
-  async run(id, silent) {
+  // Traduit un texte, en réutilisant d'abord la traduction déjà payée par quelqu'un d'autre.
+  async fetch(text, to) {
+    const k = await this.keys(text, to), c = await api('/api/translate/cache/' + k.id).catch(() => null);
+    if (c && c.hit) { try { return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name: 'AES-GCM', iv: Uint8Array.from(atob(c.hit.iv), x => x.charCodeAt(0))}, k.key, Uint8Array.from(atob(c.hit.ct), x => x.charCodeAt(0))))); } catch {} }
+    const r = await api('/api/translate', {text, to});
+    const iv = crypto.getRandomValues(new Uint8Array(12)), ct = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, k.key, new TextEncoder().encode(JSON.stringify(r))));
+    const b64 = u => btoa(String.fromCharCode(...u)); api('/api/translate/cache', {id: k.id, iv: b64(iv), ct: b64(ct)}).catch(() => {});
+    return r;
+  },
+  async run(id, silent, l) {
+    l = l || this.view(S.chatId);
     const m = (S.msgs.get(S.chatId) || []).find(x => x.id === id); if (!m || !m.text) return false;
-    if (this.get(id)) { this.shown.add(id); if (!silent) renderMessages(true); return true; } // déjà traduit : rien n'est recompté
-    try {
-      const k = await this.keys(m.text, this.lang()); let r = null;
-      const c = await api('/api/translate/cache/' + k.id).catch(() => null);
-      if (c && c.hit) { try { r = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name: 'AES-GCM', iv: Uint8Array.from(atob(c.hit.iv), x => x.charCodeAt(0))}, k.key, Uint8Array.from(atob(c.hit.ct), x => x.charCodeAt(0))))); } catch { r = null; } }
-      if (!r) {
-        r = await api('/api/translate', {text: m.text, to: this.lang()});
-        const iv = crypto.getRandomValues(new Uint8Array(12)), ct = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, k.key, new TextEncoder().encode(JSON.stringify(r))));
-        const b64 = u => btoa(String.fromCharCode(...u)); api('/api/translate/cache', {id: k.id, iv: b64(iv), ct: b64(ct)}).catch(() => {});
-      }
-      this.put(id, r); this.shown.add(id); if (!silent) renderMessages(true); return true;
-    }
+    if (this.get(id, l)) { this.shown.add(id); if (!silent) renderMessages(true); return true; } // déjà traduit : rien n'est recompté
+    try { this.put(id, l, await this.fetch(m.text, l)); this.shown.add(id); if (!silent) renderMessages(true); return true; }
     catch (e) { toast(e.message); return false; }
   },
-  html(m) {
-    const t = this.shown.has(m.id) && this.get(m.id); if (!t || t.from === this.lang() || t.text.trim() === m.text.trim()) return '';
-    const l = t.from && LANG_FR[t.from], from = l ? (/^[aeiouhé]/.test(l) ? 'de l’' : 'du ') + l : '';
-    return `<span class="trl-txt">${esc(t.text)}</span><span class="trl">${I.translate}Traduit${from ? ' ' + esc(from) : ''} · <button class="linkb" type="button" data-act="trOrig" data-id="${m.id}">Voir l’original</button></span>`;
+  async autoRun(c) {
+    const l = c && this.inL(c.id); if (!l || this.busy || !this.st || !this.st.on) return;
+    const todo = (S.msgs.get(c.id) || []).filter(m => m.from && m.from !== S.me.id && !m.once && !m.deleted && !m.locked && m.kind === 'text' && m.text && m.text.trim().length > 1 && m.tlang !== l && !this.shown.has(m.id) && !this.off.has(m.id)).slice(-30);
+    if (!todo.length) return; this.busy = true;
+    try { for (const m of todo) { if (S.chatId !== c.id || this.inL(c.id) !== l) break; if (this.get(m.id, l)) { this.shown.add(m.id); continue; } if (!await this.run(m.id, true, l)) break; } }
+    finally { this.busy = false; } if (S.chatId === c.id) renderMessages(true);
   },
+  note(txt, act, id, lbl) { return `<span class="trl">${I.translate}${txt} · <button class="linkb" type="button" data-act="${act}" data-id="${id}">${lbl}</button></span>`; },
+  from(l) { const n = l && LANG_FR[l]; return n ? (/^[aeiouhé]/.test(n) ? 'de l’' : 'du ') + n.replace(/ \(essai\)$/, '') : ''; },
+  html(m) {
+    const l = this.view(S.chatId), t = this.shown.has(m.id) && this.get(m.id, l);
+    if (!t || t.from === l || t.text.trim() === m.text.trim()) return '';
+    return `<span class="trl-txt">${esc(t.text)}</span>${this.note('Traduit' + (this.from(t.from) ? ' ' + esc(this.from(t.from)) : ''), 'trOrig', m.id, 'Voir l’original')}`;
+  },
+  // Texte d'une bulle, avec les traductions.
+  txt(m) {
+    const L = l => (LANG_FR[l] || l || '').replace(/ \(essai\)$/, ''), flip = this.flip.has(m.id);
+    if (m.orig != null && m.tlang) {
+      if (m.from === S.me.id) return flip
+        ? `<span class="trl-txt">${esc(m.text)}</span>${this.note('Reçu en ' + esc(L(m.tlang)) + ' par votre contact', 'trFlip', m.id, 'Voir ce que j’ai écrit')}`
+        : `<span class="trl-txt">${esc(m.orig)}</span>${this.note('Envoyé en ' + esc(L(m.tlang)), 'trFlip', m.id, 'Voir le message envoyé')}`;
+      const more = this.html(m); if (more && !flip) return more;
+      return flip ? `<span class="trl-txt">${esc(m.orig)}</span>${this.note('Original' + (m.olang ? ' (' + esc(L(m.olang)) + ')' : ''), 'trFlip', m.id, 'Voir la traduction')}`
+        : `<span class="trl-txt">${esc(m.text)}</span>${this.note('Traduit' + (this.from(m.olang) ? ' ' + esc(this.from(m.olang)) : '') + ' par l’expéditeur', 'trFlip', m.id, 'Voir l’original')}`;
+    }
+    return this.html(m) || `<span class="txt">${esc(m.text)}</span>`;
+  },
+  label(cid) { const a = this.inL(cid), b = this.outL(cid); return a || b ? `<span>${a ? a.toUpperCase() : '—'}</span><i aria-hidden="true">⇄</i><span>${b ? b.toUpperCase() : '—'}</span>` : ''; },
   settingsHtml() {
     if (!this.st || !this.st.on) return '';
-    return `<div class="set-block"><h2>${I.translate} Traduction</h2><p class="hint">Sur un message reçu, appuyez longuement (ou touchez la flèche ⌄) puis « Traduire ». Le texte traduit est envoyé au service de traduction : ce message-là n’est plus protégé de bout en bout.</p>
-      <div class="field"><label for="trLang">Traduire vers</label><select id="trLang">${this.st.langs.map(l => `<option value="${l}"${l === this.lang() ? ' selected' : ''}>${LANG_FR[l] || l}</option>`).join('')}</select></div></div>`;
+    return `<div class="set-block"><h2>${I.translate} Traduction</h2><p class="hint">Dans une discussion, touchez le bouton 文A à gauche de la zone d’écriture : choisissez la langue dans laquelle <b>vous</b> recevez les messages, et celle dans laquelle <b>votre contact</b> reçoit les vôtres. Le texte traduit passe par le service de traduction : il n’est plus protégé de bout en bout.</p>
+      <div class="field"><label for="trLang">Langue pour « Traduire » sur un message</label><select id="trLang">${this.st.langs.map(l => `<option value="${l}"${l === this.lang() ? ' selected' : ''}>${LANG_FR[l] || l}</option>`).join('')}</select></div></div>`;
   },
 };
+function trSheet() {
+  const c = S.chats.get(S.chatId); if (!c || !Tr.st) return;
+  const side = S.trSide || 'in', cur = side === 'out' ? Tr.outL(c.id) : Tr.inL(c.id), L = l => (LANG_FR[l] || l).replace(/^./, x => x.toUpperCase());
+  const top = ['fr', 'en', 'wo', 'ff', 'ar', 'pt', 'es', 'sw', 'ln', 'bm', 'ha', 'yo'].filter(l => Tr.st.langs.includes(l)), rest = Tr.st.langs.filter(l => !top.includes(l)).sort((a, b) => L(a).localeCompare(L(b), 'fr'));
+  const btn = l => `<button type="button" class="lang-opt" data-act="trPick" data-v="${l}" aria-pressed="${l === cur}">${esc(L(l))}<small>${l.toUpperCase()}</small></button>`;
+  const who = c.type === 'group' ? 'les membres du groupe reçoivent' : `${esc(first(chatTitle(c)))} reçoit`;
+  sheet(`${head('Langues de cette discussion')}<div class="sheet-body">
+    <div class="seg tr-seg" role="tablist"><button type="button" role="tab" data-act="trSide" data-v="in" aria-selected="${side === 'in'}"><small>Je reçois en</small><b>${Tr.inL(c.id) ? esc(L(Tr.inL(c.id))) : 'pas de traduction'}</b></button><button type="button" role="tab" data-act="trSide" data-v="out" aria-selected="${side === 'out'}"><small>Mon contact reçoit en</small><b>${Tr.outL(c.id) ? esc(L(Tr.outL(c.id))) : 'pas de traduction'}</b></button></div>
+    <p class="hint">${side === 'in' ? 'Choisissez la langue dans laquelle <b>vous recevez</b> les messages de cette discussion. Ils seront traduits automatiquement.' : `Choisissez la langue dans laquelle <b>${who}</b> vos messages. Vous écrivez dans votre langue, Tam-Tam envoie la traduction.`}</p>
+    <button type="button" class="lang-opt none" data-act="trPick" data-v="" aria-pressed="${!cur}">Pas de traduction<small>—</small></button>
+    <span class="lbl">Langues les plus utilisées</span><div class="lang-grid">${top.map(btn).join('')}</div>
+    <span class="lbl">Autres langues</span><div class="lang-grid">${rest.map(btn).join('')}</div>
+    <div class="actions"><button class="btn" type="button" data-act="close">Terminé</button></div></div>`, 'Langues');
+}
 function trBox() {
   const t = S.trset;
   if (!t) return `<div class="set-block" id="trBox"><h2>${I.translate} Traduction</h2><p class="hint">Permet de traduire un message reçu. Plafond : 480 000 caractères par mois, puis la traduction s’arrête jusqu’au 1er du mois suivant.</p><div><button class="btn sm ghost" type="button" data-act="trLoad">Afficher les réglages</button></div></div>`;
@@ -903,7 +941,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.17.1</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.18</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -982,18 +1020,14 @@ const ACT = {
   trProv(d) { S.trProv = d.v; const el = $('#trBox'); if (el) el.outerHTML = trBox(); },
   trMsg(d) { closeLayer(); Tr.off.delete(+d.id); Tr.run(+d.id); },
   trOrig(d) { Tr.shown.delete(+d.id); Tr.off.add(+d.id); renderMessages(true); },
-  trAuto() {
-    const c = S.chats.get(S.chatId); if (!c) return; const on = Tr.auto(c.id), cur = Tr.lang();
-    const top = ['fr', 'en', 'wo', 'ff', 'ar', 'pt', 'es', 'sw', 'ln', 'bm', 'ha', 'yo'], rest = (Tr.st.langs || []).filter(l => !top.includes(l)).sort((a, b) => (LANG_FR[a] || a).localeCompare(LANG_FR[b] || b, 'fr'));
-    const btn = l => `<button type="button" class="lang-opt" data-act="trPick" data-v="${l}" aria-pressed="${on && l === cur}">${esc((LANG_FR[l] || l).replace(/^./, x => x.toUpperCase()))}<small>${l.toUpperCase()}</small></button>`;
-    sheet(`${head('Traduire cette discussion')}<div class="sheet-body"><p class="hint">Les messages reçus dans cette discussion seront traduits automatiquement dans la langue choisie. Les messages déjà dans cette langue ne sont pas traduits.</p>
-      ${on ? `<button class="btn ghost" type="button" data-act="trStop">${I.close}Arrêter la traduction (actuellement : ${esc(LANG_FR[cur] || cur)})</button>` : ''}
-      <span class="lbl">Langues les plus utilisées</span><div class="lang-grid">${top.filter(l => (Tr.st.langs || []).includes(l)).map(btn).join('')}</div>
-      <span class="lbl">Autres langues</span><div class="lang-grid">${rest.map(btn).join('')}</div></div>`, 'Traduire');
+  trAuto() { S.trSide = S.trSide || 'in'; trSheet(); },
+  trSide(d) { S.trSide = d.v; trSheet(); },
+  trPick(d) {
+    const c = S.chats.get(S.chatId); if (!c) return;
+    if (S.trSide === 'out') Tr.setOut(c.id, d.v); else { Tr.setIn(c.id, d.v); Tr.shown.clear(); Tr.off.clear(); }
+    renderComposer(); renderMessages(true); trSheet(); if (S.trSide !== 'out' && d.v) Tr.autoRun(c);
   },
-  trPick(d) { const c = S.chats.get(S.chatId); if (!c) return; closeLayer(); Tr.setLang(d.v); Tr.setAuto(c.id, true); Tr.shown.clear(); Tr.off.clear(); renderComposer(); renderMessages(true); toast(`Traduction automatique en ${LANG_FR[d.v] || d.v} activée pour cette discussion`); Tr.autoRun(c); },
-  trStop() { const c = S.chats.get(S.chatId); if (!c) return; closeLayer(); Tr.setAuto(c.id, false); for (const m of S.msgs.get(c.id) || []) Tr.shown.delete(m.id); renderComposer(); renderMessages(true); toast('Traduction automatique arrêtée'); },
-  trAutoOld() { const c = S.chats.get(S.chatId); if (!c) return; const on = !Tr.auto(c.id); Tr.setAuto(c.id, on); renderComposer(); if (on) { toast(`Traduction automatique en ${LANG_FR[Tr.lang()] || Tr.lang()} activée pour cette discussion`); Tr.off.clear(); Tr.autoRun(c); } else { toast('Traduction automatique arrêtée'); for (const m of S.msgs.get(c.id) || []) Tr.shown.delete(m.id); renderMessages(true); } },
+  trFlip(d) { const id = +d.id; Tr.flip.has(id) ? Tr.flip.delete(id) : Tr.flip.add(id); renderMessages(true); },
   async trLoad() { try { S.trset = await api('/api/admin/translate'); const el = $('#trBox'); if (el) el.outerHTML = trBox(); } catch (e) { toast(e.message); } },
   async trOff() { try { await api('/api/admin/translate', {off: true}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction désactivée'); } catch (e) { toast(e.message); } },
   recStart() { Rec.start(); }, recCancel() { Rec.cancel(); }, recSend() { Rec.send(); },
