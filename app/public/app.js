@@ -840,17 +840,19 @@ const Tr = {
   },
   settingsHtml() {
     if (!this.st || !this.st.on) return '';
-    return `<div class="set-block"><h2>${I.translate} Traduction</h2><p class="hint">Sur un message reçu, appuyez longuement (ou touchez la flèche ⌄) puis « Traduire ». Le texte traduit est envoyé à Google pour la traduction : ce message-là n’est plus protégé de bout en bout.</p>
+    return `<div class="set-block"><h2>${I.translate} Traduction</h2><p class="hint">Sur un message reçu, appuyez longuement (ou touchez la flèche ⌄) puis « Traduire ». Le texte traduit est envoyé au service de traduction : ce message-là n’est plus protégé de bout en bout.</p>
       <div class="field"><label for="trLang">Traduire vers</label><select id="trLang">${this.st.langs.map(l => `<option value="${l}"${l === this.lang() ? ' selected' : ''}>${LANG_FR[l] || l}</option>`).join('')}</select></div></div>`;
   },
 };
 function trBox() {
   const t = S.trset;
-  if (!t) return `<div class="set-block" id="trBox"><h2>${I.translate} Traduction (Google)</h2><p class="hint">Permet de traduire un message reçu. Gratuit jusqu’à 480 000 caractères par mois, puis la traduction s’arrête jusqu’au 1er du mois suivant.</p><div><button class="btn sm ghost" type="button" data-act="trLoad">Afficher les réglages</button></div></div>`;
+  if (!t) return `<div class="set-block" id="trBox"><h2>${I.translate} Traduction</h2><p class="hint">Permet de traduire un message reçu. Plafond : 480 000 caractères par mois, puis la traduction s’arrête jusqu’au 1er du mois suivant.</p><div><button class="btn sm ghost" type="button" data-act="trLoad">Afficher les réglages</button></div></div>`;
   const pct = Math.min(100, Math.round(t.used / t.cap * 100));
-  return `<form class="set-block" id="trBox" data-form="trset" autocomplete="off"><h2>${I.translate} Traduction (Google)</h2>
-    <p class="hint">${t.has ? `<b>Activée.</b> Ce mois-ci : ${t.used.toLocaleString('fr-FR')} caractères traduits sur ${t.cap.toLocaleString('fr-FR')} gratuits (${pct} %). Au-delà, la traduction s’arrête jusqu’au 1er du mois.` : 'Collez ici la clé d’API créée dans Google Cloud (projet « tam-tam »).'}</p>
-    <div class="field"><label for="trKey">Clé d’API Google${t.has ? ' (laisser vide pour garder l’actuelle)' : ''}</label><input id="trKey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…"></div>
+  const pv = S.trProv || t.provider || 'claude';
+  return `<form class="set-block" id="trBox" data-form="trset" autocomplete="off"><h2>${I.translate} Traduction</h2>
+    <span class="lbl">Moteur de traduction</span><div class="seg" role="radiogroup"><button type="button" role="radio" data-act="trProv" data-v="claude" aria-checked="${pv === 'claude'}" aria-selected="${pv === 'claude'}">Claude (Anthropic)</button><button type="button" role="radio" data-act="trProv" data-v="google" aria-checked="${pv === 'google'}" aria-selected="${pv === 'google'}">Google</button></div>
+    <p class="hint">${t.has ? `<b>Activée avec ${t.provider === 'claude' ? 'Claude' : 'Google'}.</b> Ce mois-ci : ${t.used.toLocaleString('fr-FR')} caractères traduits sur ${t.cap.toLocaleString('fr-FR')} gratuits (${pct} %). Au-delà, la traduction s’arrête jusqu’au 1er du mois.` : pv === 'claude' ? 'Collez ici la clé créée sur console.anthropic.com (rubrique « API Keys »).' : 'Collez ici la clé d’API créée dans Google Cloud (projet « tam-tam »).'}</p>
+    <div class="field"><label for="trKey">Clé ${pv === 'claude' ? 'Anthropic' : 'Google'}${t.has ? ' (pour changer de clé ou de moteur)' : ''}</label><input id="trKey" type="password" autocomplete="off" spellcheck="false" placeholder="${pv === 'claude' ? 'sk-ant-…' : 'AIza…'}"></div>
     <p class="err" id="trErr" role="alert" hidden></p><div class="actions" style="justify-content:flex-start"><button class="btn sm" type="submit">Enregistrer</button>${t.has ? '<button class="btn sm ghost" type="button" data-act="trOff">Désactiver</button>' : ''}</div></form>`;
 }
 function availPicker() {
@@ -884,7 +886,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.15.1</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.16</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -960,6 +962,7 @@ const ACT = {
   attach() { $('#fileIn').click(); },
   camera() { $('#camIn').click(); },
   phCancel() { S.once = false; closeLayer(); renderComposer(); },
+  trProv(d) { S.trProv = d.v; const el = $('#trBox'); if (el) el.outerHTML = trBox(); },
   trMsg(d) { closeLayer(); Tr.run(+d.id); },
   trOrig(d) { Tr.shown.delete(+d.id); renderMessages(true); },
   async trLoad() { try { S.trset = await api('/api/admin/translate'); const el = $('#trBox'); if (el) el.outerHTML = trBox(); } catch (e) { toast(e.message); } },
@@ -1069,7 +1072,7 @@ const FORMS = {
     try { await api('/api/admin/google', {id: $('#gId').value.trim(), secret: $('#gSecret').value}); S.gset = await api('/api/admin/google'); $('#gBox').outerHTML = googleBox(); const o = $('#gOk'); o.textContent = 'Enregistré. Déconnectez-vous pour voir le bouton « Continuer avec Google ».'; o.hidden = false; }
     catch (e) { er.textContent = e.message; er.hidden = false; } },
   async trset() { const er = $('#trErr'); er.hidden = true; const k = $('#trKey').value.trim(); if (!k) return;
-    try { await api('/api/admin/translate', {key: k}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction activée'); }
+    try { await api('/api/admin/translate', {key: k, provider: S.trProv || (S.trset && S.trset.provider) || 'claude'}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction activée'); }
     catch (e) { er.textContent = e.message; er.hidden = false; } },
   send: sendText,
   photo: sendPhoto,

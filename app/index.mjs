@@ -986,7 +986,25 @@ function adminOnly(me) { if (!me.admin) E(403, 'Réservé au propriétaire.'); }
 const TR_URL = process.env.TR_URL || 'https://translation.googleapis.com/language/translate/v2';
 const TR_CAP = 480_000; // caractères par mois : Google en offre 500 000
 const TR_LANGS = ['fr', 'en', 'wo', 'ff', 'bm', 'ln', 'sw', 'ha', 'yo', 'ig', 'ee', 'ak', 'rw', 'sg', 'ar', 'pt', 'es', 'de', 'it', 'zh', 'ru', 'tr', 'nl', 'hi', 'am', 'so', 'zu', 'xh', 'mg', 'rn', 'kg', 'ts', 'tn', 'st', 'sn', 'ny', 'om', 'ti', 'lg', 'ki'];
-const trKey = () => { const r = q1(`SELECT v FROM settings WHERE k='translate'`); return r ? J(r.v, {}).key || '' : ''; };
+const trConf = () => { const r = q1(`SELECT v FROM settings WHERE k='translate'`); const c = r ? J(r.v, {}) : {}; return { key: c.key || '', provider: c.provider === 'claude' ? 'claude' : 'google' }; };
+const trKey = () => trConf().key;
+const CLAUDE_URL = process.env.CLAUDE_URL || 'https://api.anthropic.com/v1/messages';
+const LANG_EN = { fr: 'French', en: 'English', wo: 'Wolof', ff: 'Fula (Pulaar)', bm: 'Bambara', ln: 'Lingala', sw: 'Swahili', ha: 'Hausa', yo: 'Yoruba', ig: 'Igbo', ee: 'Ewe', ak: 'Twi', rw: 'Kinyarwanda', sg: 'Sango', ar: 'Arabic', pt: 'Portuguese', es: 'Spanish', de: 'German', it: 'Italian', zh: 'Chinese', ru: 'Russian', tr: 'Turkish', nl: 'Dutch', hi: 'Hindi', am: 'Amharic', so: 'Somali', zu: 'Zulu', xh: 'Xhosa', mg: 'Malagasy', rn: 'Kirundi', kg: 'Kikongo', ts: 'Tsonga', tn: 'Tswana', st: 'Sotho', sn: 'Shona', ny: 'Chichewa', om: 'Oromo', ti: 'Tigrinya', lg: 'Luganda', ki: 'Kikuyu' };
+// Traduit avec le moteur choisi ; renvoie { text, from }.
+async function trCall(c, text, to) {
+  if (c.provider === 'claude') {
+    const r = await fetch(CLAUDE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': c.key, 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(20_000),
+      body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-haiku-5-5', max_tokens: 1500, temperature: 0,
+        system: `You translate chat messages into ${LANG_EN[to] || to}. Reply with JSON only: {"from":"<ISO 639-1 code of the source language>","text":"<translation>"}. Keep the tone, emojis and names. Never add comments. If the message is already in ${LANG_EN[to] || to}, return it unchanged.`,
+        messages: [{ role: 'user', content: text }] }) });
+    const j = await r.json().catch(() => ({})); if (!r.ok) return { err: (j.error && j.error.message) || 'HTTP ' + r.status };
+    const out = (j.content || []).map(x => x.text || '').join('').trim(); let o; try { o = JSON.parse(out.replace(/^```(json)?|```$/g, '').trim()); } catch { o = { text: out }; }
+    return { text: String(o.text || ''), from: /^[a-z]{2,3}$/.test(o.from || '') ? o.from : null };
+  }
+  const r = await fetch(TR_URL + '?key=' + encodeURIComponent(c.key), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q: text, target: to, format: 'text' }), signal: AbortSignal.timeout(10_000) });
+  const j = await r.json().catch(() => ({})); if (!r.ok) return { err: (j.error && j.error.message) || 'HTTP ' + r.status };
+  const t = j.data && j.data.translations && j.data.translations[0]; return t ? { text: t.translatedText, from: t.detectedSourceLanguage || null } : { err: 'réponse vide' };
+}
 const trMonth = () => 'tr:' + new Date().toISOString().slice(0, 7);
 const trUsed = () => +(q1(`SELECT v FROM settings WHERE k=?`, trMonth())?.v || 0);
 R('GET', /^\/api\/translate\/status$/, async () => ({ on: !!trKey(), left: Math.max(0, TR_CAP - trUsed()), langs: TR_LANGS }));
@@ -997,12 +1015,9 @@ R('POST', /^\/api\/translate$/, async ({ me, body }) => {
   if (tooMany('tr:' + me.id, 120, 60 * 60_000)) E(429, 'Trop de traductions d’un coup. Réessayez dans un moment.');
   const used = trUsed(); if (used + text.length > TR_CAP) E(429, 'Traduction indisponible jusqu’au 1er du mois : la réserve gratuite de ce mois est épuisée.');
   run(`INSERT OR REPLACE INTO settings(k,v) VALUES(?,?)`, trMonth(), String(used + text.length));
-  let r; try {
-    r = await fetch(TR_URL + '?key=' + encodeURIComponent(key), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q: text, target: to, format: 'text' }), signal: AbortSignal.timeout(10_000) });
-  } catch { E(502, 'Le service de traduction ne répond pas. Réessayez.'); }
-  const j = await r.json().catch(() => ({})); if (!r.ok) { console.error('traduction', r.status, JSON.stringify(j).slice(0, 300)); E(502, 'La traduction a échoué. Réessayez plus tard.'); }
-  const t = j.data && j.data.translations && j.data.translations[0]; if (!t) E(502, 'La traduction a échoué.');
-  return { text: t.translatedText, from: t.detectedSourceLanguage || null };
+  let t; try { t = await trCall(trConf(), text, to); } catch { E(502, 'Le service de traduction ne répond pas. Réessayez.'); }
+  if (t.err || !t.text) { console.error('traduction', t.err); E(502, 'La traduction a échoué. Réessayez plus tard.'); }
+  return t;
 });
 // Traductions partagées : chiffrées par l'appareil avec une clé tirée du texte lui-même.
 // Le serveur ne peut pas les lire ; un même message n'est payé qu'une fois pour tout le monde.
@@ -1013,14 +1028,16 @@ R('POST', /^\/api\/translate\/cache$/, async ({ me, body }) => {
   if (tooMany('trc:' + me.id, 300, 60 * 60_000)) return { ok: true };
   run(`INSERT OR IGNORE INTO tr_cache(id,iv,ct,at) VALUES(?,?,?,?)`, id, iv, ct, now()); return { ok: true };
 });
-R('GET', /^\/api\/admin\/translate$/, async ({ me }) => { adminOnly(me); return { has: !!trKey(), used: trUsed(), cap: TR_CAP }; });
+R('GET', /^\/api\/admin\/translate$/, async ({ me }) => { adminOnly(me); const c = trConf(); return { has: !!c.key, provider: c.key ? c.provider : null, used: trUsed(), cap: TR_CAP }; });
 R('POST', /^\/api\/admin\/translate$/, async ({ me, body }) => {
   adminOnly(me);
   if (body.off) { run(`DELETE FROM settings WHERE k='translate'`); return { ok: true }; }
-  const key = clean(body.key, 200); if (!/^[A-Za-z0-9_-]{30,}$/.test(key)) E(400, 'Cette clé ne ressemble pas à une clé Google (elle commence souvent par « AIza »).');
-  const r = await fetch(TR_URL + '?key=' + encodeURIComponent(key), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q: 'Bonjour', target: 'en', format: 'text' }), signal: AbortSignal.timeout(10_000) }).catch(() => null);
-  if (!r || !r.ok) { const j = r ? await r.json().catch(() => ({})) : {}; E(400, 'Google refuse cette clé : ' + ((j.error && j.error.message) || 'vérifiez que l’API « Cloud Translation » est activée et que la facturation est liée au projet.').slice(0, 200)); }
-  run(`INSERT OR REPLACE INTO settings(k,v) VALUES('translate',?)`, JSON.stringify({ key })); run(`INSERT OR REPLACE INTO settings(k,v) VALUES(?,?)`, trMonth(), String(trUsed() + 7));
+  const provider = body.provider === 'claude' ? 'claude' : 'google', key = clean(body.key, 300);
+  if (provider === 'claude' ? !/^sk-ant-[A-Za-z0-9_-]{20,}$/.test(key) : !/^[A-Za-z0-9_-]{30,}$/.test(key))
+    E(400, provider === 'claude' ? 'Cette clé ne ressemble pas à une clé Anthropic (elle commence par « sk-ant- »).' : 'Cette clé ne ressemble pas à une clé Google (elle commence souvent par « AIza »).');
+  let t; try { t = await trCall({ provider, key }, 'Bonjour', 'en'); } catch { t = { err: 'pas de réponse' }; }
+  if (t.err) E(400, (provider === 'claude' ? 'Anthropic' : 'Google') + ' refuse cette clé : ' + String(t.err).slice(0, 200));
+  run(`INSERT OR REPLACE INTO settings(k,v) VALUES('translate',?)`, JSON.stringify({ provider, key })); run(`INSERT OR REPLACE INTO settings(k,v) VALUES(?,?)`, trMonth(), String(trUsed() + 7));
   return { ok: true };
 });
 R('GET', /^\/api\/admin\/google$/, async ({ me }) => { adminOnly(me); const r = q1(`SELECT v FROM settings WHERE k='google'`), g = r ? J(r.v, {}) : {}; return { id: g.id || '', hasSecret: !!g.secret, redirect: G_REDIRECT(), origin: BASE_URL }; });
