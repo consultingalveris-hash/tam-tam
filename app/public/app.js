@@ -930,7 +930,7 @@ function trSheet() {
     <div class="seg tr-seg" role="tablist"><button type="button" role="tab" data-act="trSide" data-v="in" aria-selected="${side === 'in'}"><small>Je reçois en</small><b>${Tr.inL(c.id) ? esc(L(Tr.inL(c.id))) : 'pas de traduction'}</b></button><button type="button" role="tab" data-act="trSide" data-v="out" aria-selected="${side === 'out'}"><small>Mon contact reçoit en</small><b>${Tr.outL(c.id) ? esc(L(Tr.outL(c.id))) : 'pas de traduction'}</b></button></div>
     <div class="tr-hint"><p class="hint">${side === 'in' ? 'Choisissez la langue dans laquelle <b>vous recevez</b> les messages de cette discussion. Ils seront traduits automatiquement.' : `Choisissez la langue dans laquelle <b>${who}</b> vos messages. Vous écrivez dans votre langue, Tam-Tam envoie la traduction.`}</p><button class="btn sm" type="button" data-act="close">Terminé</button></div>
     ${side === 'in' && cur ? `<label class="pick chk learn"><input type="checkbox" data-act="trLearn"${Tr.learn(c.id) ? ' checked' : ''}><span><b>Mode apprentissage</b> : je reçois les messages dans leur langue d’origine pour m’exercer ; la traduction en ${esc(L(cur).toLowerCase())} reste cachée sous « Voir la traduction ».</span></label>` : ''}
-    <button type="button" class="lang-opt none" data-act="trPick" data-v="" aria-pressed="${!cur}">Pas de traduction<small>—</small></button></div>
+    <div class="tr-none"><button type="button" class="lang-opt none" data-act="trNone" data-side="in" aria-pressed="${!Tr.inL(c.id)}"><span>Pas de traduction<small>je reçois</small></span>—</button><button type="button" class="lang-opt none" data-act="trNone" data-side="out" aria-pressed="${!Tr.outL(c.id)}"><span>Pas de traduction<small>mon contact reçoit</small></span>—</button></div></div>
     <div class="tr-scroll"><span class="lbl">Langues les plus utilisées</span><div class="lang-grid">${top.map(btn).join('')}</div>
     <span class="lbl">Autres langues</span><div class="lang-grid">${rest.map(btn).join('')}</div></div></div>`, 'Langues');
   const sc = layer.querySelector('.tr-scroll'); if (sc) sc.scrollTop = y;
@@ -981,7 +981,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.20</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.20.1</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1086,6 +1086,7 @@ const ACT = {
   async trConsentYes(d) { closeLayer(); await saveNow({trConsent: true}, 'Traduction activée. Merci de contribuer à la base de Tam-Tam !'); renderComposer(); if (S.chatId) { renderMessages(true); if (d.open) { S.trSide = 'in'; trSheet(); } } },
   async trConsentNo() { closeLayer(); await saveNow({trConsent: false}, 'Pas de traduction : vous recevez les messages tels qu’ils ont été écrits.'); if (S.chatId) { renderComposer(); renderMessages(true); } },
   trConsentTog() { saveNow({trConsent: !S.me.trConsent}); },
+  trNone(d) { const c = S.chats.get(S.chatId); if (!c) return; if (d.side === 'out') Tr.setOut(c.id, ''); else { Tr.setIn(c.id, ''); Tr.setLearn(c.id, false); } S.trSide = d.side; renderComposer(); renderMessages(true); trSheet(); },
   trFlip(d) { const id = +d.id; Tr.flip.has(id) ? Tr.flip.delete(id) : Tr.flip.add(id); renderMessages(true); },
   async trLoad() { try { S.trset = await api('/api/admin/translate'); const el = $('#trBox'); if (el) el.outerHTML = trBox(); } catch (e) { toast(e.message); } },
   async trOff() { try { await api('/api/admin/translate', {off: true}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction désactivée'); } catch (e) { toast(e.message); } },

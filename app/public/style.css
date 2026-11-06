@@ -587,3 +587,6 @@ mark{background:#ffe08a;color:inherit;border-radius:3px;padding:0 1px}
 .tr-hide svg{width:16px;height:16px}
 .msg.in .tr-recv{background:var(--surface-2);color:var(--fg)}
 .pick.learn{padding:10px 12px;border-radius:12px;background:var(--accent-soft)}
+.tr-none{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tr-none .lang-opt span{display:flex;flex-direction:column;gap:1px}
+.tr-none .lang-opt span small{font-weight:500;color:var(--fg-2);font-size:11px;text-transform:none}
