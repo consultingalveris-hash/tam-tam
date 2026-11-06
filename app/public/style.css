@@ -590,3 +590,10 @@ mark{background:#ffe08a;color:inherit;border-radius:3px;padding:0 1px}
 .tr-none{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .tr-none .lang-opt span{display:flex;flex-direction:column;gap:1px}
 .tr-none .lang-opt span small{font-weight:500;color:var(--fg-2);font-size:11px;text-transform:none}
+/* contenus privés : pas de sélection ni d'enregistrement d'image */
+.nocopy,.nocopy *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.nocopy .ph3-img img,.pic-big,.sv-box img{pointer-events:none;-webkit-user-drag:none}
+.nocopy img{-webkit-user-drag:none}
+.sheet-body .nocopy{position:relative}
+.nocopy input,.nocopy textarea{-webkit-user-select:text;user-select:text}
+.sheet-body.nocopy .pic-big{pointer-events:none}

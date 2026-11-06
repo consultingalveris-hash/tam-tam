@@ -36,6 +36,7 @@ async function api(path, body, opts = {}) {
   const data = await r.json().catch(() => ({}));
   if (r.status === 401 && S.me) { S.me = null; boot(); }
   if (!r.ok) throw new Error(data.error || 'Erreur. Réessayez.');
+  if (data && data.me && S.me && data.me.id === S.me.id && typeof PP !== 'undefined' && PP.data) PP.attach(data.me);
   return data;
 }
 let toastT;
@@ -164,6 +165,7 @@ async function startApp() {
   root.innerHTML = `<div class="app" data-view="list"><aside class="side" id="side"><div class="head" id="head"></div><div class="body" id="body"></div><nav class="tabs" id="tabs" aria-label="Rubriques"></nav><button class="fab" id="fab" type="button" data-act="fab" aria-label="Nouvelle discussion">${I.newchat}</button></aside><main class="main" id="main"></main></div>`;
   renderMain();
   await Promise.all([loadChats(), loadContacts(), loadStatuses()]).catch(e => toast(e.message));
+  await PP.init().catch(() => {});
   api('/api/translate/status').then(r => { Tr.st = r; renderComposer(); }).catch(() => {});
   renderAll(); connect(); if (S.locked) showLock();
   GCall.loadActive(); Call.checkPending(); Device.badge();
@@ -206,8 +208,20 @@ async function reveal(m) {
   return m;
 }
 async function loadChats() { const r = await api('/api/chats'); const map = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); await reveal(c.last); map.set(c.id, c); } S.chats = map; }
-async function loadContacts() { const r = await api('/api/contacts'); S.contacts = r; keepUsers([...r.contacts, ...r.incoming, ...r.outgoing, ...r.suggestions]); }
-async function loadStatuses() { const r = await api('/api/statuses'); S.statuses = r; keepUsers([r.mine.user, ...r.others.map(g => g.user)]); }
+async function loadContacts() {
+  const r = await api('/api/contacts'); S.contacts = r;
+  await Promise.all(r.contacts.filter(u => u.telEnv || u.privEnv).map(u => PP.reveal(u).catch(() => {})));
+  keepUsers([...r.contacts, ...r.incoming, ...r.outgoing, ...r.suggestions]);
+  if (PP.data) PP.check();
+}
+async function loadStatuses() {
+  const r = await api('/api/statuses');
+  for (const it of [...r.mine.items, ...r.others.flatMap(g => g.items)]) if (it.enc) {
+    const o = E2E.ready() ? await E2E.open(it.enc, S.me.id) : {err: 1};
+    if (o.err) { it.text = '🔒 Statut chiffré'; it.locked = true; } else { it.text = o.payload.t || ''; it.miv = o.payload.miv || null; it._key = o.key; }
+  }
+  S.statuses = r; keepUsers([r.mine.user, ...r.others.map(g => g.user)]);
+}
 
 function renderAll() { renderTabs(); renderHead(); renderBody(); }
 
@@ -339,7 +353,7 @@ function dl(rows) { const r = rows.filter(x => x[1]); return r.length ? `<dl cla
 async function fillFp() { const a = $('#myFp'); if (a) a.textContent = await myFingerprint(); }
 async function profSheet(id) {
   let u = uOf(id);
-  try { const r = await api('/api/users/' + id); u = r.user; keepUsers([u]); } catch (e) { return toast(e.message); }
+  try { const r = await api('/api/users/' + id); u = r.user; if (u.id !== S.me.id) await PP.reveal(u); else PP.data && PP.attach(u); keepUsers([u]); } catch (e) { return toast(e.message); }
   const p = u.pub || {}, bd = p.bd && p.bm ? `${p.bd} ${MOIS[p.bm - 1]}` : '';
   sheet(`${head('Profil')}<div class="sheet-body"><div class="prof">${avatar(u, 'xl')}<b>${esc(u.name)}</b><span>@${esc(u.handle)}</span>${u.rel === 'contact' ? `<small>${presLabel(u).replace(/^./, x => x.toUpperCase())}</small>` : ''}${u.mutual ? `<small>${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun</small>` : ''}</div>
     ${dl(PUB_L.map(([k, l]) => [l, p[k]]).concat([['Anniversaire', bd]])) || '<p class="hint" style="text-align:center">Profil public encore vide.</p>'}
@@ -347,7 +361,7 @@ async function profSheet(id) {
     ${u.limTheirs ? `<p class="hint">${I.lock} Ajouté par code QR : vous voyez seulement son profil public.</p>` : ''}
     ${u.limMine ? `<div class="qrnote"><span>${I.lock} Contact ajouté avec votre code QR : ${esc(first(u.name))} ne voit pas votre profil privé (téléphone, adresse…).</span><button class="btn sm ghost" type="button" data-act="sharePriv" data-id="${u.id}">Lui montrer mon profil privé</button></div>` : ''}
     ${picsView(u.pics, 'Photos publiques')}
-    ${u.priv ? `<span class="lbl">${I.lock} Profil privé</span>${dl(PRIV_L.map(([k, l]) => [l, u.priv[k]])) || '<p class="hint">Rien de renseigné.</p>'}${picsView(u.privPics, 'Photos privées')}` : ''}
+    ${u.priv ? `<div class="nocopy"><span class="lbl">${I.lock} Profil privé</span>${dl(PRIV_L.map(([k, l]) => [l, u.priv[k]])) || '<p class="hint">Rien de renseigné.</p>'}${picsView(u.privPics, 'Photos privées')}${u.id !== S.me.id ? watermark() : ''}</div>` : ''}
     ${u.rel === 'contact' ? `<div class="qrnote"><span>${I.phone || ''} ${u.telMine ? `${esc(first(u.name))} voit votre numéro de téléphone.` : `${esc(first(u.name))} ne voit pas votre numéro de téléphone.`}</span><button class="btn sm ghost" type="button" data-act="shareTel" data-id="${u.id}" data-on="${u.telMine ? '' : '1'}">${u.telMine ? 'Ne plus montrer mon numéro' : 'Lui montrer mon numéro'}</button></div>` : ''}
     ${u.rel === 'sent' ? '<p class="hint">Demande envoyée : vous pourrez échanger quand elle sera acceptée.</p>' : u.rel === 'none' ? '<p class="hint">Après votre demande, cette personne doit l’accepter pour que vous puissiez échanger.</p>' : ''}
     ${u.rel === 'me' ? '<p class="hint" style="text-align:center">C’est ainsi que les autres membres voient votre profil.</p>' : `<div class="actions">${u.rel === 'received' ? `<button class="btn ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button>` : ''}${u.blocked ? '' : relBtn(u).replace(/btn sm/g, 'btn')}</div>
@@ -377,7 +391,7 @@ function renderMain() {
   const main = $('#main'); if (!main) return;
   const c = S.chats.get(S.chatId);
   if (!c) { main.innerHTML = `<div class="chat-empty">${LOGO}<b>${WORD}</b><span>Choisissez une discussion, ou invitez vos proches depuis l’onglet Contacts.</span></div>`; return; }
-  main.innerHTML = `<header class="chat-head" id="chatHead"></header><div class="msgs" id="msgs" tabindex="0" aria-label="Messages"></div><div id="replyBar"></div><div id="compose"></div>`;
+  main.innerHTML = `<header class="chat-head" id="chatHead"></header><div class="msgs${c.hidden ? ' nocopy' : ''}" id="msgs" tabindex="0" aria-label="Messages"></div><div id="replyBar"></div><div id="compose"></div>`;
   renderChatHead(); renderComposer(); renderMessages();
   $('#msgs').addEventListener('scroll', e => { if (e.target.scrollTop < 40 && S.more.get(S.chatId) && !S.loadingOld) { S.loadingOld = true; loadOlder().finally(() => { S.loadingOld = false; }); } });
 }
@@ -639,7 +653,7 @@ function onceDone() {
 document.addEventListener('visibilitychange', () => { if (document.hidden && S.onceMsg) onceDone(); });
 // Capture d'écran repérée au clavier (ordinateur) : l'autre personne est prévenue.
 document.addEventListener('keyup', e => { if (e.key === 'PrintScreen' && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
-document.addEventListener('keydown', e => { if (((e.metaKey && e.shiftKey && ['3', '4', '5', 's', 'S'].includes(e.key)) || e.key === 'PrintScreen') && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
+document.addEventListener('keydown', e => { if (e.metaKey && e.shiftKey && ['3', '4', '5', 's', 'S'].includes(e.key) && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
 function closeLayer() { if (S.onceMsg) return onceDone(); clearTimeout(svT); layer.innerHTML = ''; S.sv = null; if (S.pend) { URL.revokeObjectURL(S.pend.url); S.pend = null; } }
 function confirmSheet(title, text, yes, act, id) {
   sheet(`${head(title)}<div class="sheet-body"><p>${text}</p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="button" data-act="${act}" data-id="${id || ''}">${yes}</button></div></div>`, title);
@@ -683,7 +697,7 @@ function reportSheet(userId, chatId) {
 }
 function msgMenu(id) {
   const list = S.msgs.get(S.chatId) || [], m = list.find(x => x.id === id); if (!m || m.deleted) return;
-  sheet(`<div class="menu" style="padding-top:12px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once && !m.locked && m.from !== S.me.id && Tr.st && Tr.st.on && S.me.trConsent ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}${Tr.shown.has(id) ? 'Voir la traduction' : 'Traduire'}</button>` : ''}${m.text && !m.once ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
+  sheet(`<div class="menu" style="padding-top:12px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once && !m.locked && m.from !== S.me.id && Tr.st && Tr.st.on && S.me.trConsent ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}${Tr.shown.has(id) ? 'Voir la traduction' : 'Traduire'}</button>` : ''}${m.text && !m.once && !(S.chats.get(S.chatId) || {}).hidden ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
     ${m.from === S.me.id ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde</button>` : ''}</div>`, 'Message');
 }
 
@@ -706,7 +720,12 @@ async function stPublish() {
   const s = S.sc; const t = ($('#stText') || $('#stCap') || {}).value; if (t != null) s.text = t;
   if (!s.blob && !s.text.trim()) return toast('Écrivez un texte ou ajoutez une photo.');
   if (s.aud === 'private' && !(S.me.close || []).length) return toast('Choisissez d’abord les personnes de votre groupe privé.');
-  try { let media = null; if (s.blob) media = (await upload(s.blob)).id; await api('/api/statuses', {text: s.text, bg: s.bg, media, aud: s.aud}); S.sc = null; closeLayer(); await loadStatuses(); renderStories(); toast('Statut publié pour 24 heures'); }
+  try {
+    // Statut chiffré de bout en bout pour vos contacts (ou votre seul groupe privé).
+    const cs = S.contacts.contacts.filter(u => u.pubkey && !u.blocked && (s.aud !== 'private' || (S.me.close || []).includes(u.id)));
+    const sealed = await E2E.seal({t: s.text}, [[S.me.id, E2E.pubJwk], ...cs.map(u => [u.id, u.pubkey])], s.blob ? await s.blob.arrayBuffer() : undefined);
+    let media = null; if (sealed.blob) media = (await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'})).id;
+    await api('/api/statuses', {enc: sealed.env, bg: s.bg, media, aud: s.aud}); S.sc = null; closeLayer(); await loadStatuses(); renderStories(); toast('Statut publié pour 24 heures'); }
   catch (e) { toast(e.message); }
 }
 let svT;
@@ -722,10 +741,12 @@ function renderSV() {
   const dur = 6000;
   layer.innerHTML = `<div class="sv" style="--h:${it.bg || 170}" role="dialog" aria-modal="true" aria-label="Statut"><div class="sv-bars">${g.items.map((_, k) => `<i class="${k < v.i ? 'done' : k === v.i ? 'run' : ''}"><b${k === v.i ? ` style="animation-duration:${dur / 1000}s"` : ''}></b></i>`).join('')}</div>
     <div class="sv-head">${avatar(g.user, 'sm')}<div class="grow"><b>${esc(mine ? 'Mon statut' : g.user.name)}</b><small>${dayLabel(it.at)}, ${hm(it.at)} · ${it.aud === 'private' ? 'Privé' : 'Public'}</small></div><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>
-    <div class="sv-stage"><div class="sv-box">${it.media ? `<img src="${esc(it.media)}" alt="">` : `<div class="sv-text">${esc(it.text)}</div>`}${it.media && it.text ? `<div class="sv-cap">${esc(it.text)}</div>` : ''}
+    <div class="sv-stage"><div class="sv-box${it.aud === 'private' ? ' nocopy' : ''}">${it.media ? (it.enc ? `<img data-stenc="${it.id}" alt="" draggable="false">` : `<img src="${esc(it.media)}" alt="" draggable="false">`) : `<div class="sv-text">${esc(it.text)}</div>`}${it.media && it.text ? `<div class="sv-cap">${esc(it.text)}</div>` : ''}
       ${it.aud === 'private' && !mine ? watermark() : ''}<button class="sv-nav prev" type="button" data-act="svPrev" aria-label="Précédent"></button><button class="sv-nav next" type="button" data-act="svNext" aria-label="Suivant"></button></div></div>
     ${mine ? `<div class="sv-foot"><button class="btn sm ghost" type="button" data-act="svViews">${I.eye}${(it.views || []).length} vue${(it.views || []).length > 1 ? 's' : ''}</button><button class="btn sm ghost" type="button" data-act="stNew">${I.plus}Ajouter</button><button class="btn sm ghost" type="button" data-act="stDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}</div>`;
   clearTimeout(svT); svT = setTimeout(() => svStep(1), dur);
+  const im = layer.querySelector('img[data-stenc]');
+  if (im && it._key && it.miv) fetch(it.media, {credentials: 'same-origin'}).then(r => r.arrayBuffer()).then(b => E2E.decBytes(it._key, it.miv, b)).then(b => { im.src = URL.createObjectURL(new Blob([b], {type: 'image/jpeg'})); }).catch(() => {});
 }
 function svStep(d) {
   const v = S.sv; if (!v) return; const mine = v.uid === S.me.id, g = mine ? {items: S.statuses.mine.items} : S.statuses.others.find(x => x.user.id === v.uid);
@@ -813,6 +834,77 @@ function picsView(list, title) {
   const l = (list || []).filter(Boolean); if (!l.length) return '';
   return `<span class="lbl">${title}</span><div class="ph3">${l.map((u, i) => `<button class="ph3-img" type="button" data-act="picView" data-src="${esc(u)}" aria-label="Agrandir la photo ${i + 1}"><img src="${esc(u)}" alt=""></button>`).join('')}</div>`;
 }
+/* ---------- profil privé chiffré de bout en bout ----------
+   Téléphone, adresse, famille, photos privées : chiffrés sur l'appareil pour les seules personnes autorisées.
+   Le serveur ne garde qu'une enveloppe illisible et une empreinte du numéro (pour le répertoire). */
+const PP = {
+  data: null, tel: '', urls: [null, null, null],
+  async open(env) { if (!env || !E2E.ready()) return null; const r = await E2E.open(env, S.me.id); return r.err ? null : r.payload; },
+  aud() {
+    const me = S.me, cs = (S.contacts.contacts || []).filter(u => u.pubkey && !u.blocked && !u.limMine);
+    const list = me.privTo === 'me' ? [] : me.privTo === 'grp' ? cs.filter(u => (me.close || []).includes(u.id)) : cs;
+    return [[me.id, E2E.pubJwk], ...list.map(u => [u.id, u.pubkey])];
+  },
+  telAud() { return [[S.me.id, E2E.pubJwk], ...(S.contacts.contacts || []).filter(u => u.pubkey && u.telMine).map(u => [u.id, u.pubkey])]; },
+  attach(me) { me.priv = Object.assign({}, this.data.f, {tel: this.tel}); me.privPics = this.urls.slice(); },
+  async init() {
+    if (!E2E.ready() || !S.me) return;
+    const me = S.me;
+    if (me.privEnv) { const p = await this.open(me.privEnv); this.data = p ? {f: p.f || {}, pics: p.pics || [null, null, null]} : {f: {}, pics: [null, null, null]}; }
+    if (me.telEnv) { const t = await this.open(me.telEnv); this.tel = (t && t.tel) || ''; }
+    if (!me.privEnv || me.legacyPriv) await this.migrate();
+    this.urls = await this.picUrls(this.data.pics); this.attach(S.me);
+    await this.check();
+  },
+  // Ancien profil privé en clair : on le chiffre une fois, puis le serveur l'efface.
+  async migrate() {
+    const me = S.me, old = me.priv || {}, f = {};
+    for (const k of ['annee', 'mail', 'adresse', 'travail', 'famille']) if (old[k]) f[k] = old[k];
+    this.tel = this.tel || old.tel || '';
+    const pics = [null, null, null];
+    for (let i = 0; i < 3; i++) { const u = (me.privPics || [])[i]; if (!u) continue; try { const r = await fetch(u, {credentials: 'same-origin'}); if (r.ok) pics[i] = await this.encPic(await r.arrayBuffer()); } catch {} }
+    this.data = {f, pics}; await this.save();
+  },
+  async encPic(bytes) {
+    const raw = crypto.getRandomValues(new Uint8Array(32)), iv = crypto.getRandomValues(new Uint8Array(12)), key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt']);
+    const ct = await crypto.subtle.encrypt({name: 'AES-GCM', iv}, key, bytes);
+    const up = await api('/api/media', new Blob([ct], {type: 'application/octet-stream'}), {raw: true, type: 'application/octet-stream'});
+    return {id: up.id, k: Tr.b64(raw), iv: Tr.b64(iv)};
+  },
+  async decPic(p) {
+    if (!p) return null; const r = await fetch('/api/media/' + p.id, {credentials: 'same-origin'}); if (!r.ok) return null;
+    const key = await crypto.subtle.importKey('raw', Tr.unb64(p.k), 'AES-GCM', false, ['decrypt']);
+    return URL.createObjectURL(new Blob([await crypto.subtle.decrypt({name: 'AES-GCM', iv: Tr.unb64(p.iv)}, key, await r.arrayBuffer())], {type: 'image/jpeg'}));
+  },
+  picUrls(pics) { return Promise.all((pics || [null, null, null]).map(p => this.decPic(p).catch(() => null))); },
+  async save() {
+    if (!this.data || !E2E.ready()) return;
+    const privEnv = (await E2E.seal({f: this.data.f, pics: this.data.pics}, this.aud())).env;
+    const telEnv = this.tel ? (await E2E.seal({tel: this.tel}, this.telAud())).env : null;
+    const d = String(this.tel || '').replace(/\D/g, ''), telHash = d.length >= 6 ? await Book.hash(d.slice(-9)) : null;
+    const r = await api('/api/me/privenv', {privEnv, telEnv, telHash, mediaIds: this.data.pics.filter(Boolean).map(p => p.id)});
+    S.me = r.me; this.attach(S.me); keepUsers([S.me]);
+  },
+  // Quand les personnes autorisées changent (nouveau contact, groupe privé, numéro partagé…), on rechiffre pour elles.
+  async check() {
+    if (!this.data || !S.me.privEnv) return;
+    const ids = a => a.map(x => String(x[0])).sort().join(','), keys = e => e ? Object.keys(e.keys || {}).sort().join(',') : '';
+    if (ids(this.aud()) !== keys(S.me.privEnv) || (this.tel ? ids(this.telAud()) : '') !== keys(S.me.telEnv)) await this.save().catch(() => {});
+  },
+  setField(k, v) {
+    if (!this.data) return; if (k === 'tel') this.tel = v; else this.data.f[k] = v; S.me.priv = Object.assign(S.me.priv || {}, {[k]: v});
+    clearTimeout(this.t); this.t = setTimeout(() => this.save().catch(e => toast(e.message)), 900);
+  },
+  async setPic(i, bytes) { this.data.pics[i] = bytes ? await this.encPic(bytes) : null; this.urls = await this.picUrls(this.data.pics); await this.save(); },
+  // Profil d'un contact : on ouvre ses enveloppes avec notre propre clé.
+  async reveal(u) {
+    if (!u) return u;
+    if (u.privEnv) { const p = await this.open(u.privEnv); if (p) { u.priv = Object.assign({}, p.f || {}); u.privPics = await this.picUrls(p.pics); } else { u.priv = null; u.privPics = null; } }
+    if (u.telEnv) { const t = await this.open(u.telEnv); if (t && t.tel) { u.priv = u.priv || {}; u.priv.tel = t.tel; } }
+    return u;
+  },
+};
+
 /* ---------- traduction à la demande ---------- */
 const LANG_FR = {bas: 'bassa (essai)', dua: 'duala (essai)', ewo: 'ewondo (essai)', srr: 'sérère (essai)', mnk: 'mandinka (essai)', snk: 'soninké (essai)', dyo: 'diola (essai)', fan: 'fang (essai)', bum: 'boulou (essai)', mos: 'mooré (essai)', fon: 'fon (essai)', dyu: 'dioula (essai)', kab: 'kabyle (essai)', tzm: 'tamazight (essai)', ber: 'berbère (essai)', kri: 'krio (essai)', fr: 'français', en: 'anglais', wo: 'wolof', ff: 'peul (pulaar)', bm: 'bambara', ln: 'lingala', sw: 'swahili', ha: 'haoussa', yo: 'yoruba', ig: 'igbo', ee: 'ewe', ak: 'twi', rw: 'kinyarwanda', sg: 'sango', ar: 'arabe', pt: 'portugais', es: 'espagnol', de: 'allemand', it: 'italien', zh: 'chinois', ru: 'russe', tr: 'turc', nl: 'néerlandais', hi: 'hindi', am: 'amharique', so: 'somali', zu: 'zoulou', xh: 'xhosa', mg: 'malgache', rn: 'kirundi', kg: 'kikongo', ts: 'tsonga', tn: 'tswana', st: 'sotho', sn: 'shona', ny: 'chichewa', om: 'oromo', ti: 'tigrigna', lg: 'luganda', ki: 'kikuyu'};
 const Tr = {
@@ -994,7 +1086,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.22</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.23</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1056,7 +1148,7 @@ const ACT = {
   cRemoveAsk(d) { confirmSheet('Retirer ce contact ?', 'Vous ne pourrez plus vous écrire tant que l’un de vous n’aura pas renvoyé de demande.', 'Retirer', 'cRemoveYes', d.id); },
   cRemoveYes(d) { closeLayer(); contactAct('remove', +d.id); },
   prof(d) { profSheet(+d.id); },
-  async shareTel(d) { try { await api('/api/contacts/share-tel', {id: +d.id, on: !!d.on}); toast(d.on ? 'Votre numéro est maintenant visible pour ce contact.' : 'Votre numéro est de nouveau caché pour ce contact.'); profSheet(+d.id); } catch (e) { toast(e.message); } },
+  async shareTel(d) { try { await api('/api/contacts/share-tel', {id: +d.id, on: !!d.on}); await loadContacts(); toast(d.on ? 'Votre numéro est maintenant visible pour ce contact.' : 'Votre numéro est de nouveau caché pour ce contact.'); profSheet(+d.id); } catch (e) { toast(e.message); } },
   blockAsk(d) { confirmSheet('Bloquer cette personne ?', 'Elle ne pourra plus vous écrire, vous ajouter ni voir vos statuts. Elle n’est pas prévenue.', 'Bloquer', 'blockYes', d.id); },
   async blockYes(d) { closeLayer(); try { const r = await api('/api/block', {id: +d.id, on: true}); S.me = r.me; await Promise.all([loadChats(), loadContacts(), loadStatuses()]); renderAll(); if (S.chatId) renderMain(); toast('Personne bloquée'); } catch (e) { toast(e.message); } },
   async unblock(d) { closeLayer(); try { const r = await api('/api/block', {id: +d.id, on: false}); S.me = r.me; await Promise.all([loadChats(), loadContacts()]); renderAll(); if (S.chatId) renderMain(); toast('Personne débloquée'); } catch (e) { toast(e.message); } },
@@ -1145,7 +1237,7 @@ const ACT = {
   },
   stDelAsk(d) { clearTimeout(svT); confirmSheet('Supprimer ce statut ?', 'Il disparaîtra pour tous vos contacts.', 'Supprimer', 'stDelYes', d.id); },
   async stDelYes(d) { closeLayer(); try { await api(`/api/statuses/${d.id}/delete`, {}); await loadStatuses(); renderStories(); toast('Statut supprimé'); } catch (e) { toast(e.message); } },
-  privTo(d) { saveNow({privTo: d.v}); },
+  async privTo(d) { await saveNow({privTo: d.v}); PP.save().catch(e => toast(e.message)); },
   mePhoto() { $('#meIn').click(); },
   cropRot() { if (!S.crop) return; S.crop.rot = (S.crop.rot + 1) % 4; S.crop.x = S.crop.y = 0; drawCrop(); },
   async cropOk(d, el) {
@@ -1169,8 +1261,8 @@ const ACT = {
     } catch (e) { el.disabled = false; toast(e.message); }
   },
   picAdd(d) { S.picSlot = {set: d.set, i: +d.i}; $('#picIn').click(); },
-  async picDel(d) { try { const r = await api('/api/me/pics', {set: d.set, slot: +d.i, media: null}); S.me = r.me; renderBody(); toast('Photo retirée'); } catch (e) { toast(e.message); } },
-  picView(d) { sheet(`${head('Photo')}<div class="sheet-body" style="align-items:center"><img class="pic-big" src="${esc(d.src)}" alt="Photo du profil"></div>`, 'Photo'); },
+  async picDel(d) { if (d.set === 'priv' && PP.data) { try { await PP.setPic(+d.i, null); renderBody(); toast('Photo retirée'); } catch (e) { toast(e.message); } return; } try { const r = await api('/api/me/pics', {set: d.set, slot: +d.i, media: null}); S.me = r.me; renderBody(); toast('Photo retirée'); } catch (e) { toast(e.message); } },
+  picView(d) { const priv = /^blob:/.test(d.src); sheet(`${head('Photo')}<div class="sheet-body${priv ? ' nocopy' : ''}" style="align-items:center;position:relative"><img class="pic-big" src="${esc(d.src)}" alt="Photo du profil" draggable="false">${priv ? watermark() : ''}</div>`, 'Photo'); },
   avHide() { S.showAv = false; renderBody(); },
   profTab(d) { S.profTab = d.t; renderBody(); },
   goProfile() { S.tab = 'chats'; S.filt = 'me'; renderAll(); },
@@ -1271,6 +1363,7 @@ document.addEventListener('input', e => {
   if (t.id === 'q') { S.q = t.value; renderBody(); }
   else if (t.id === 'fq') searchPeople(t.value);
   else if (t.id === 'msgIn') { autoGrow(t); syncSend(); const n = Date.now(); if (n - typT > 2500 && t.value.trim()) { typT = n; api(`/api/chats/${S.chatId}/typing`, {}).catch(() => {}); } }
+  else if (t.dataset && t.dataset.set === 'priv' && PP.data) PP.setField(t.dataset.k, t.value);
   else if (t.dataset && (t.dataset.set === 'pub' || t.dataset.set === 'priv') && t.tagName !== 'SELECT') queueSave({[t.dataset.set]: {[t.dataset.k]: t.value}});
 });
 document.addEventListener('change', async e => {
@@ -1279,10 +1372,12 @@ document.addEventListener('change', async e => {
   else if (t.id === 'stIn') { const f = t.files[0]; t.value = ''; if (!f) return; try { const b = await shrink(f); S.sc.blob = b; S.sc.url = URL.createObjectURL(b); stComposer(); } catch (er) { toast(er.message); } }
   else if (t.id === 'trLang') { Tr.setLang(t.value); Tr.shown.clear(); toast('Les prochaines traductions seront en ' + (LANG_FR[t.value] || t.value)); }
   else if (t.id === 'picIn') { const f = t.files[0]; t.value = ''; const sl = S.picSlot; if (!f || !sl) return;
-    (async () => { try { toast('Envoi de la photo…'); const b = await shrink(f, 1280); const up = await upload(b); const r = await api('/api/me/pics', {set: sl.set, slot: sl.i, media: up.id}); S.me = r.me; renderBody(); toast('Photo ajoutée à votre profil'); } catch (e) { toast(e.message); } })(); }
+    (async () => { try { toast('Envoi de la photo…'); const b = await shrink(f, 1280);
+      if (sl.set === 'priv' && PP.data) { await PP.setPic(sl.i, await b.arrayBuffer()); renderBody(); return toast('Photo privée ajoutée, chiffrée pour les seules personnes autorisées'); }
+      const up = await upload(b); const r = await api('/api/me/pics', {set: sl.set, slot: sl.i, media: up.id}); S.me = r.me; renderBody(); toast('Photo ajoutée à votre profil'); } catch (e) { toast(e.message); } })(); }
   else if (t.id === 'meIn') { const f = t.files[0]; t.value = ''; if (!f) return; cropPhoto(f); }
   else if (t.id === 'cropZoom') { S.crop.z = +t.value; drawCrop(); }
-  else if (t.name === 'close') { const ids = [...(t.closest('.grp-box') || document).querySelectorAll('input[name="close"]:checked')].map(i => +i.value); saveNow({close: ids}, 'Groupe privé mis à jour'); }
+  else if (t.name === 'close') { const ids = [...(t.closest('.grp-box') || document).querySelectorAll('input[name="close"]:checked')].map(i => +i.value); saveNow({close: ids}, 'Groupe privé mis à jour').then(() => PP.check()); }
   else if (t.dataset.set === 'name' || t.dataset.set === 'handle') saveNow({[t.dataset.set]: t.value}, 'Enregistré');
   else if (t.tagName === 'SELECT' && t.dataset.set) queueSave({[t.dataset.set]: {[t.dataset.k]: t.value}});
 });
@@ -1447,3 +1542,8 @@ const inviteText = () => `Rejoins-moi sur tam-tam, la messagerie qui fait vivre 
 
 boot();
 document.addEventListener('contextmenu', e => { if (e.target.closest('.once-view')) e.preventDefault(); });
+
+// Zones privées : pas de copie, pas d'enregistrement d'image, pas de glisser-déposer.
+['copy', 'cut'].forEach(t => document.addEventListener(t, e => { const sel = document.getSelection(), n = sel && sel.anchorNode; const el = n && (n.nodeType === 1 ? n : n.parentElement); if ((el && el.closest('.nocopy,.once-view')) || (e.target.closest && e.target.closest('.nocopy,.once-view'))) { e.preventDefault(); toast('Copie désactivée pour les contenus privés.'); } }));
+document.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('.nocopy img,.once-view,.sv-box img,.ph3-img img,.pic-big')) e.preventDefault(); }, true);
+document.addEventListener('dragstart', e => { if (e.target.closest && e.target.closest('.nocopy,.once-view,.sv-box,.pic-big')) e.preventDefault(); }, true);
