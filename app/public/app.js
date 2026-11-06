@@ -837,7 +837,20 @@ const Tr = {
     return {id, key: await crypto.subtle.importKey('raw', await h('tt-tr-key'), 'AES-GCM', false, ['encrypt', 'decrypt'])};
   },
   // Traduit un texte, en réutilisant d'abord la traduction déjà payée par quelqu'un d'autre.
+  // Même phrase, à quelques espaces, majuscules ou ponctuation près.
+  norm(t) { return String(t || '').toLowerCase().replace(/\s+/g, ' ').replace(/\s*([?!.,;:])\s*/g, '$1').replace(/[.!?]+$/, '').trim(); },
+  b64(u) { return btoa(String.fromCharCode(...u)); }, unb64(t) { return Uint8Array.from(atob(t), x => x.charCodeAt(0)); },
+  async mineGet(text, to) {
+    const k = await this.keys(this.norm(text), to + '|mine'), c = await api('/api/translate/mine/' + k.id).catch(() => null);
+    if (!c || !c.hit) return null; try { return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name: 'AES-GCM', iv: this.unb64(c.hit.iv)}, k.key, this.unb64(c.hit.ct)))); } catch { return null; }
+  },
+  async minePut(text, to, v) {
+    const k = await this.keys(this.norm(text), to + '|mine'), iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, k.key, new TextEncoder().encode(JSON.stringify(v))));
+    await api('/api/translate/mine', {id: k.id, iv: this.b64(iv), ct: this.b64(ct)});
+  },
   async fetch(text, to, ctx) {
+    const mine = await this.mineGet(text, to); if (mine && mine.text) return {text: mine.text, from: mine.from || null, mine: true};
     const k = await this.keys(text, to), c = await api('/api/translate/cache/' + k.id).catch(() => null);
     if (c && c.hit) { try { return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name: 'AES-GCM', iv: Uint8Array.from(atob(c.hit.iv), x => x.charCodeAt(0))}, k.key, Uint8Array.from(atob(c.hit.ct), x => x.charCodeAt(0))))); } catch {} }
     const r = await api('/api/translate', {text, to, ctx: ctx || []});
@@ -981,7 +994,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.20.1</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.21</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1206,8 +1219,9 @@ const FORMS = {
         const {env} = await E2E.seal({t: v, o: f.src, ol: f.sl || '', tl: f.tl, fx: 1}, recipients(c));
         await api(`/api/messages/${f.id}/reseal`, {enc: env}); if (m) { m.text = v; m.fx = true; }
       } else Tr.ls('tt-fix:' + f.id, JSON.stringify({text: v}));
+      await Tr.minePut(f.src, f.tl, {text: v, from: f.sl || ''}).catch(() => {});
       Tr.give(f.src, f.sl, v, f.tl, 'fix', f.mine ? S.me.id : ((S.msgs.get(S.chatId) || []).find(x => x.id === f.id) || {}).from);
-      closeLayer(); renderMessages(true); toast('Correction enregistrée, merci !');
+      closeLayer(); renderMessages(true); toast('Correction enregistrée : vous la retrouverez à chaque fois que cette phrase reviendra.');
     } catch (e) { toast(e.message); }
   },
   send: sendText,
