@@ -1,0 +1,15 @@
+{
+	"appId": "africa.tamtam.app",
+	"appName": "Tam-Tam",
+	"webDir": "www",
+	"server": {
+		"url": "https://tam-tam.alveris-consulting.com",
+		"cleartext": false,
+		"errorPath": "index.html"
+	},
+	"android": {
+		"allowMixedContent": false,
+		"captureInput": true,
+		"webContentsDebuggingEnabled": false
+	}
+}
