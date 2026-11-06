@@ -163,7 +163,7 @@ async function startApp() {
   root.innerHTML = `<div class="app" data-view="list"><aside class="side" id="side"><div class="head" id="head"></div><div class="body" id="body"></div><nav class="tabs" id="tabs" aria-label="Rubriques"></nav><button class="fab" id="fab" type="button" data-act="fab" aria-label="Nouvelle discussion">${I.newchat}</button></aside><main class="main" id="main"></main></div>`;
   renderMain();
   await Promise.all([loadChats(), loadContacts(), loadStatuses()]).catch(e => toast(e.message));
-  api('/api/translate/status').then(r => { Tr.st = r; }).catch(() => {});
+  api('/api/translate/status').then(r => { Tr.st = r; renderComposer(); }).catch(() => {});
   renderAll(); connect(); if (S.locked) showLock();
   GCall.loadActive(); Call.checkPending(); Device.badge();
   if (S.lock.type === 'off') return requireLock();
@@ -397,7 +397,8 @@ function renderComposer() {
     const u = uOf(c.peer), mine = (S.me.blocked || []).some(b => b.id === c.peer);
     el.innerHTML = `<div class="blocked-bar">${I.block}<span>${mine ? `Vous avez bloqué ${esc(first(u.name))}.` : 'Vous ne pouvez plus écrire à cette personne.'}</span>${mine ? `<button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button>` : ''}</div>`; return;
   }
-  el.innerHTML = `<form class="composer" data-form="send" autocomplete="off"><div class="inwrap"><textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
+  const trOn = Tr.auto(c.id);
+  el.innerHTML = `<form class="composer" data-form="send" autocomplete="off">${Tr.st && Tr.st.on ? `<button class="ib tr-tog" type="button" data-act="trAuto" aria-pressed="${trOn}" aria-label="${trOn ? 'Arrêter la traduction automatique' : 'Traduire automatiquement cette discussion'}" title="${trOn ? 'Traduction automatique activée' : 'Traduire automatiquement les messages reçus'}">${I.translate}<span>${Tr.lang().toUpperCase()}</span></button>` : ''}<div class="inwrap"><textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
     <button class="ib" type="button" data-act="attach" aria-label="Joindre une photo">${I.clip}</button><button class="ib" type="button" data-act="camera" aria-label="Prendre une photo">${I.camera}</button><button class="ib once-tog" type="button" data-act="onceTog" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique : le message ne peut être ouvert qu’une fois"><span class="one" aria-hidden="true">1</span></button></div>
     <input type="file" id="fileIn" accept="image/*" hidden><input type="file" id="camIn" accept="image/*" capture="environment" hidden>
     <button class="send" id="sendBtn" type="button" data-act="recStart" aria-label="Enregistrer un message vocal">${I.mic}</button></form>`;
@@ -479,7 +480,7 @@ function renderMessages(keep) {
   const tu = typingIn(c.id); if (tu) h += `<div class="msg in first typing-b"><div class="bubble" aria-label="En train d’écrire"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
   box.innerHTML = h;
   if (!keep || atBottom) box.scrollTop = box.scrollHeight;
-  hydrateImgs(c.id); hydrateAuds(c.id);
+  hydrateImgs(c.id); hydrateAuds(c.id); Tr.autoRun(c);
 }
 function onMsg(m, update) { reveal(m).then(() => onMsgIn(m, update)); }
 async function hydrateImgs(chatId) {
@@ -811,15 +812,27 @@ const Tr = {
   get(id) { try { return JSON.parse(localStorage.getItem(`tt-tr:${id}:${this.lang()}`) || 'null'); } catch { return null; } },
   put(id, v) { try { localStorage.setItem(`tt-tr:${id}:${this.lang()}`, JSON.stringify(v)); } catch {} },
   shown: new Set(),
+  // Traduction automatique d'une discussion (réglée par discussion, sur cet appareil).
+  auto(cid) { try { return localStorage.getItem('tt-trauto:' + cid) === '1'; } catch { return false; } },
+  setAuto(cid, on) { try { on ? localStorage.setItem('tt-trauto:' + cid, '1') : localStorage.removeItem('tt-trauto:' + cid); } catch {} },
+  busy: false,
+  async autoRun(c) {
+    if (!c || !this.auto(c.id) || this.busy || !this.st || !this.st.on) return;
+    const todo = (S.msgs.get(c.id) || []).filter(m => m.from && m.from !== S.me.id && !m.once && !m.deleted && !m.locked && m.kind === 'text' && m.text && m.text.trim().length > 1 && !this.shown.has(m.id) && !this.off.has(m.id)).slice(-30);
+    if (!todo.length) return; this.busy = true;
+    try { for (const m of todo) { if (S.chatId !== c.id || !this.auto(c.id)) break; if (this.get(m.id)) { this.shown.add(m.id); continue; } const ok = await this.run(m.id, true); if (!ok) break; } }
+    finally { this.busy = false; } if (S.chatId === c.id) renderMessages(true);
+  },
+  off: new Set(),
   // Empreinte et clé tirées du texte : seul quelqu'un qui a déjà le message peut retrouver sa traduction.
   async keys(text, lang) {
     const h = async p => new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(p + '|' + lang + '|' + text)));
     const id = [...await h('tt-tr-id')].map(b => b.toString(16).padStart(2, '0')).join('');
     return {id, key: await crypto.subtle.importKey('raw', await h('tt-tr-key'), 'AES-GCM', false, ['encrypt', 'decrypt'])};
   },
-  async run(id) {
-    const m = (S.msgs.get(S.chatId) || []).find(x => x.id === id); if (!m || !m.text) return;
-    if (this.get(id)) { this.shown.add(id); return renderMessages(true); } // déjà traduit : rien n'est recompté
+  async run(id, silent) {
+    const m = (S.msgs.get(S.chatId) || []).find(x => x.id === id); if (!m || !m.text) return false;
+    if (this.get(id)) { this.shown.add(id); if (!silent) renderMessages(true); return true; } // déjà traduit : rien n'est recompté
     try {
       const k = await this.keys(m.text, this.lang()); let r = null;
       const c = await api('/api/translate/cache/' + k.id).catch(() => null);
@@ -829,9 +842,9 @@ const Tr = {
         const iv = crypto.getRandomValues(new Uint8Array(12)), ct = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, k.key, new TextEncoder().encode(JSON.stringify(r))));
         const b64 = u => btoa(String.fromCharCode(...u)); api('/api/translate/cache', {id: k.id, iv: b64(iv), ct: b64(ct)}).catch(() => {});
       }
-      this.put(id, r); this.shown.add(id); renderMessages(true);
+      this.put(id, r); this.shown.add(id); if (!silent) renderMessages(true); return true;
     }
-    catch (e) { toast(e.message); }
+    catch (e) { toast(e.message); return false; }
   },
   html(m) {
     const t = this.shown.has(m.id) && this.get(m.id); if (!t) return '';
@@ -890,7 +903,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.16.2</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.17</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -967,8 +980,9 @@ const ACT = {
   camera() { $('#camIn').click(); },
   phCancel() { S.once = false; closeLayer(); renderComposer(); },
   trProv(d) { S.trProv = d.v; const el = $('#trBox'); if (el) el.outerHTML = trBox(); },
-  trMsg(d) { closeLayer(); Tr.run(+d.id); },
-  trOrig(d) { Tr.shown.delete(+d.id); renderMessages(true); },
+  trMsg(d) { closeLayer(); Tr.off.delete(+d.id); Tr.run(+d.id); },
+  trOrig(d) { Tr.shown.delete(+d.id); Tr.off.add(+d.id); renderMessages(true); },
+  trAuto() { const c = S.chats.get(S.chatId); if (!c) return; const on = !Tr.auto(c.id); Tr.setAuto(c.id, on); renderComposer(); if (on) { toast(`Traduction automatique en ${LANG_FR[Tr.lang()] || Tr.lang()} activée pour cette discussion`); Tr.off.clear(); Tr.autoRun(c); } else { toast('Traduction automatique arrêtée'); for (const m of S.msgs.get(c.id) || []) Tr.shown.delete(m.id); renderMessages(true); } },
   async trLoad() { try { S.trset = await api('/api/admin/translate'); const el = $('#trBox'); if (el) el.outerHTML = trBox(); } catch (e) { toast(e.message); } },
   async trOff() { try { await api('/api/admin/translate', {off: true}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction désactivée'); } catch (e) { toast(e.message); } },
   recStart() { Rec.start(); }, recCancel() { Rec.cancel(); }, recSend() { Rec.send(); },
