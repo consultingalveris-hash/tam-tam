@@ -124,6 +124,7 @@ function renderAuth(msg) {
     <span class="lbl">Votre avatar</span>${avGallery(A.avatar, 'auth')}
     <label class="pick chk"><input type="checkbox" id="aAge"><span>J’ai 16 ans ou plus.</span></label>
     <label class="pick chk"><input type="checkbox" id="aCgu"><span>J’ai lu et j’accepte les <a href="/conditions" target="_blank" rel="noopener">Conditions générales et la Politique de confidentialité</a>.</span></label>
+    <label class="pick chk"><input type="checkbox" id="aTrc"><span>Facultatif : j’accepte que mes messages traduits et mes corrections servent, <b>sans mon nom</b>, à améliorer la traduction de Tam-Tam (langues africaines notamment). Modifiable à tout moment dans les Réglages.</span></label>
     <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Créer mon compte</button>` : ''}
     <button class="linkb" type="button" data-act="authMode" data-m="login">J’ai déjà un compte : me connecter</button>`;
   else h = `<h2>Bienvenue</h2><p class="hint">La messagerie qui fait vivre nos langues. Connectez-vous pour retrouver vos proches.</p>
@@ -144,7 +145,7 @@ async function submitAuth() {
     if (A.mode === 'forgot' && A.step === 1) { A.fmail = v('fMail').trim(); await api('/api/forgot', {email: A.fmail}); A.step = 2; return renderAuth(); }
     if (A.mode === 'forgot') r = await api('/api/forgot/verify', {email: A.fmail, code: v('fCode'), pass: v('aPass')});
     else if (A.mode === 'reset') r = await api('/api/reset', {token: A.token, pass: v('aPass')});
-    else if (A.mode === 'register') r = await api('/api/register', {name: v('aName'), email: v('aMail'), pass: v('aPass'), gtok: A.g ? A.g.tok : undefined, avatar: A.avatar, age: $('#aAge').checked, cgu: $('#aCgu').checked, invite: S.invite});
+    else if (A.mode === 'register') r = await api('/api/register', {name: v('aName'), email: v('aMail'), pass: v('aPass'), gtok: A.g ? A.g.tok : undefined, avatar: A.avatar, age: $('#aAge').checked, cgu: $('#aCgu').checked, trc: !!($('#aTrc') && $('#aTrc').checked), invite: S.invite});
     else r = await api('/api/login', {email: v('aMail'), pass: v('aPass')});
     S.me = r.me; keepUsers([r.me]); history.replaceState(null, '', '/'); start();
   } catch (e) { err(e.message); if (btn) btn.disabled = false; }
@@ -163,7 +164,7 @@ async function startApp() {
   root.innerHTML = `<div class="app" data-view="list"><aside class="side" id="side"><div class="head" id="head"></div><div class="body" id="body"></div><nav class="tabs" id="tabs" aria-label="Rubriques"></nav><button class="fab" id="fab" type="button" data-act="fab" aria-label="Nouvelle discussion">${I.newchat}</button></aside><main class="main" id="main"></main></div>`;
   renderMain();
   await Promise.all([loadChats(), loadContacts(), loadStatuses()]).catch(e => toast(e.message));
-  api('/api/translate/status').then(r => { Tr.st = r; renderComposer(); }).catch(() => {});
+  api('/api/translate/status').then(r => { Tr.st = r; renderComposer(); if (r.on && S.me.trConsent == null) setTimeout(trConsentAsk, 1500); }).catch(() => {});
   renderAll(); connect(); if (S.locked) showLock();
   GCall.loadActive(); Call.checkPending(); Device.badge();
   if (S.lock.type === 'off') return requireLock();
@@ -201,7 +202,7 @@ async function reveal(m) {
   const r = await E2E.open(m.enc, S.me.id);
   if (r.err === 'absent') { m.text = '🔒 Message chiffré avant votre arrivée, ou pour une ancienne clé'; m.locked = true; }
   else if (r.err) { m.text = '🔒 Message illisible sur cet appareil'; m.locked = true; }
-  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; }
+  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; }
   return m;
 }
 async function loadChats() { const r = await api('/api/chats'); const map = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); await reveal(c.last); map.set(c.id, c); } S.chats = map; }
@@ -570,7 +571,11 @@ async function sendText() {
   try {
     let payload = {t}; const out = Tr.outL(c.id);
     if (out && Tr.st && Tr.st.on && !S.once) {
-      try { const r = await Tr.fetch(t, out); if (r && r.text && r.from !== out && r.text.trim() !== t) payload = {t: r.text, o: t, ol: r.from || '', tl: out}; }
+      try {
+        const ctx = (S.msgs.get(c.id) || []).filter(x => x.kind === 'text' && x.text && !x.once).slice(-4).map(x => x.text);
+        const r = await Tr.fetch(t, out, ctx);
+        if (r && r.text && r.text.trim() !== t) { payload = {t: r.text, o: t, ol: r.from || '', tl: out}; if (r.fresh) Tr.give(t, r.from, r.text, out, 'mt', S.me.id); }
+      }
       catch (e) { toast('Message envoyé sans traduction : ' + e.message); }
     }
     const {env} = await E2E.seal(payload, recipients(c));
@@ -832,11 +837,11 @@ const Tr = {
     return {id, key: await crypto.subtle.importKey('raw', await h('tt-tr-key'), 'AES-GCM', false, ['encrypt', 'decrypt'])};
   },
   // Traduit un texte, en réutilisant d'abord la traduction déjà payée par quelqu'un d'autre.
-  async fetch(text, to) {
+  async fetch(text, to, ctx) {
     const k = await this.keys(text, to), c = await api('/api/translate/cache/' + k.id).catch(() => null);
     if (c && c.hit) { try { return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name: 'AES-GCM', iv: Uint8Array.from(atob(c.hit.iv), x => x.charCodeAt(0))}, k.key, Uint8Array.from(atob(c.hit.ct), x => x.charCodeAt(0))))); } catch {} }
-    const r = await api('/api/translate', {text, to});
-    const iv = crypto.getRandomValues(new Uint8Array(12)), ct = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, k.key, new TextEncoder().encode(JSON.stringify(r))));
+    const r = await api('/api/translate', {text, to, ctx: ctx || []});
+    r.fresh = true; const iv = crypto.getRandomValues(new Uint8Array(12)), ct = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, k.key, new TextEncoder().encode(JSON.stringify(r))));
     const b64 = u => btoa(String.fromCharCode(...u)); api('/api/translate/cache', {id: k.id, iv: b64(iv), ct: b64(ct)}).catch(() => {});
     return r;
   },
@@ -844,7 +849,12 @@ const Tr = {
     l = l || this.view(S.chatId);
     const m = (S.msgs.get(S.chatId) || []).find(x => x.id === id); if (!m || !m.text) return false;
     if (this.get(id, l)) { this.shown.add(id); if (!silent) renderMessages(true); return true; } // déjà traduit : rien n'est recompté
-    try { this.put(id, l, await this.fetch(m.text, l)); this.shown.add(id); if (!silent) renderMessages(true); return true; }
+    try {
+      const list = S.msgs.get(S.chatId) || [], i = list.indexOf(m), ctx = list.slice(Math.max(0, i - 4), i).filter(x => x.kind === 'text' && x.text && !x.once).map(x => x.text);
+      const r = await this.fetch(m.text, l, ctx); this.put(id, l, {text: r.text, from: r.from}); this.shown.add(id);
+      if (r.fresh) this.give(m.text, r.from, r.text, l, 'mt', m.from);
+      if (!silent) renderMessages(true); return true;
+    }
     catch (e) { toast(e.message); return false; }
   },
   async autoRun(c) {
@@ -854,23 +864,30 @@ const Tr = {
     try { for (const m of todo) { if (S.chatId !== c.id || this.inL(c.id) !== l) break; if (this.get(m.id, l)) { this.shown.add(m.id); continue; } if (!await this.run(m.id, true, l)) break; } }
     finally { this.busy = false; } if (S.chatId === c.id) renderMessages(true);
   },
-  note(txt, act, id, lbl) { return `<span class="trl">${I.translate}${txt} · <button class="linkb" type="button" data-act="${act}" data-id="${id}">${lbl}</button></span>`; },
+  // Envoie une paire « texte d'origine → traduction » à la base de Tam-Tam (le serveur vérifie les accords).
+  give(src, sl, tgt, tl, kind, author) { const a = author === S.me.id ? S.me : uOf(author); if (!a || !(author === S.me.id ? S.me.trConsent : a.trc) || (kind === 'fix' && !S.me.trConsent)) return; api('/api/corpus', {src, sl: sl || '', tgt, tl, kind, author}).catch(() => {}); },
+  fix(id) { try { return JSON.parse(this.ls('tt-fix:' + id) || 'null'); } catch { return null; } },
+  note(txt, act, id, lbl, more) { return `<span class="trl">${I.translate}${txt} · <button class="linkb" type="button" data-act="${act}" data-id="${id}">${lbl}</button>${more || ''}</span>`; },
+  fixBtn(id, lbl) { return ` · <button class="linkb" type="button" data-act="trFix" data-id="${id}">✎ ${lbl || 'Corriger'}</button>`; },
   from(l) { const n = l && LANG_FR[l]; return n ? (/^[aeiouhé]/.test(n) ? 'de l’' : 'du ') + n.replace(/ \(essai\)$/, '') : ''; },
   html(m) {
     const l = this.view(S.chatId), t = this.shown.has(m.id) && this.get(m.id, l);
     if (!t || t.from === l || t.text.trim() === m.text.trim()) return '';
-    return `<span class="trl-txt">${esc(t.text)}</span>${this.note('Traduit' + (this.from(t.from) ? ' ' + esc(this.from(t.from)) : ''), 'trOrig', m.id, 'Voir l’original')}`;
+    const fx = this.fix(m.id);
+    return `<span class="trl-txt">${esc(fx ? fx.text : t.text)}</span>${this.note((fx ? 'Corrigé par vous' : 'Traduit') + (this.from(t.from) ? ' ' + esc(this.from(t.from)) : ''), 'trOrig', m.id, 'Voir l’original', this.fixBtn(m.id))}`;
   },
   // Texte d'une bulle, avec les traductions.
   txt(m) {
     const L = l => (LANG_FR[l] || l || '').replace(/ \(essai\)$/, ''), flip = this.flip.has(m.id);
     if (m.orig != null && m.tlang) {
-      if (m.from === S.me.id) return flip
-        ? `<span class="trl-txt">${esc(m.text)}</span>${this.note('Reçu en ' + esc(L(m.tlang)) + ' par votre contact', 'trFlip', m.id, 'Voir ce que j’ai écrit')}`
-        : `<span class="trl-txt">${esc(m.orig)}</span>${this.note('Envoyé en ' + esc(L(m.tlang)), 'trFlip', m.id, 'Voir le message envoyé')}`;
+      if (m.from === S.me.id) {
+        const who = (() => { const c = S.chats.get(m.chatId); return c && c.type === 'direct' ? first(chatTitle(c)) : 'Vos contacts'; })();
+        return `<span class="trl-txt">${esc(m.orig)}</span><span class="tr-recv"><small>${I.translate}${esc(who)} a reçu (${esc(L(m.tlang))})${m.fx ? ' · corrigé' : ''} :</small><span>${esc(m.text)}</span><button class="linkb" type="button" data-act="trFix" data-id="${m.id}">✎ Votre correction</button></span>`;
+      }
       const more = this.html(m); if (more && !flip) return more;
+      const fx = this.fix(m.id);
       return flip ? `<span class="trl-txt">${esc(m.orig)}</span>${this.note('Original' + (m.olang ? ' (' + esc(L(m.olang)) + ')' : ''), 'trFlip', m.id, 'Voir la traduction')}`
-        : `<span class="trl-txt">${esc(m.text)}</span>${this.note('Traduit' + (this.from(m.olang) ? ' ' + esc(this.from(m.olang)) : '') + ' par l’expéditeur', 'trFlip', m.id, 'Voir l’original')}`;
+        : `<span class="trl-txt">${esc(fx ? fx.text : m.text)}</span>${this.note((fx ? 'Corrigé par vous' : m.fx ? 'Corrigé par l’expéditeur' : 'Traduit' + (this.from(m.olang) ? ' ' + esc(this.from(m.olang)) : '') + ' par l’expéditeur'), 'trFlip', m.id, 'Voir l’original', this.fixBtn(m.id))}`;
     }
     return this.html(m) || `<span class="txt">${esc(m.text)}</span>`;
   },
@@ -878,22 +895,30 @@ const Tr = {
   settingsHtml() {
     if (!this.st || !this.st.on) return '';
     return `<div class="set-block"><h2>${I.translate} Traduction</h2><p class="hint">Dans une discussion, touchez le bouton 文A à gauche de la zone d’écriture : choisissez la langue dans laquelle <b>vous</b> recevez les messages, et celle dans laquelle <b>votre contact</b> reçoit les vôtres. Le texte traduit passe par le service de traduction : il n’est plus protégé de bout en bout.</p>
+      <label class="pick chk"><input type="checkbox" data-act="trConsentTog"${S.me.trConsent ? ' checked' : ''}><span>Contribuer à la base de traduction de Tam-Tam : mes messages traduits et mes corrections sont gardés <b>sans mon nom</b> pour améliorer la traduction.</span></label>
       <div class="field"><label for="trLang">Langue pour « Traduire » sur un message</label><select id="trLang">${this.st.langs.map(l => `<option value="${l}"${l === this.lang() ? ' selected' : ''}>${LANG_FR[l] || l}</option>`).join('')}</select></div></div>`;
   },
 };
+function trConsentAsk() {
+  if (layer.innerHTML || !S.me || S.me.trConsent != null) return;
+  sheet(`${head('Aidez Tam-Tam à mieux traduire')}<div class="sheet-body"><p>Tam-Tam veut construire sa propre base de traduction, notamment pour les <b>langues africaines</b> que les grands services traduisent mal.</p>
+    <p class="hint">Si vous acceptez, vos messages traduits et vos corrections sont gardés <b>sans votre nom ni identifiant</b> (numéros, e-mails et liens retirés) pour améliorer la traduction. Vos autres messages restent chiffrés et illisibles pour Tam-Tam. Vous pouvez changer d’avis à tout moment dans Réglages → Traduction.</p>
+    <div class="actions"><button class="btn ghost" type="button" data-act="trConsentNo">Non merci</button><button class="btn" type="button" data-act="trConsentYes">J’accepte de contribuer</button></div></div>`, 'Contribution');
+}
 function trSheet() {
   const c = S.chats.get(S.chatId); if (!c || !Tr.st) return;
   const side = S.trSide || 'in', cur = side === 'out' ? Tr.outL(c.id) : Tr.inL(c.id), L = l => (LANG_FR[l] || l).replace(/^./, x => x.toUpperCase());
   const top = ['fr', 'en', 'wo', 'ff', 'ar', 'pt', 'es', 'sw', 'ln', 'bm', 'ha', 'yo'].filter(l => Tr.st.langs.includes(l)), rest = Tr.st.langs.filter(l => !top.includes(l)).sort((a, b) => L(a).localeCompare(L(b), 'fr'));
   const btn = l => `<button type="button" class="lang-opt" data-act="trPick" data-v="${l}" aria-pressed="${l === cur}">${esc(L(l))}<small>${l.toUpperCase()}</small></button>`;
   const who = c.type === 'group' ? 'les membres du groupe reçoivent' : `${esc(first(chatTitle(c)))} reçoit`;
-  sheet(`${head('Langues de cette discussion')}<div class="sheet-body">
+  const keep = layer.querySelector('.tr-scroll'), y = keep ? keep.scrollTop : 0;
+  sheet(`${head('Langues de cette discussion')}<div class="sheet-body tr-body"><div class="tr-fixed">
     <div class="seg tr-seg" role="tablist"><button type="button" role="tab" data-act="trSide" data-v="in" aria-selected="${side === 'in'}"><small>Je reçois en</small><b>${Tr.inL(c.id) ? esc(L(Tr.inL(c.id))) : 'pas de traduction'}</b></button><button type="button" role="tab" data-act="trSide" data-v="out" aria-selected="${side === 'out'}"><small>Mon contact reçoit en</small><b>${Tr.outL(c.id) ? esc(L(Tr.outL(c.id))) : 'pas de traduction'}</b></button></div>
-    <p class="hint">${side === 'in' ? 'Choisissez la langue dans laquelle <b>vous recevez</b> les messages de cette discussion. Ils seront traduits automatiquement.' : `Choisissez la langue dans laquelle <b>${who}</b> vos messages. Vous écrivez dans votre langue, Tam-Tam envoie la traduction.`}</p>
-    <button type="button" class="lang-opt none" data-act="trPick" data-v="" aria-pressed="${!cur}">Pas de traduction<small>—</small></button>
-    <span class="lbl">Langues les plus utilisées</span><div class="lang-grid">${top.map(btn).join('')}</div>
-    <span class="lbl">Autres langues</span><div class="lang-grid">${rest.map(btn).join('')}</div>
-    <div class="actions"><button class="btn" type="button" data-act="close">Terminé</button></div></div>`, 'Langues');
+    <div class="tr-hint"><p class="hint">${side === 'in' ? 'Choisissez la langue dans laquelle <b>vous recevez</b> les messages de cette discussion. Ils seront traduits automatiquement.' : `Choisissez la langue dans laquelle <b>${who}</b> vos messages. Vous écrivez dans votre langue, Tam-Tam envoie la traduction.`}</p><button class="btn sm" type="button" data-act="close">Terminé</button></div>
+    <button type="button" class="lang-opt none" data-act="trPick" data-v="" aria-pressed="${!cur}">Pas de traduction<small>—</small></button></div>
+    <div class="tr-scroll"><span class="lbl">Langues les plus utilisées</span><div class="lang-grid">${top.map(btn).join('')}</div>
+    <span class="lbl">Autres langues</span><div class="lang-grid">${rest.map(btn).join('')}</div></div></div>`, 'Langues');
+  const sc = layer.querySelector('.tr-scroll'); if (sc) sc.scrollTop = y;
 }
 function trBox() {
   const t = S.trset;
@@ -941,7 +966,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.18</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.19</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1027,6 +1052,23 @@ const ACT = {
     if (S.trSide === 'out') Tr.setOut(c.id, d.v); else { Tr.setIn(c.id, d.v); Tr.shown.clear(); Tr.off.clear(); }
     renderComposer(); renderMessages(true); trSheet(); if (S.trSide !== 'out' && d.v) Tr.autoRun(c);
   },
+  trFix(d) {
+    const id = +d.id, m = (S.msgs.get(S.chatId) || []).find(x => x.id === id); if (!m) return;
+    const mine = m.from === S.me.id, L = l => (LANG_FR[l] || l || '').replace(/ \(essai\)$/, '');
+    let src, sl, tgt, tl;
+    if (m.orig != null && m.tlang) { src = m.orig; sl = m.olang; tgt = (!mine && Tr.fix(id)) ? Tr.fix(id).text : m.text; tl = m.tlang; }
+    else { const v = Tr.view(S.chatId), t = Tr.get(id, v); if (!t) return; src = m.text; sl = t.from; tgt = Tr.fix(id) ? Tr.fix(id).text : t.text; tl = v; }
+    S.fixing = {id, src, sl, tgt, tl, mine};
+    sheet(`${head(mine ? 'Corriger la traduction de mon message' : 'Corriger cette traduction')}<form class="sheet-body" data-form="trFixSave">
+      <div class="fix-box"><small>${mine ? 'Ce que vous avez écrit' : 'Message reçu'}${sl ? ' (' + esc(L(sl)) + ')' : ''}</small><p>${esc(src)}</p></div>
+      <div class="fix-box"><small>Traduction actuelle (${esc(L(tl))})</small><p>${esc(tgt)}</p></div>
+      <div class="field"><label for="fixIn">Votre correction (${esc(L(tl))})</label><textarea id="fixIn" rows="3" maxlength="2000">${esc(tgt)}</textarea></div>
+      <p class="hint">${mine ? 'Votre contact verra aussitôt la version corrigée.' : 'Vous verrez désormais votre version.'} ${S.me.trConsent ? 'Merci : votre correction enrichit la base de traduction de Tam-Tam, sans votre nom.' : 'Pour que vos corrections enrichissent aussi la base de traduction de Tam-Tam, activez la contribution dans Réglages → Traduction.'}</p>
+      <div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="submit">Enregistrer ma correction</button></div></form>`, 'Correction', '#fixIn');
+  },
+  trConsentYes() { closeLayer(); saveNow({trConsent: true}, 'Merci ! Vos traductions et corrections aideront Tam-Tam, sans votre nom.'); },
+  trConsentNo() { closeLayer(); saveNow({trConsent: false}, 'C’est noté. Vous pouvez changer d’avis dans Réglages → Traduction.'); },
+  trConsentTog() { saveNow({trConsent: !S.me.trConsent}); },
   trFlip(d) { const id = +d.id; Tr.flip.has(id) ? Tr.flip.delete(id) : Tr.flip.add(id); renderMessages(true); },
   async trLoad() { try { S.trset = await api('/api/admin/translate'); const el = $('#trBox'); if (el) el.outerHTML = trBox(); } catch (e) { toast(e.message); } },
   async trOff() { try { await api('/api/admin/translate', {off: true}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction désactivée'); } catch (e) { toast(e.message); } },
@@ -1137,6 +1179,19 @@ const FORMS = {
   async trset() { const er = $('#trErr'); er.hidden = true; const k = $('#trKey').value.trim(), bi = $('#trBudget'), budget = bi ? +bi.value : undefined; if (!k && !(S.trset && S.trset.has)) return;
     try { await api('/api/admin/translate', {key: k, budget, provider: S.trProv || (S.trset && S.trset.provider) || 'claude'}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction activée'); }
     catch (e) { er.textContent = e.message; er.hidden = false; } },
+  async trFixSave() {
+    const f = S.fixing, v = ($('#fixIn').value || '').trim(); if (!f || !v) return;
+    if (v === f.tgt) { closeLayer(); return; }
+    try {
+      if (f.mine) {
+        const c = S.chats.get(S.chatId), m = (S.msgs.get(S.chatId) || []).find(x => x.id === f.id);
+        const {env} = await E2E.seal({t: v, o: f.src, ol: f.sl || '', tl: f.tl, fx: 1}, recipients(c));
+        await api(`/api/messages/${f.id}/reseal`, {enc: env}); if (m) { m.text = v; m.fx = true; }
+      } else Tr.ls('tt-fix:' + f.id, JSON.stringify({text: v}));
+      Tr.give(f.src, f.sl, v, f.tl, 'fix', f.mine ? S.me.id : ((S.msgs.get(S.chatId) || []).find(x => x.id === f.id) || {}).from);
+      closeLayer(); renderMessages(true); toast('Correction enregistrée, merci !');
+    } catch (e) { toast(e.message); }
+  },
   send: sendText,
   photo: sendPhoto,
   async group(f) {

@@ -567,3 +567,19 @@ mark{background:#ffe08a;color:inherit;border-radius:3px;padding:0 1px}
 .tr-tog i{font-style:normal;opacity:.7}
 .lang-opt.none{width:100%}
 .tr-seg button{flex-direction:column;gap:2px;line-height:1.2}.tr-seg small{font-weight:500;font-size:12px;color:var(--fg-2)}
+/* fenêtre des langues : haut figé, liste qui défile */
+.tr-body{overflow:hidden;min-height:0;flex:1;padding-bottom:0}
+.tr-fixed{display:flex;flex-direction:column;gap:10px}
+.tr-hint{display:flex;align-items:flex-start;gap:12px}
+.tr-hint .hint{flex:1;min-width:0;margin:0}
+.tr-hint .btn{flex:none}
+.tr-scroll{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-bottom:18px;margin:0 -4px;padding-left:4px;padding-right:4px}
+/* traduction reçue par le contact, sous mon message */
+.tr-recv{display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:6px 8px;border-radius:10px;background:color-mix(in srgb,currentColor 10%,transparent);font-size:13px}
+.tr-recv small{display:flex;align-items:center;gap:4px;opacity:.8;font-size:11px}
+.tr-recv small svg{width:12px;height:12px}
+.tr-recv .linkb{align-self:flex-start;font-size:12px;color:inherit;text-decoration:underline;margin-top:2px}
+.fix-box{padding:10px 12px;border-radius:12px;background:var(--surface-2)}
+.fix-box small{color:var(--fg-2);font-size:12px}
+.fix-box p{margin:2px 0 0;white-space:pre-wrap}
+.trl{flex-wrap:wrap;row-gap:2px}.trl .linkb{white-space:nowrap}

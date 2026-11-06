@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS status_views(status_id INTEGER NOT NULL REFERENCES st
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, target_user INTEGER, chat_id INTEGER, reason TEXT NOT NULL, note TEXT,
   created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0);
 `);
-for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `ALTER TABLE users ADD COLUMN avail TEXT NOT NULL DEFAULT 'on'`, `CREATE TABLE IF NOT EXISTS tr_cache(id TEXT PRIMARY KEY, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL)`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
+for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `ALTER TABLE users ADD COLUMN avail TEXT NOT NULL DEFAULT 'on'`, `ALTER TABLE users ADD COLUMN tr_consent INTEGER`, `CREATE TABLE IF NOT EXISTS corpus(id INTEGER PRIMARY KEY, src TEXT NOT NULL, sl TEXT, tgt TEXT NOT NULL, tl TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL)`, `CREATE UNIQUE INDEX IF NOT EXISTS corpus_u ON corpus(src, tl, tgt, kind)`, `CREATE TABLE IF NOT EXISTS tr_cache(id TEXT PRIMARY KEY, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL)`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
 db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, call_id TEXT NOT NULL, kind TEXT NOT NULL, chat_id INTEGER NOT NULL, caller INTEGER NOT NULL, callee INTEGER, video INTEGER NOT NULL, status TEXT NOT NULL, joined TEXT NOT NULL DEFAULT '[]', started INTEGER NOT NULL, answered INTEGER, ended INTEGER);
@@ -137,7 +137,7 @@ function userCard(u, me) {
     busy: rel === 'contact' && u.avail === 'busy' ? true : undefined,
     lastSeen: rel === 'contact' && u.avail !== 'off' ? u.last_seen : undefined, pub: {}, mutual: 0, pubkey: u.pubkey ? J(u.pubkey, null) : null };
   for (const k of PUB_K) if (pub[k] != null && pub[k] !== '') card.pub[k] = pub[k];
-  card.pics = picsOf(u, 'pub');
+  card.pics = picsOf(u, 'pub'); card.trc = !!u.tr_consent;
   if (me && me !== u.id) {
     const mine = new Set(contactIds(me)); card.mutual = contactIds(u.id).filter(x => mine.has(x)).length;
     card.blocked = iBlocked(me, u.id);
@@ -259,7 +259,7 @@ function tooMany(key, max = 10, win = 15 * 60_000) {
 }
 const ipOf = req => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
 function meOut(u) {
-  return { ...userCard(u, u.id), email: u.email, priv: J(u.priv, {}), privPics: picsOf(u, 'priv'), listed: !!u.listed, avail: u.avail || 'on', privTo: u.priv_to, admin: !!u.admin, hasHideCode: !!u.hide_code,
+  return { ...userCard(u, u.id), email: u.email, priv: J(u.priv, {}), privPics: picsOf(u, 'priv'), listed: !!u.listed, avail: u.avail || 'on', trConsent: u.tr_consent == null ? null : !!u.tr_consent, privTo: u.priv_to, admin: !!u.admin, hasHideCode: !!u.hide_code,
     close: qa(`SELECT member FROM close_group WHERE owner=?`, u.id).map(r => r.member),
     blocked: qa(`SELECT blocked FROM blocks WHERE user_id=?`, u.id).map(r => userCard(getUser(r.blocked), u.id)).filter(Boolean),
     cguAt: u.cgu_at, createdAt: u.created_at };
@@ -303,6 +303,7 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   const av = avatarJson(body.avatar) || JSON.stringify({ v: 2, st: 'court', sk: 'c', sh: '#14b8c9' });
   const id = run(`INSERT INTO users(email,pass,name,handle,avatar,admin,invited_by,cgu_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
     email, hashPass(pass), name, slugHandle(name), av, first ? 1 : 0, inv ? inv.by_user : null, now(), now()).lastInsertRowid;
+  run(`UPDATE users SET tr_consent=? WHERE id=?`, body.trc ? 1 : 0, Number(id));
   if (gp) { run(`UPDATE users SET google_sub=? WHERE id=?`, gp.sub, Number(id)); run(`DELETE FROM gpending WHERE token=?`, gp.token); }
   if (inv) {
     if (!inv.qr) run(`UPDATE invites SET uses=uses+1 WHERE code=?`, inv.code);
@@ -356,6 +357,7 @@ R('POST', /^\/api\/me$/, async ({ me, body }) => {
   if (body.pub) { const p = J(me.pub, {}); for (const k of PUB_K) if (k in body.pub) p[k] = clean(body.pub[k], k === 'bio' ? 200 : 80); run(`UPDATE users SET pub=? WHERE id=?`, JSON.stringify(p), me.id); }
   if (body.priv) { const p = J(me.priv, {}); for (const k of PRIV_K) if (k in body.priv) p[k] = clean(body.priv[k], 120); run(`UPDATE users SET priv=? WHERE id=?`, JSON.stringify(p), me.id); }
   if (body.avail && ['on', 'busy', 'off'].includes(body.avail)) { run(`UPDATE users SET avail=? WHERE id=?`, body.avail, me.id); setTimeout(() => { presence(me.id); pushMany(contactIds(me.id), { t: 'chats' }); }, 0); }
+  if (body.trConsent != null) run(`UPDATE users SET tr_consent=? WHERE id=?`, body.trConsent ? 1 : 0, me.id);
   if (body.listed != null) run(`UPDATE users SET listed=? WHERE id=?`, body.listed ? 1 : 0, me.id);
   if (body.privTo) { if (!['me', 'contacts', 'grp'].includes(body.privTo)) E(400, 'Choix inconnu.'); run(`UPDATE users SET priv_to=? WHERE id=?`, body.privTo, me.id); }
   if (Array.isArray(body.close)) {
@@ -1000,11 +1002,12 @@ const trLangs = c => c.provider === 'claude' ? TR_LANGS.concat(TR_LANGS_CLAUDE) 
 const CLAUDE_URL = process.env.CLAUDE_URL || 'https://api.anthropic.com/v1/messages';
 const LANG_EN = { bas: 'Basaa (Bassa, Cameroon)', dua: 'Duala (Cameroon)', ewo: 'Ewondo (Cameroon)', srr: 'Serer (Senegal)', mnk: 'Mandinka', snk: 'Soninke', dyo: 'Jola-Fonyi (Diola)', fan: 'Fang', bum: 'Bulu (Cameroon)', mos: 'Mooré (Burkina Faso)', fon: 'Fon (Benin)', dyu: 'Dioula (Jula)', kab: 'Kabyle', tzm: 'Central Atlas Tamazight', ber: 'Berber', kri: 'Krio (Sierra Leone)', fr: 'French', en: 'English', wo: 'Wolof', ff: 'Fula (Pulaar)', bm: 'Bambara', ln: 'Lingala', sw: 'Swahili', ha: 'Hausa', yo: 'Yoruba', ig: 'Igbo', ee: 'Ewe', ak: 'Twi', rw: 'Kinyarwanda', sg: 'Sango', ar: 'Arabic', pt: 'Portuguese', es: 'Spanish', de: 'German', it: 'Italian', zh: 'Chinese', ru: 'Russian', tr: 'Turkish', nl: 'Dutch', hi: 'Hindi', am: 'Amharic', so: 'Somali', zu: 'Zulu', xh: 'Xhosa', mg: 'Malagasy', rn: 'Kirundi', kg: 'Kikongo', ts: 'Tsonga', tn: 'Tswana', st: 'Sotho', sn: 'Shona', ny: 'Chichewa', om: 'Oromo', ti: 'Tigrinya', lg: 'Luganda', ki: 'Kikuyu' };
 // Traduit avec le moteur choisi ; renvoie { text, from }.
-async function trCall(c, text, to) {
+let trLastErr = '';
+async function trCall(c, text, to, ctx) {
   if (c.provider === 'claude') {
     const r = await fetch(CLAUDE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': c.key, 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(20_000),
       body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-haiku-5-5', max_tokens: 1500,
-        system: `You translate chat messages into ${LANG_EN[to] || to}. Reply with JSON only: {"from":"<ISO 639-1 code of the source language>","text":"<translation>"}. Keep the tone, emojis and names. Never add comments. If the message is already in ${LANG_EN[to] || to}, return it unchanged.`,
+        system: `You translate informal chat messages between friends into ${LANG_EN[to] || to}. The messages may contain typos, slang, missing punctuation or repeated words: understand the intended meaning and write it the way a native speaker would naturally write it in a chat (for example "je dis je vais super bien et toi" means "I said I'm doing great, and you?"). Keep the tone, emojis and names. Reply with JSON only: {"from":"<ISO 639-1 code of the source language>","text":"<translation>"}. Never add comments. If the message is already in ${LANG_EN[to] || to}, return it unchanged.` + (ctx && ctx.length ? `\n\nEarlier messages in this conversation, for context only (do not translate them):\n${ctx.map(x => '- ' + x).join('\n')}` : ''),
         messages: [{ role: 'user', content: text }] }) });
     const j = await r.json().catch(() => ({})); if (!r.ok) return { err: (j.error && j.error.message) || 'HTTP ' + r.status };
     usdAdd(j.usage); const out = (j.content || []).map(x => x.text || '').join('').trim(); let o; try { o = JSON.parse(out.replace(/^```(json)?|```$/g, '').trim()); } catch { o = { text: out }; }
@@ -1025,8 +1028,9 @@ R('POST', /^\/api\/translate$/, async ({ me, body }) => {
   const conf = trConf(), used = trUsed();
   if (conf.provider === 'claude' ? usdSpent() >= conf.budget : used + text.length > TR_CAP) E(429, 'Traduction indisponible jusqu’au 1er du mois : la réserve de ce mois est épuisée.');
   run(`INSERT OR REPLACE INTO settings(k,v) VALUES(?,?)`, trMonth(), String(used + text.length));
-  let t; try { t = await trCall(conf, text, to); } catch { E(502, 'Le service de traduction ne répond pas. Réessayez.'); }
-  if (t.err || !t.text) { console.error('traduction', t.err); E(502, 'La traduction a échoué. Réessayez plus tard.'); }
+  const ctx = (Array.isArray(body.ctx) ? body.ctx : []).slice(-4).map(x => String(x || '').slice(0, 300)).filter(Boolean);
+  let t; try { t = await trCall(conf, text, to, ctx); } catch (e) { trLastErr = new Date().toISOString() + ' ' + e.message; E(502, 'Le service de traduction ne répond pas. Réessayez.'); }
+  if (t.err || !t.text) { trLastErr = new Date().toISOString() + ' ' + t.err; console.error('traduction', t.err); E(502, 'La traduction a échoué. Réessayez plus tard.'); }
   return t;
 });
 // Traductions partagées : chiffrées par l'appareil avec une clé tirée du texte lui-même.
@@ -1038,7 +1042,27 @@ R('POST', /^\/api\/translate\/cache$/, async ({ me, body }) => {
   if (tooMany('trc:' + me.id, 300, 60 * 60_000)) return { ok: true };
   run(`INSERT OR IGNORE INTO tr_cache(id,iv,ct,at) VALUES(?,?,?,?)`, id, iv, ct, now()); return { ok: true };
 });
-R('GET', /^\/api\/admin\/translate$/, async ({ me }) => { adminOnly(me); const c = trConf(); return { has: !!c.key, provider: c.key ? c.provider : null, used: trUsed(), cap: TR_CAP, spent: usdSpent(), budget: c.budget }; });
+// Base linguistique de Tam-Tam : seulement avec l'accord des personnes, sans nom ni identifiant, numéros et adresses retirés.
+const scrub = t => String(t || '').replace(/\S+@\S+\.\S+/g, '[e-mail]').replace(/https?:\/\/\S+|www\.\S+/gi, '[lien]').replace(/\+?\d[\d .-]{5,}\d/g, '[numéro]').slice(0, 2000).trim();
+R('POST', /^\/api\/corpus$/, async ({ me, body }) => {
+  const kind = body.kind === 'fix' ? 'fix' : 'mt', author = getUser(+body.author || 0);
+  if (!author || !author.tr_consent || (kind === 'fix' && !me.tr_consent)) return { ok: false };
+  if (author.id !== me.id && relation(me.id, author.id) !== 'contact' && !q1(`SELECT 1 FROM members a JOIN members b ON a.chat_id=b.chat_id WHERE a.user_id=? AND b.user_id=?`, me.id, author.id)) return { ok: false };
+  if (tooMany('corpus:' + me.id, 300, 60 * 60_000)) return { ok: false };
+  const src = scrub(body.src), tgt = scrub(body.tgt), tl = String(body.tl || '').slice(0, 8), sl = String(body.sl || '').slice(0, 8);
+  if (!src || !tgt || !tl || src === tgt) return { ok: false };
+  run(`INSERT OR IGNORE INTO corpus(src,sl,tgt,tl,kind,at) VALUES(?,?,?,?,?,?)`, src, sl, tgt, tl, kind, now()); return { ok: true };
+});
+// L'expéditeur corrige la traduction de son propre message : il le rechiffre, le destinataire voit la version corrigée.
+R('POST', /^\/api\/messages\/(\d+)\/reseal$/, async ({ me, m, body }) => {
+  const msg = q1(`SELECT * FROM messages WHERE id=?`, +m[1]); if (!msg || msg.sender !== me.id || !msg.e2e || msg.once || msg.deleted || msg.media) E(404, 'Message introuvable.');
+  if (now() - msg.created_at > 7 * DAY) E(400, 'Ce message est trop ancien pour être corrigé.');
+  const env = body.enc; if (!env || typeof env.ct !== 'string' || typeof env.iv !== 'string' || typeof env.keys !== 'object') E(400, 'Message chiffré invalide.');
+  const text = JSON.stringify({ v: 1, iv: env.iv, ct: env.ct, keys: env.keys, from: env.from }); if (text.length > 60000) E(413, 'Message trop long.');
+  run(`UPDATE messages SET text=? WHERE id=?`, text, msg.id);
+  pushMany(memberIds(msg.chat_id), { t: 'msg', msg: msgOut(q1(`SELECT * FROM messages WHERE id=?`, msg.id)), update: true }); return { ok: true };
+});
+R('GET', /^\/api\/admin\/translate$/, async ({ me }) => { adminOnly(me); const c = trConf(); return { has: !!c.key, provider: c.key ? c.provider : null, used: trUsed(), cap: TR_CAP, spent: usdSpent(), budget: c.budget, lastErr: trLastErr, corpus: Object.fromEntries(qa(`SELECT kind, COUNT(*) n FROM corpus GROUP BY kind`).map(r => [r.kind, r.n])) }; });
 R('POST', /^\/api\/admin\/translate$/, async ({ me, body }) => {
   adminOnly(me);
   if (body.off) { run(`DELETE FROM settings WHERE k='translate'`); return { ok: true }; }
