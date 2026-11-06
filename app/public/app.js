@@ -811,10 +811,26 @@ const Tr = {
   get(id) { try { return JSON.parse(localStorage.getItem(`tt-tr:${id}:${this.lang()}`) || 'null'); } catch { return null; } },
   put(id, v) { try { localStorage.setItem(`tt-tr:${id}:${this.lang()}`, JSON.stringify(v)); } catch {} },
   shown: new Set(),
+  // Empreinte et clé tirées du texte : seul quelqu'un qui a déjà le message peut retrouver sa traduction.
+  async keys(text, lang) {
+    const h = async p => new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(p + '|' + lang + '|' + text)));
+    const id = [...await h('tt-tr-id')].map(b => b.toString(16).padStart(2, '0')).join('');
+    return {id, key: await crypto.subtle.importKey('raw', await h('tt-tr-key'), 'AES-GCM', false, ['encrypt', 'decrypt'])};
+  },
   async run(id) {
     const m = (S.msgs.get(S.chatId) || []).find(x => x.id === id); if (!m || !m.text) return;
     if (this.get(id)) { this.shown.add(id); return renderMessages(true); } // déjà traduit : rien n'est recompté
-    try { const r = await api('/api/translate', {text: m.text, to: this.lang()}); this.put(id, r); this.shown.add(id); renderMessages(true); }
+    try {
+      const k = await this.keys(m.text, this.lang()); let r = null;
+      const c = await api('/api/translate/cache/' + k.id).catch(() => null);
+      if (c && c.hit) { try { r = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name: 'AES-GCM', iv: Uint8Array.from(atob(c.hit.iv), x => x.charCodeAt(0))}, k.key, Uint8Array.from(atob(c.hit.ct), x => x.charCodeAt(0))))); } catch { r = null; } }
+      if (!r) {
+        r = await api('/api/translate', {text: m.text, to: this.lang()});
+        const iv = crypto.getRandomValues(new Uint8Array(12)), ct = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, k.key, new TextEncoder().encode(JSON.stringify(r))));
+        const b64 = u => btoa(String.fromCharCode(...u)); api('/api/translate/cache', {id: k.id, iv: b64(iv), ct: b64(ct)}).catch(() => {});
+      }
+      this.put(id, r); this.shown.add(id); renderMessages(true);
+    }
     catch (e) { toast(e.message); }
   },
   html(m) {
@@ -868,7 +884,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.15</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.15.1</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {

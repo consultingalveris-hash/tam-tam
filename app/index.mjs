@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS status_views(status_id INTEGER NOT NULL REFERENCES st
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, target_user INTEGER, chat_id INTEGER, reason TEXT NOT NULL, note TEXT,
   created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0);
 `);
-for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `ALTER TABLE users ADD COLUMN avail TEXT NOT NULL DEFAULT 'on'`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
+for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `ALTER TABLE users ADD COLUMN avail TEXT NOT NULL DEFAULT 'on'`, `CREATE TABLE IF NOT EXISTS tr_cache(id TEXT PRIMARY KEY, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL)`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
 db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, call_id TEXT NOT NULL, kind TEXT NOT NULL, chat_id INTEGER NOT NULL, caller INTEGER NOT NULL, callee INTEGER, video INTEGER NOT NULL, status TEXT NOT NULL, joined TEXT NOT NULL DEFAULT '[]', started INTEGER NOT NULL, answered INTEGER, ended INTEGER);
@@ -197,7 +197,7 @@ function statusVisible(s, viewer) {
 
 /* ---------- entretien et sauvegardes ---------- */
 function sweep() {
-  run(`DELETE FROM sessions WHERE expires<?`, now()); run(`DELETE FROM resets WHERE expires<?`, now());
+  run(`DELETE FROM sessions WHERE expires<?`, now()); run(`DELETE FROM tr_cache WHERE at<?`, now() - 180 * DAY); run(`DELETE FROM resets WHERE expires<?`, now());
   for (const s of qa(`SELECT id, media FROM statuses WHERE expires<?`, now())) { if (s.media) dropMedia(s.media); run(`DELETE FROM statuses WHERE id=?`, s.id); }
   for (const m of qa(`SELECT id FROM media WHERE scope IS NULL AND created_at<?`, now() - DAY)) dropMedia(m.id);
 }
@@ -1003,6 +1003,15 @@ R('POST', /^\/api\/translate$/, async ({ me, body }) => {
   const j = await r.json().catch(() => ({})); if (!r.ok) { console.error('traduction', r.status, JSON.stringify(j).slice(0, 300)); E(502, 'La traduction a échoué. Réessayez plus tard.'); }
   const t = j.data && j.data.translations && j.data.translations[0]; if (!t) E(502, 'La traduction a échoué.');
   return { text: t.translatedText, from: t.detectedSourceLanguage || null };
+});
+// Traductions partagées : chiffrées par l'appareil avec une clé tirée du texte lui-même.
+// Le serveur ne peut pas les lire ; un même message n'est payé qu'une fois pour tout le monde.
+R('GET', /^\/api\/translate\/cache\/([0-9a-f]{64})$/, async ({ m }) => { const r = q1(`SELECT iv, ct FROM tr_cache WHERE id=?`, m[1]); return { hit: r || null }; });
+R('POST', /^\/api\/translate\/cache$/, async ({ me, body }) => {
+  const id = String(body.id || ''), iv = String(body.iv || ''), ct = String(body.ct || '');
+  if (!/^[0-9a-f]{64}$/.test(id) || iv.length > 40 || !ct || ct.length > 12000) E(400, 'Invalide.');
+  if (tooMany('trc:' + me.id, 300, 60 * 60_000)) return { ok: true };
+  run(`INSERT OR IGNORE INTO tr_cache(id,iv,ct,at) VALUES(?,?,?,?)`, id, iv, ct, now()); return { ok: true };
 });
 R('GET', /^\/api\/admin\/translate$/, async ({ me }) => { adminOnly(me); return { has: !!trKey(), used: trUsed(), cap: TR_CAP }; });
 R('POST', /^\/api\/admin\/translate$/, async ({ me, body }) => {
