@@ -685,7 +685,6 @@ body.in-cam{overflow:hidden}
 .lock-card.dark{background:transparent;box-shadow:none;border:0;color:#e8eef0;gap:18px;justify-content:center;min-height:100%}
 .lock-card.dark .brand-logo.lock-logo{height:96px}
 .lk-hint{margin:0;color:#b9c6ca;font-size:15px}
-.lock-card.dark .pad .pd{background:#2a3236}
 .lock-card.dark .err{color:#ff8a80}
 .lk-links{display:flex;flex-direction:column;gap:6px;align-items:center}
 .lock-card.dark .linkb{color:#5fd4e0}
@@ -759,4 +758,7 @@ body.in-cam{overflow:hidden}
 .sv-box video{width:100%;height:100%;object-fit:contain;background:#000}
 .sv-box video.mirror{transform:scaleX(-1)}
 .lock-card.dark .pad{background:transparent;box-shadow:none;border:0}
-.lock-card.dark .pad .pd{background:#e8eef0}
+.lock-card.dark .pad .pd{background:transparent}
+.lock-card.dark .pd::after{width:20px;height:20px;background:#14B8C9;box-shadow:0 0 0 6px rgba(20,184,201,.18)}
+.lock-card.dark .pd.on::after{background:#7fe6f0;box-shadow:0 0 0 8px rgba(20,184,201,.35)}
+.lock-card.dark .pad-line polyline{stroke:#14B8C9;opacity:.9}
