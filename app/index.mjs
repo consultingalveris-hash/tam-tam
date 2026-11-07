@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS status_views(status_id INTEGER NOT NULL REFERENCES st
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, target_user INTEGER, chat_id INTEGER, reason TEXT NOT NULL, note TEXT,
   created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0);
 `);
-for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `ALTER TABLE users ADD COLUMN avail TEXT NOT NULL DEFAULT 'on'`, `ALTER TABLE users ADD COLUMN tr_consent INTEGER`, `ALTER TABLE users ADD COLUMN priv_env TEXT`, `ALTER TABLE users ADD COLUMN tel_env TEXT`, `ALTER TABLE users ADD COLUMN tel_hash TEXT`, `ALTER TABLE statuses ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE chats ADD COLUMN expires INTEGER`, `ALTER TABLE statuses ADD COLUMN music TEXT`, `CREATE TABLE IF NOT EXISTS memories(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL, media TEXT NOT NULL, thumb TEXT, env TEXT NOT NULL, aud TEXT NOT NULL, taken_at INTEGER NOT NULL, created_at INTEGER NOT NULL)`, `CREATE INDEX IF NOT EXISTS mem_user ON memories(user_id, taken_at)`, `CREATE TABLE IF NOT EXISTS mem_access(mem_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(mem_id, user_id))`, `CREATE TABLE IF NOT EXISTS corpus(id INTEGER PRIMARY KEY, src TEXT NOT NULL, sl TEXT, tgt TEXT NOT NULL, tl TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL)`, `CREATE UNIQUE INDEX IF NOT EXISTS corpus_u ON corpus(src, tl, tgt, kind)`, `CREATE TABLE IF NOT EXISTS tr_mine(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, id TEXT NOT NULL, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(user_id, id))`, `CREATE TABLE IF NOT EXISTS tr_votes(id TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cid TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(id, user_id))`, `CREATE TABLE IF NOT EXISTS tr_cache(id TEXT PRIMARY KEY, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL)`, `ALTER TABLE tr_cache ADD COLUMN promoted INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
+for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `ALTER TABLE users ADD COLUMN avail TEXT NOT NULL DEFAULT 'on'`, `ALTER TABLE users ADD COLUMN tr_consent INTEGER`, `ALTER TABLE users ADD COLUMN priv_env TEXT`, `ALTER TABLE users ADD COLUMN tel_env TEXT`, `ALTER TABLE users ADD COLUMN tel_hash TEXT`, `ALTER TABLE statuses ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE chats ADD COLUMN expires INTEGER`, `ALTER TABLE statuses ADD COLUMN music TEXT`, `ALTER TABLE users ADD COLUMN handle_set INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN handle_at INTEGER`, `CREATE TABLE IF NOT EXISTS memories(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL, media TEXT NOT NULL, thumb TEXT, env TEXT NOT NULL, aud TEXT NOT NULL, taken_at INTEGER NOT NULL, created_at INTEGER NOT NULL)`, `CREATE INDEX IF NOT EXISTS mem_user ON memories(user_id, taken_at)`, `CREATE TABLE IF NOT EXISTS mem_access(mem_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(mem_id, user_id))`, `CREATE TABLE IF NOT EXISTS corpus(id INTEGER PRIMARY KEY, src TEXT NOT NULL, sl TEXT, tgt TEXT NOT NULL, tl TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL)`, `CREATE UNIQUE INDEX IF NOT EXISTS corpus_u ON corpus(src, tl, tgt, kind)`, `CREATE TABLE IF NOT EXISTS tr_mine(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, id TEXT NOT NULL, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(user_id, id))`, `CREATE TABLE IF NOT EXISTS tr_votes(id TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cid TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(id, user_id))`, `CREATE TABLE IF NOT EXISTS tr_cache(id TEXT PRIMARY KEY, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL)`, `ALTER TABLE tr_cache ADD COLUMN promoted INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
 db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, call_id TEXT NOT NULL, kind TEXT NOT NULL, chat_id INTEGER NOT NULL, caller INTEGER NOT NULL, callee INTEGER, video INTEGER NOT NULL, status TEXT NOT NULL, joined TEXT NOT NULL DEFAULT '[]', started INTEGER NOT NULL, answered INTEGER, ended INTEGER);
@@ -125,6 +125,25 @@ function push(uid, ev) {
   for (const res of s) { try { res.write(data); } catch {} }
 }
 const pushMany = (ids, ev) => ids.forEach(id => push(id, ev));
+// Le vrai nom (facultatif) n'est montré qu'à soi-même et à ses contacts acceptés ; les autres ne voient que le pseudo.
+const nameFor = (u, viewer) => { if (!u) return ''; const r = viewer == null ? 'none' : relation(viewer, u.id); return (r === 'me' || r === 'contact') && u.name ? u.name : '@' + u.handle; };
+const firstFor = (u, viewer) => { const n = nameFor(u, viewer); return n.startsWith('@') ? n : n.split(' ')[0]; };
+// Dans un groupe, les membres ne se connaissent pas tous : le message système montre le pseudo.
+const nameInChat = (u, c) => c.type === 'direct' && !c.expires && u.name ? u.name : '@' + u.handle;
+function normHandle(v) {
+  const h = String(v || '').trim().replace(/^@/, '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (!/^[a-z0-9][a-z0-9._]{2,19}$/.test(h)) E(400, 'Pseudo : 3 à 20 caractères, lettres, chiffres, point ou tiret bas (sans espace).');
+  return h;
+}
+function handleIdeas(u, seed) {
+  const b = String(seed || u?.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  const f = b[0] || 'membre', l = b[1] || '', y = String(new Date().getFullYear()).slice(2);
+  const raw = [u && u.handle, l ? `${f}.${l}` : `${f}.tt`, l ? `${f[0]}${l}` : `${f}${y}`, `${f}_${Math.floor(10 + Math.random() * 89)}`, `${f}${l}${Math.floor(1 + Math.random() * 98)}`];
+  const out = [];
+  for (let h of raw) { if (!h) continue; h = h.replace(/[^a-z0-9._]/g, '').slice(0, 20); if (h.length < 3) h = (h + 'tam').slice(0, 20);
+    const own = u && h === u.handle; if (!out.includes(h) && (own || !q1(`SELECT 1 FROM users WHERE handle=?`, h))) out.push(h); if (out.length >= 3) break; }
+  return out;
+}
 function presence(uid) { const ids = contactIds(uid), a = availOf(uid); pushMany(ids, { t: 'presence', id: uid, online: shownOnline(uid), busy: a === 'busy', lastSeen: a === 'off' ? null : q1(`SELECT last_seen FROM users WHERE id=?`, uid)?.last_seen || null }); }
 setInterval(() => { for (const s of streams.values()) for (const res of s) { try { res.write(': ping\n\n'); } catch {} } }, 25_000);
 
@@ -133,7 +152,7 @@ const mediaUrl = id => id ? `/api/media/${id}` : null;
 function userCard(u, me) {
   if (!u) return null;
   const pub = J(u.pub, {}), rel = me ? relation(me, u.id) : 'none';
-  const card = { id: u.id, name: u.name, handle: u.handle, avatar: J(u.avatar, null), photo: mediaUrl(u.photo), rel, online: rel === 'me' ? online(u.id) : rel === 'contact' ? (u.avail !== 'off' && online(u.id)) : undefined,
+  const card = { id: u.id, name: (rel === 'me' || rel === 'contact') && u.name ? u.name : '@' + u.handle, handle: u.handle, avatar: J(u.avatar, null), photo: mediaUrl(u.photo), rel, online: rel === 'me' ? online(u.id) : rel === 'contact' ? (u.avail !== 'off' && online(u.id)) : undefined,
     busy: rel === 'contact' && u.avail === 'busy' ? true : undefined,
     lastSeen: rel === 'contact' && u.avail !== 'off' ? u.last_seen : undefined, pub: {}, mutual: 0, pubkey: u.pubkey ? J(u.pubkey, null) : null };
   for (const k of PUB_K) if (pub[k] != null && pub[k] !== '') card.pub[k] = pub[k];
@@ -262,7 +281,7 @@ function tooMany(key, max = 10, win = 15 * 60_000) {
 }
 const ipOf = req => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
 function meOut(u) {
-  return { ...userCard(u, u.id), email: u.email, priv: u.priv_env ? {} : J(u.priv, {}), privPics: u.priv_env ? [null, null, null] : picsOf(u, 'priv'), privEnv: u.priv_env ? J(u.priv_env, null) : null, telEnv: u.tel_env ? J(u.tel_env, null) : null, legacyPriv: !u.priv_env, listed: !!u.listed, avail: u.avail || 'on', trConsent: u.tr_consent == null ? null : !!u.tr_consent, privTo: u.priv_to, admin: !!u.admin, hasHideCode: !!u.hide_code,
+  return { ...userCard(u, u.id), rawName: u.name || '', handleSet: !!u.handle_set, handleAt: u.handle_at || null, email: u.email, priv: u.priv_env ? {} : J(u.priv, {}), privPics: u.priv_env ? [null, null, null] : picsOf(u, 'priv'), privEnv: u.priv_env ? J(u.priv_env, null) : null, telEnv: u.tel_env ? J(u.tel_env, null) : null, legacyPriv: !u.priv_env, listed: !!u.listed, avail: u.avail || 'on', trConsent: u.tr_consent == null ? null : !!u.tr_consent, privTo: u.priv_to, admin: !!u.admin, hasHideCode: !!u.hide_code,
     close: qa(`SELECT member FROM close_group WHERE owner=?`, u.id).map(r => r.member),
     blocked: qa(`SELECT blocked FROM blocks WHERE user_id=?`, u.id).map(r => userCard(getUser(r.blocked), u.id)).filter(Boolean),
     cguAt: u.cgu_at, createdAt: u.created_at };
@@ -283,20 +302,18 @@ R('GET', /^\/api\/meta$/, async ({ req, url }) => {
   const code = url.searchParams.get('invite'), inv = inviteValid(code);
   const n = q1(`SELECT COUNT(*) n FROM users`).n;
   return { mail: !!getTransport(), google: !!googleSettings(), ownerSetup: n === 0, ownerEmail: n === 0 && OWNER ? OWNER.replace(/^(.).*(@.*)$/, '$1•••$2') : null,
-    invite: inv ? { by: getUser(inv.by_user)?.name || '' } : null };
+    invite: inv ? { by: (u => u ? (inv.qr || !u.name ? '@' + u.handle : u.name) : '')(getUser(inv.by_user)) } : null };
 }, false);
 
 R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   if (tooMany('reg:' + ipOf(req), 8, 60 * 60_000)) E(429, 'Trop de tentatives. Réessayez plus tard.');
   const gp = body.gtok ? q1(`SELECT * FROM gpending WHERE token=? AND expires>?`, sha(String(body.gtok)), now()) : null;
   if (body.gtok && !gp) E(400, 'La connexion Google a expiré. Recommencez avec « Continuer avec Google ».');
-  const email = gp ? gp.email : clean(body.email, 120).toLowerCase(), fname = clean(body.first || body.name, 30), lname = clean(body.last, 30), name = (lname ? `${fname} ${lname}` : fname).slice(0, 40), pass = gp ? rnd(24) : String(body.pass || '');
+  const email = gp ? gp.email : clean(body.email, 120).toLowerCase(), fname = clean(body.first, 30), lname = clean(body.last, 30), name = (lname ? `${fname} ${lname}` : fname).slice(0, 40), pass = gp ? rnd(24) : String(body.pass || '');
   if (gp && !body.invite && gp.invite) body.invite = gp.invite;
-  if (!fname) E(400, 'Indiquez votre prénom.');
-  let handle = null;
-  if (body.handle) { handle = String(body.handle).trim().replace(/^@/, '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    if (!/^[a-z0-9._]{3,20}$/.test(handle)) E(400, 'Pseudo : 3 à 20 caractères, lettres, chiffres, point ou tiret bas.');
-    if (q1(`SELECT 1 FROM users WHERE handle=?`, handle)) E(409, 'Ce pseudo est déjà pris. Choisissez-en un autre.'); }
+  if (!body.handle) E(400, 'Choisissez un pseudo : c’est lui que voient les membres.');
+  const handle = normHandle(body.handle);
+  if (q1(`SELECT 1 FROM users WHERE handle=?`, handle)) E(409, 'Ce pseudo est déjà pris. Choisissez-en un autre.');
   if (!isEmail(email)) E(400, 'Adresse e-mail invalide.');
   if (!gp) passOk(pass, email);
   if (!body.cgu) E(400, 'Acceptez les Conditions générales pour créer votre compte.');
@@ -309,8 +326,8 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   if (q1(`SELECT 1 FROM users WHERE email=?`, email)) E(409, 'Un compte existe déjà avec cette adresse. Connectez-vous.');
   const av = avatarJson(body.avatar) || JSON.stringify({ v: 2, st: 'court', sk: 'c', sh: '#14b8c9' });
   const id = run(`INSERT INTO users(email,pass,name,handle,avatar,admin,invited_by,cgu_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
-    email, hashPass(pass), name, handle || slugHandle(name), av, first ? 1 : 0, inv ? inv.by_user : null, now(), now()).lastInsertRowid;
-  run(`UPDATE users SET tr_consent=? WHERE id=?`, body.trc ? 1 : 0, Number(id));
+    email, hashPass(pass), name, handle, av, first ? 1 : 0, inv ? inv.by_user : null, now(), now()).lastInsertRowid;
+  run(`UPDATE users SET tr_consent=?, handle_set=1 WHERE id=?`, body.trc ? 1 : 0, Number(id));
   if (gp) { run(`UPDATE users SET google_sub=? WHERE id=?`, gp.sub, Number(id)); run(`DELETE FROM gpending WHERE token=?`, gp.token); }
   if (inv) {
     if (!inv.qr) run(`UPDATE invites SET uses=uses+1 WHERE code=?`, inv.code);
@@ -347,13 +364,19 @@ R('POST', /^\/api\/reset$/, async ({ req, res, body }) => {
 }, false);
 
 R('GET', /^\/api\/me$/, async ({ me }) => ({ me: meOut(me) }));
+R('GET', /^\/api\/handle\/ideas$/, async ({ me, url }) => ({ ideas: handleIdeas(me, url.searchParams.get('from')) }));
+R('GET', /^\/api\/handle\/free$/, async ({ me, url }) => { let h; try { h = normHandle(url.searchParams.get('h')); } catch (e) { return { ok: false, why: e.message }; } const t = q1(`SELECT id FROM users WHERE handle=?`, h); return { ok: !t || t.id === me.id, why: t && t.id !== me.id ? 'Déjà pris.' : '' }; });
 R('POST', /^\/api\/me$/, async ({ me, body }) => {
-  if (body.name != null) { const n = clean(body.name, 40); if (!n) E(400, 'Indiquez votre nom.'); run(`UPDATE users SET name=? WHERE id=?`, n, me.id); }
+  if (body.name != null) run(`UPDATE users SET name=? WHERE id=?`, clean(body.name, 40), me.id);
   if (body.handle != null) {
-    const h = clean(body.handle, 24).toLowerCase().replace(/^@/, '');
-    if (!/^[a-z0-9][a-z0-9._]{2,23}$/.test(h)) E(400, 'Le pseudo doit faire 3 à 24 caractères : lettres, chiffres, point ou tiret bas.');
-    if (q1(`SELECT 1 FROM users WHERE handle=? AND id<>?`, h, me.id)) E(409, 'Ce pseudo est déjà pris.');
-    run(`UPDATE users SET handle=? WHERE id=?`, h, me.id);
+    const h = normHandle(body.handle);
+    if (h !== me.handle || !me.handle_set) {
+      // Changer de pseudo reste libre, mais une fois par mois au plus, pour éviter les usurpations. Le tout premier choix ne compte pas.
+      const next = (me.handle_at || 0) + 30 * DAY;
+      if (me.handle_set && h !== me.handle && me.handle_at && next > now()) E(429, `Vous avez déjà changé de pseudo ce mois-ci. Prochain changement possible le ${new Date(next).toLocaleDateString('fr-FR', {day: 'numeric', month: 'long'})}.`);
+      if (q1(`SELECT 1 FROM users WHERE handle=? AND id<>?`, h, me.id)) E(409, 'Ce pseudo est déjà pris. Choisissez-en un autre.');
+      run(`UPDATE users SET handle=?, handle_at=?, handle_set=1 WHERE id=?`, h, me.handle_set && h !== me.handle ? now() : me.handle_at, me.id);
+    }
   }
   if (body.avatar) { const aj = avatarJson(body.avatar); if (!aj) E(400, 'Avatar inconnu.'); run(`UPDATE users SET avatar=? WHERE id=?`, aj, me.id); }
   if (body.photo === null) { if (me.photo) dropMedia(me.photo); run(`UPDATE users SET photo=NULL WHERE id=?`, me.id); }
@@ -424,7 +447,7 @@ R('POST', /^\/api\/messages\/(\d+)\/opened$/, async ({ me, m }) => {
 // Capture d'écran repérée sur l'appareil : on prévient tout le monde dans la discussion.
 R('POST', /^\/api\/chats\/(\d+)\/shot$/, async ({ me, m, body }) => {
   const c = chatFor(me, +m[1]); if (tooMany('shot:' + me.id, 10, 60_000)) return { ok: true };
-  sysMsg(c.id, `📸 ${me.name} a fait une capture d’écran${body.once ? ' d’un message à vue unique' : ''}`); return { ok: true };
+  sysMsg(c.id, `📸 ${nameInChat(me, c)} a fait une capture d’écran${body.once ? ' d’un message à vue unique' : ''}`); return { ok: true };
 });
 // Déverrouillage de secours : le mot de passe Tam-Tam, vérifié sans déconnecter.
 R('POST', /^\/api\/me\/unlock$/, async ({ me, body }) => {
@@ -464,8 +487,8 @@ R('POST', /^\/api\/invites$/, async ({ me }) => {
 /* personnes et contacts */
 R('GET', /^\/api\/users\/search$/, async ({ me, url }) => {
   const q = clean(url.searchParams.get('q'), 60).toLowerCase().replace(/^@/, ''); if (q.length < 2) return { users: [] };
-  const rows = qa(`SELECT * FROM users WHERE id<>? AND (handle LIKE ? OR lower(name) LIKE ?) LIMIT 30`, me.id, q + '%', '%' + q + '%');
-  return { users: rows.filter(u => !blockedEither(me.id, u.id)).slice(0, 20).map(u => userCard(u, me.id)) };
+  const rows = qa(`SELECT * FROM users WHERE id<>? AND (handle LIKE ? OR lower(name) LIKE ?) LIMIT 60`, me.id, q + '%', '%' + q + '%');
+  return { users: rows.filter(u => !blockedEither(me.id, u.id) && (u.handle.startsWith(q) || relation(me.id, u.id) === 'contact')).slice(0, 20).map(u => userCard(u, me.id)) };
 });
 R('GET', /^\/api\/users\/(\d+)$/, async ({ me, m }) => {
   const u = getUser(+m[1]); if (!u || (blockedEither(me.id, u.id) && !iBlocked(me.id, u.id))) E(404, 'Personne introuvable.');
@@ -536,7 +559,7 @@ R('POST', /^\/api\/chats\/group$/, async ({ me, body }) => {
   const cid = Number(run(`INSERT INTO chats(type,name,created_by,created_at) VALUES('group',?,?,?)`, name, me.id, now()).lastInsertRowid);
   run(`INSERT INTO members(chat_id,user_id,admin,joined_at) VALUES(?,?,1,?)`, cid, me.id, now());
   for (const u of ids) run(`INSERT INTO members(chat_id,user_id,joined_at) VALUES(?,?,?)`, cid, u, now());
-  sysMsg(cid, `${me.name} a créé le groupe « ${name} »`);
+  sysMsg(cid, `@${me.handle} a créé le groupe « ${name} »`);
   pushMany(ids, { t: 'chats' });
   return { chat: chatOut(q1(`SELECT * FROM chats WHERE id=?`, cid), me.id) };
 });
@@ -574,15 +597,15 @@ R('POST', /^\/api\/call\/signal$/, async ({ me, body }) => {
   if (type === 'ring') {
     // Le téléphone de la personne appelée sonne même si tam-tam est fermé : notification « touchez pour répondre ».
     pendingRings.set(to, { ev, at: now() });
-    webPush(to, { title: me.name, body: `📞 ${body.video ? 'Appel vidéo' : 'Appel vocal'} entrant · touchez pour répondre`, tag: 'ring-' + callId, url: '/?call=' + callId, ring: true }, true);
+    webPush(to, { title: nameFor(me, to), body: `📞 ${body.video ? 'Appel vidéo' : 'Appel vocal'} entrant · touchez pour répondre`, tag: 'ring-' + callId, url: '/?call=' + callId, ring: true }, true);
   }
   if (['accept', 'decline', 'busy', 'end'].includes(type)) { const who = type === 'end' ? to : me.id, pr = pendingRings.get(who); if (pr && pr.ev.callId === callId) pendingRings.delete(who); }
-  if (type === 'end') webPush(to, { title: me.name, body: 'Appel terminé', tag: 'ring-' + callId, url: '/?chat=' + cid, close: true }, true);
+  if (type === 'end') webPush(to, { title: nameFor(me, to), body: 'Appel terminé', tag: 'ring-' + callId, url: '/?chat=' + cid, close: true }, true);
   push(to, ev);
   if (type === 'accept' || type === 'decline') push(me.id, { ...ev, elsewhere: true }); // arrête la sonnerie sur mes autres appareils
   if (type === 'end' && body.log) {
     const d = Math.max(0, Math.round(+body.log.dur || 0)), v = body.video ? 'Appel vidéo' : 'Appel vocal';
-    sysMsg(cid, d > 0 ? `${v} · ${d >= 60 ? Math.floor(d / 60) + ' min ' + String(d % 60).padStart(2, '0') + ' s' : d + ' s'}` : `${v} manqué de ${me.name.split(' ')[0]}`);
+    sysMsg(cid, d > 0 ? `${v} · ${d >= 60 ? Math.floor(d / 60) + ' min ' + String(d % 60).padStart(2, '0') + ' s' : d + ' s'}` : `${v} manqué de ${firstFor(me, to)}`);
   }
   return { ok: true, pushed: wasOffline };
 });
@@ -642,7 +665,7 @@ R('POST', /^\/api\/gcall\/start$/, async ({ me, body }) => {
   const id = crypto.randomBytes(9).toString('base64url'), video = !!body.video;
   gcalls.set(id, { chatId: c.id, video, parts: new Set(), started: now() });
   run(`INSERT INTO calls(call_id,kind,chat_id,caller,callee,video,status,started) VALUES(?,?,?,?,NULL,?,?,?)`, id, 'group', c.id, me.id, video ? 1 : 0, 'answered', now());
-  const fn = me.name.split(' ')[0];
+  const fn = '@' + me.handle;
   sysMsg(c.id, `${fn} a lancé un appel ${video ? 'vidéo' : 'vocal'} de groupe`);
   for (const uid of memberIds(c.id)) if (uid !== me.id) {
     push(uid, { t: 'gcall', type: 'ring', callId: id, chatId: c.id, from: me.id, video });
@@ -803,13 +826,13 @@ function chatFor(me, id) { const c = q1(`SELECT * FROM chats WHERE id=?`, id); i
 R('POST', /^\/api\/chats\/(\d+)\/members$/, async ({ me, m, body }) => {
   const c = chatFor(me, +m[1]); if (c.type !== 'group') E(400, 'Seuls les groupes acceptent de nouveaux membres.');
   const ok = new Set(contactIds(me.id)), ids = (body.add || []).map(Number).filter(x => ok.has(x) && !isMember(c.id, x));
-  for (const u of ids) { run(`INSERT INTO members(chat_id,user_id,joined_at) VALUES(?,?,?)`, c.id, u, now()); sysMsg(c.id, `${me.name} a ajouté ${getUser(u).name}`); }
+  for (const u of ids) { run(`INSERT INTO members(chat_id,user_id,joined_at) VALUES(?,?,?)`, c.id, u, now()); sysMsg(c.id, `@${me.handle} a ajouté @${getUser(u).handle}`); }
   pushMany(memberIds(c.id), { t: 'chats' });
   return { chat: chatOut(c, me.id) };
 });
 R('POST', /^\/api\/chats\/(\d+)\/leave$/, async ({ me, m }) => {
   const c = chatFor(me, +m[1]); if (c.type !== 'group') E(400, 'Impossible de quitter une discussion à deux.');
-  run(`DELETE FROM members WHERE chat_id=? AND user_id=?`, c.id, me.id); sysMsg(c.id, `${me.name} a quitté le groupe`);
+  run(`DELETE FROM members WHERE chat_id=? AND user_id=?`, c.id, me.id); sysMsg(c.id, `@${me.handle} a quitté le groupe`);
   if (!q1(`SELECT 1 FROM members WHERE chat_id=?`, c.id)) run(`DELETE FROM chats WHERE id=?`, c.id);
   return { ok: true };
 });
@@ -840,11 +863,10 @@ R('POST', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, body }) => {
   run(`UPDATE members SET last_read=? WHERE chat_id=? AND user_id=?`, id, c.id, me.id);
   const msg = msgOut(q1(`SELECT * FROM messages WHERE id=?`, id));
   pushMany(memberIds(c.id), { t: 'msg', msg });
-  const fn = me.name.split(' ')[0];
   const hiddenFor = new Set(qa(`SELECT user_id FROM members WHERE chat_id=? AND hidden=1`, c.id).map(r => r.user_id));
   for (const uid of memberIds(c.id)) if (uid !== me.id) webPush(uid, hiddenFor.has(uid) ? { title: 'tam-tam', body: 'Nouveau message', tag: 'chat-p', url: '/' } : c.type === 'group'
-    ? { title: c.name || 'Groupe', body: `${fn} : ${media ? (body.kind === 'video' ? '🎥 Vidéo' : body.kind === 'audio' ? '🎤 Vocal' : '📷 Photo') : 'nouveau message'}`, tag: 'chat-' + c.id, url: '/?chat=' + c.id }
-    : { title: me.name, body: media ? (body.kind === 'video' ? '🎥 Vidéo' : body.kind === 'audio' ? '🎤 Vocal' : '📷 Photo') : 'Nouveau message', tag: 'chat-' + c.id, url: '/?chat=' + c.id });
+    ? { title: c.name || 'Groupe', body: `${firstFor(me, uid)} : ${media ? (body.kind === 'video' ? '🎥 Vidéo' : body.kind === 'audio' ? '🎤 Vocal' : '📷 Photo') : 'nouveau message'}`, tag: 'chat-' + c.id, url: '/?chat=' + c.id }
+    : { title: nameFor(me, uid), body: media ? (body.kind === 'video' ? '🎥 Vidéo' : body.kind === 'audio' ? '🎤 Vocal' : '📷 Photo') : 'Nouveau message', tag: 'chat-' + c.id, url: '/?chat=' + c.id });
   return { msg };
 });
 R('POST', /^\/api\/chats\/(\d+)\/read$/, async ({ me, m, body }) => {
@@ -990,7 +1012,7 @@ R('POST', /^\/api\/keys$/, async ({ me, body }) => {
   if (JSON.stringify(b).length > 8000) E(413, 'Sauvegarde trop grande.');
   const old = me.pubkey;
   run(`UPDATE users SET pubkey=?, keybackup=? WHERE id=?`, JSON.stringify({ kty: 'EC', crv: 'P-256', x: pk.x, y: pk.y }), wrapBk(JSON.stringify({ ct: b.ct, iv: b.iv, salt: b.salt, iter: +b.iter })), me.id);
-  if (old && J(old, {}).x !== pk.x) for (const c of qa(`SELECT chat_id FROM members WHERE user_id=?`, me.id)) sysMsg(c.chat_id, `Le code de sécurité de ${me.name} a changé (nouvel appareil ou nouvelle clé).`);
+  if (old && J(old, {}).x !== pk.x) for (const c of qa(`SELECT chat_id FROM members WHERE user_id=?`, me.id)) sysMsg(c.chat_id, `Le code de sécurité de @${me.handle} a changé (nouvel appareil ou nouvelle clé).`);
   pushMany(contactIds(me.id), { t: 'contacts' });
   return { ok: true };
 });
@@ -1021,7 +1043,7 @@ R('POST', /^\/api\/forgot$/, async ({ req, body }) => {
   if (u) {
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
     run(`INSERT OR REPLACE INTO codes(email,code,tries,expires) VALUES(?,?,0,?)`, email, sha(code), now() + 15 * 60_000);
-    try { await sendMail(email, `Votre code tam-tam : ${code}`, mailHtml('Réinitialiser votre mot de passe', `<p>Bonjour ${String(u.name).replace(/[<>&]/g, '')},</p><p>Voici votre code pour choisir un nouveau mot de passe :</p><p style="font-size:30px;font-weight:800;letter-spacing:6px;margin:16px 0">${code}</p><p>Il est valable 15 minutes.</p>`)); }
+    try { await sendMail(email, `Votre code tam-tam : ${code}`, mailHtml('Réinitialiser votre mot de passe', `<p>Bonjour ${String(u.name || '').replace(/[<>&]/g, '')},</p><p>Voici votre code pour choisir un nouveau mot de passe :</p><p style="font-size:30px;font-weight:800;letter-spacing:6px;margin:16px 0">${code}</p><p>Il est valable 15 minutes.</p>`)); }
     catch (e) { console.error('envoi e-mail', e.message); E(502, 'L’e-mail n’a pas pu partir. Réessayez dans quelques minutes.'); }
   }
   return { ok: true }; // même réponse que le compte existe ou non
@@ -1076,7 +1098,7 @@ R('GET', /^\/api\/oauth\/google\/callback$/, async ({ req, res, url }) => {
 R('GET', /^\/api\/oauth\/google\/pending$/, async ({ url }) => {
   const gp = q1(`SELECT email,name,invite FROM gpending WHERE token=? AND expires>?`, sha(String(url.searchParams.get('t') || '')), now()); if (!gp) E(404, 'La connexion Google a expiré. Recommencez.');
   const inv = inviteValid(gp.invite);
-  return { email: gp.email, name: gp.name, invite: gp.invite, by: inv ? getUser(inv.by_user)?.name || '' : '' };
+  return { email: gp.email, name: gp.name, invite: gp.invite, by: inv ? (u => u ? (inv.qr || !u.name ? '@' + u.handle : u.name) : '')(getUser(inv.by_user)) : '' };
 }, false);
 
 function adminOnly(me) { if (!me.admin) E(403, 'Réservé au propriétaire.'); }

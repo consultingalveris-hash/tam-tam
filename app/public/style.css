@@ -847,3 +847,10 @@ body.in-cam{overflow:hidden}
 .ed-parts button{border:0;border-radius:99px;padding:6px 12px;background:rgb(0 0 0/.55);color:#fff;font:inherit;font-size:.85rem;display:flex;gap:6px;align-items:baseline;cursor:pointer}
 .ed-parts button small{opacity:.75}.ed-parts button[aria-pressed=true]{background:var(--accent)}
 .st-parts{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:rgb(0 0 0/.6);color:#fff;border-radius:99px;padding:5px 12px;font-size:.85rem;white-space:nowrap;z-index:2}
+
+/* choix du pseudo (comptes existants) */
+.hpick{position:fixed;inset:0;z-index:55;background:rgb(0 0 0/.6);display:grid;place-items:center;padding:16px;overflow-y:auto}
+.hp-card{background:var(--surface);color:var(--fg);border-radius:20px;max-width:400px;width:100%;padding:22px;display:grid;gap:10px;box-shadow:0 20px 50px rgb(0 0 0/.35)}
+.hp-card h2{margin:0;font-size:1.2rem}.hp-card p{margin:0;line-height:1.45}.hp-logo{width:44px;height:44px;justify-self:center}
+.hp-ideas{display:flex;flex-wrap:wrap;gap:8px}.hp-ideas button{border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:99px;padding:7px 12px;font:inherit;cursor:pointer}
+.hp-ideas button:hover{border-color:var(--accent)}.hp-card .hint.bad{color:var(--danger)}

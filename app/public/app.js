@@ -24,6 +24,7 @@ function seenLabel(t) {
 /* ---------- état ---------- */
 const S = {me: null, chats: new Map(), msgs: new Map(), more: new Map(), contacts: {contacts: [], incoming: [], outgoing: [], suggestions: []},
   statuses: {mine: {items: []}, others: []}, users: new Map(), tab: 'chats', chatId: null, q: '', typing: new Map(), lastFrom: new Map(), replyTo: null, invite: null};
+const subH = u => u && u.name && !String(u.name).startsWith('@') ? '@' + u.handle : '';
 const uOf = id => S.users.get(id) || {id, name: 'Membre', handle: '', avatar: {d: 'm2', c: 'turq'}};
 function keepUsers(list) { for (const u of list || []) if (u) S.users.set(u.id, Object.assign(S.users.get(u.id) || {}, u)); }
 
@@ -119,9 +120,10 @@ function renderAuth(msg) {
   else if (A.mode === 'register') h = `<h2>${m.ownerSetup ? 'Créer le compte du propriétaire' : 'Créer mon compte'}</h2>
     <p class="hint">${A.g && !m.ownerSetup ? (A.g.by ? `${esc(A.g.by)} vous invite sur tam-tam.` : 'Bienvenue sur tam-tam.') : m.ownerSetup ? `Premier compte de tam-tam${m.ownerEmail ? ` : utilisez l’adresse ${esc(m.ownerEmail)}` : ''}.` : m.invite ? `${esc(m.invite.by)} vous invite sur tam-tam.` : 'L’inscription se fait uniquement avec un lien d’invitation envoyé par un membre.'}</p>
     ${m.ownerSetup || m.invite || A.g ? `${A.g ? `<p class="g-ok">${gIcon()}<span>Compte Google confirmé : <b>${esc(A.g.email)}</b>. Il reste à choisir votre avatar et à accepter les conditions.</span></p>` : gBtn()}
-    <div class="field-row"><div class="field"><label for="aName">Prénom</label><input id="aName" autocomplete="given-name" maxlength="30" required value="${esc(A.g ? (A.g.name || '').split(' ')[0] : '')}"></div>
-    <div class="field"><label for="aLast">Nom</label><input id="aLast" autocomplete="family-name" maxlength="30" required value="${esc(A.g ? (A.g.name || '').split(' ').slice(1).join(' ') : '')}"></div></div>
-    <div class="field"><label for="aHandle">Pseudo <small>(facultatif)</small></label><div class="at-in"><span>@</span><input id="aHandle" autocomplete="off" maxlength="20" placeholder="ex. lion.du.sahel" pattern="[A-Za-z0-9._]{3,20}"></div><small class="hint">C’est ce nom que voient les membres qui ne vous connaissent pas encore. Laissé vide, il sera créé à partir de votre nom.</small></div>
+    <div class="field"><label for="aHandle">Pseudo</label><div class="at-in"><span>@</span><input id="aHandle" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="20" required placeholder="ex. lion.du.sahel" pattern="[A-Za-z0-9._]{3,20}"></div><small class="hint">C’est le seul nom que voient les membres qui ne sont pas vos contacts. 3 à 20 caractères : lettres, chiffres, point ou tiret bas.</small></div>
+    <div class="field-row"><div class="field"><label for="aName">Prénom <small>(facultatif)</small></label><input id="aName" autocomplete="given-name" maxlength="30" value="${esc(A.g ? (A.g.name || '').split(' ')[0] : '')}"></div>
+    <div class="field"><label for="aLast">Nom <small>(facultatif)</small></label><input id="aLast" autocomplete="family-name" maxlength="30" value="${esc(A.g ? (A.g.name || '').split(' ').slice(1).join(' ') : '')}"></div></div>
+    <p class="hint">Votre prénom et votre nom, si vous les indiquez, ne sont visibles que par vos contacts.</p>
     ${A.g ? '' : `<div class="field"><label for="aMail">Adresse e-mail</label><input id="aMail" type="email" autocomplete="email" required></div>
     <div class="field"><label for="aPass">Mot de passe (8 caractères minimum)</label><div class="pw"><input id="aPass" type="password" autocomplete="new-password" minlength="8" required><button type="button" data-act="pwShow">Voir</button></div></div>`}
     <span class="lbl">Votre avatar</span>${avGallery(A.avatar, 'auth')}
@@ -148,7 +150,7 @@ async function submitAuth() {
     if (A.mode === 'forgot' && A.step === 1) { A.fmail = v('fMail').trim(); await api('/api/forgot', {email: A.fmail}); A.step = 2; return renderAuth(); }
     if (A.mode === 'forgot') r = await api('/api/forgot/verify', {email: A.fmail, code: v('fCode'), pass: v('aPass')});
     else if (A.mode === 'reset') r = await api('/api/reset', {token: A.token, pass: v('aPass')});
-    else if (A.mode === 'register') r = await api('/api/register', {first: v('aName'), last: v('aLast'), handle: v('aHandle'), name: v('aName'), email: v('aMail'), pass: v('aPass'), gtok: A.g ? A.g.tok : undefined, avatar: A.avatar, age: $('#aAge').checked, cgu: $('#aCgu').checked,  invite: S.invite});
+    else if (A.mode === 'register') r = await api('/api/register', {first: v('aName'), last: v('aLast'), handle: v('aHandle'), email: v('aMail'), pass: v('aPass'), gtok: A.g ? A.g.tok : undefined, avatar: A.avatar, age: $('#aAge').checked, cgu: $('#aCgu').checked,  invite: S.invite});
     else r = await api('/api/login', {email: v('aMail'), pass: v('aPass')});
     S.me = r.me; keepUsers([r.me]); history.replaceState(null, '', '/'); start();
   } catch (e) { err(e.message); if (btn) btn.disabled = false; }
@@ -169,12 +171,33 @@ async function startApp() {
   await Promise.all([loadChats(), loadContacts(), loadStatuses()]).catch(e => toast(e.message));
   await PP.init().catch(() => {});
   api('/api/translate/status').then(r => { Tr.st = r; renderComposer(); }).catch(() => {});
-  renderAll(); connect(); if (S.locked) showLock();
+  renderAll(); connect(); if (S.locked) showLock(); if (!S.me.handleSet) HPick.open();
   GCall.loadActive(); Call.checkPending(); Device.badge();
   if (S.lock.type === 'off') return requireLock();
   if (S.pendingChat && S.chats.has(S.pendingChat)) openChat(S.pendingChat); S.pendingChat = 0;
   if (S.qrAdd) { const t = S.qrAdd; S.qrAdd = null; Qr.connect(t); }
 }
+/* Comptes créés avant le pseudo obligatoire : on demande d'en choisir un (une seule fois). */
+const HPick = {
+  async open() {
+    if ($('#hpick')) return; let ideas = [];
+    try { ideas = (await api('/api/handle/ideas')).ideas; } catch {}
+    const el = document.createElement('div'); el.id = 'hpick'; el.className = 'hpick';
+    el.innerHTML = `<form class="hp-card" role="dialog" aria-modal="true" aria-labelledby="hpT"><img src="/logo-tamtam.svg" alt="" class="hp-logo"><h2 id="hpT">Choisissez votre pseudo</h2>
+      <p>Pour protéger vos données, les membres qui ne sont pas vos contacts ne voient plus que votre pseudo. Votre prénom et votre nom restent visibles par vos contacts.</p>
+      ${ideas.length ? `<span class="lbl">Propositions (touchez pour choisir)</span><div class="hp-ideas">${ideas.map(h => `<button type="button" data-h="${esc(h)}">@${esc(h)}</button>`).join('')}</div>` : ''}
+      <div class="field"><label for="hpIn">Ou tapez le vôtre</label><div class="at-in"><span>@</span><input id="hpIn" maxlength="20" autocapitalize="none" spellcheck="false" autocomplete="off" required value="${esc(ideas[0] || S.me.handle || '')}"></div></div>
+      <small class="hint" id="hpMsg">3 à 20 caractères : lettres, chiffres, point ou tiret bas.</small>
+      <button class="btn" type="submit">Valider mon pseudo</button></form>`;
+    document.body.appendChild(el);
+    const inp = el.querySelector('#hpIn'), msg = el.querySelector('#hpMsg'); let t;
+    el.addEventListener('click', e => { const b = e.target.closest('[data-h]'); if (b) { inp.value = b.dataset.h; inp.dispatchEvent(new Event('input')); } });
+    inp.addEventListener('input', () => { clearTimeout(t); const v = inp.value.trim(); if (v.length < 3) return; t = setTimeout(async () => { try { const r = await api('/api/handle/free?h=' + encodeURIComponent(v)); msg.textContent = r.ok ? '✓ Ce pseudo est libre.' : r.why; msg.classList.toggle('bad', !r.ok); } catch {} }, 350); });
+    el.querySelector('form').addEventListener('submit', async e => { e.preventDefault(); const b = el.querySelector('[type=submit]'); b.disabled = true;
+      try { const r = await api('/api/me', {handle: inp.value}); S.me = r.me; keepUsers([r.me]); el.remove(); renderAll(); toast(`Votre pseudo : @${r.me.handle}`); }
+      catch (er) { msg.textContent = er.message; msg.classList.add('bad'); b.disabled = false; } });
+  },
+};
 function connect() {
   if (es) es.close();
   es = new EventSource('/api/stream');
@@ -336,7 +359,7 @@ function relBtn(u) {
   if (u.rel === 'sent') return `<button class="btn sm ghost" type="button" data-act="cRemove" data-id="${u.id}">Annuler</button>`;
   return `<button class="btn sm" type="button" data-act="cRequest" data-id="${u.id}">${I.plus}Ajouter</button>`;
 }
-const pseudoRow = u => `<div class="row">${avOn(u)}<button class="row-name linkless" type="button" data-act="prof" data-id="${u.id}" style="border:0;background:none;padding:0;text-align:left;display:flex;flex-direction:column;align-items:flex-start;min-width:0"><b>@${esc(u.handle)}</b><small style="color:var(--fg-2);font-weight:400">${esc(u.name)}${u.mutual ? ` · ${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun` : ''}</small></button><span class="row-end">${relBtn(u)}</span></div>`;
+const pseudoRow = u => `<div class="row">${avOn(u)}<button class="row-name linkless" type="button" data-act="prof" data-id="${u.id}" style="border:0;background:none;padding:0;text-align:left;display:flex;flex-direction:column;align-items:flex-start;min-width:0"><b>@${esc(u.handle)}</b><small style="color:var(--fg-2);font-weight:400">${subH(u) ? esc(u.name) : ''}${u.mutual ? ` · ${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun` : ''}</small></button><span class="row-end">${relBtn(u)}</span></div>`;
 const userRow = (u, extra) => `<div class="row">${avOn(u)}<button class="row-name linkless" type="button" data-act="prof" data-id="${u.id}" style="border:0;background:none;padding:0;text-align:left">${esc(u.name)}</button><span class="row-end">${extra || relBtn(u)}</span>
   <span class="row-prev"><span>@${esc(u.handle)}${u.pub && u.pub.ville ? ' · ' + esc(u.pub.ville) : ''}${u.mutual ? ` · ${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun` : ''}</span></span></div>`;
 function contactsBody() {
@@ -375,7 +398,7 @@ async function profSheet(id, back) {
   let u = uOf(id);
   try { const r = await api('/api/users/' + id); u = r.user; if (u.id !== S.me.id) await PP.reveal(u); else PP.data && PP.attach(u); keepUsers([u]); } catch (e) { return toast(e.message); }
   const p = u.pub || {}, bd = p.bd && p.bm ? `${p.bd} ${MOIS[p.bm - 1]}` : '';
-  sheet(`${back ? `<div class="sheet-head"><button class="ib back-b" type="button" data-act="profBack" aria-label="Retour à la liste">${I.back}</button><h2 style="flex:1">Profil</h2><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>` : head('Profil')}<div class="sheet-body"><div class="prof">${avatar(u, 'xl')}<b>${esc(u.name)}</b><span>@${esc(u.handle)}</span>${u.rel === 'contact' ? `<small>${presLabel(u).replace(/^./, x => x.toUpperCase())}</small>` : ''}${u.mutual ? `<small>${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun</small>` : ''}</div>
+  sheet(`${back ? `<div class="sheet-head"><button class="ib back-b" type="button" data-act="profBack" aria-label="Retour à la liste">${I.back}</button><h2 style="flex:1">Profil</h2><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>` : head('Profil')}<div class="sheet-body"><div class="prof">${avatar(u, 'xl')}<b>${esc(u.name)}</b>${subH(u) ? `<span>${esc(subH(u))}</span>` : ''}${u.rel === 'contact' ? `<small>${presLabel(u).replace(/^./, x => x.toUpperCase())}</small>` : ''}${u.mutual ? `<small>${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun</small>` : ''}</div>
     ${dl(PUB_L.map(([k, l]) => [l, p[k]]).concat([['Anniversaire', bd]])) || '<p class="hint" style="text-align:center">Profil public encore vide.</p>'}
     ${u.rel === 'contact' && u.pubkey ? `<p class="hint">${I.shield} Code de sécurité de ${esc(first(u.name))} : <b class="fp" id="peerFp">…</b></p>` : ''}
     ${u.limTheirs ? `<p class="hint">${I.lock} Ajouté par code QR : vous voyez seulement son profil public.</p>` : ''}
@@ -715,7 +738,7 @@ function chatMenu() {
 function groupInfo() {
   const c = S.chats.get(S.chatId); if (!c) return;
   sheet(`${head(esc(c.name))}<div class="sheet-body"><div class="prof">${grpAv(c, 'lg')}<b>${esc(c.name)}</b><span>Groupe · ${c.members.length} membres</span></div></div>
-    <div class="sheet-scroll">${c.members.map(m => { const u = m.id === S.me.id ? S.me : uOf(m.id); return `<button class="row" type="button" data-act="${m.id === S.me.id ? 'close' : 'prof'}" data-id="${m.id}">${avOn(u)}<span class="row-name">${esc(m.id === S.me.id ? 'Vous' : u.name)}</span><span class="row-prev"><span>${m.admin ? 'Créateur du groupe' : '@' + esc(u.handle || '')}</span></span></button>`; }).join('')}</div>`, 'Infos du groupe');
+    <div class="sheet-scroll">${c.members.map(m => { const u = m.id === S.me.id ? S.me : uOf(m.id); return `<button class="row" type="button" data-act="${m.id === S.me.id ? 'close' : 'prof'}" data-id="${m.id}">${avOn(u)}<span class="row-name">${esc(m.id === S.me.id ? 'Vous' : u.name)}</span><span class="row-prev"><span>${m.admin ? 'Créateur du groupe' : esc(subH(u))}</span></span></button>`; }).join('')}</div>`, 'Infos du groupe');
 }
 function reportSheet(userId, chatId) {
   const reasons = ['Arnaque ou spam', 'Harcèlement ou menaces', 'Propos haineux ou racistes', 'Contenu choquant ou sexuel', 'Usurpation d’identité', 'Atteinte à un mineur', 'Autre motif'];
@@ -887,16 +910,16 @@ function profileEditor() {
   const f = (set, k, l, ph = '', type = 'text', max = 80) => `<div class="field"><label for="p-${k}">${l}</label>${k === 'bio' ? `<textarea id="p-${k}" data-set="${set}" data-k="${k}" rows="2" maxlength="200" placeholder="${ph}">${esc((set === 'pub' ? p : pv)[k] || '')}</textarea>` : `<input id="p-${k}" data-set="${set}" data-k="${k}" type="${type}" maxlength="${max}" placeholder="${ph}" value="${esc((set === 'pub' ? p : pv)[k] || '')}">`}</div>`;
   const LOCKS = [['contacts', I.globe, 'Ouvert', 'Tous mes amis le voient'], ['grp', I.lock, 'Verrouillé', 'Seulement mon groupe privé'], ['me', I.lock, 'Fermé', 'Personne, sauf moi']];
   return `<div class="set myprof">
-    <div class="set-top">${avatar(me, 'lg')}<div><b>${esc(me.name)}</b><span>@${esc(me.handle)}</span></div></div>
+    <div class="set-top">${avatar(me, 'lg')}<div><b>${esc(me.name)}</b>${subH(me) ? `<span>${esc(subH(me))}</span>` : ''}</div></div>
     <div class="seg" role="tablist"><button type="button" role="tab" data-act="profTab" data-t="pub" aria-selected="${t === 'pub'}">${I.globe}Profil public</button><button type="button" role="tab" data-act="profTab" data-t="priv" aria-selected="${t === 'priv'}">${I.lock}Profil privé</button></div>
     ${t === 'pub' ? `<p class="note">${I.globe}Visible par tous les membres de Tam-Tam, notamment quand quelqu’un veut vous ajouter. Il l’aide à savoir qui vous êtes.</p>
     <div class="set-block">
-      <div class="field"><label for="p-name">Nom</label><input id="p-name" data-set="name" maxlength="40" value="${esc(me.name)}"></div>
-      <div class="field"><label for="p-handle">Pseudo</label><input id="p-handle" data-set="handle" maxlength="24" value="${esc(me.handle)}"></div>
+      <div class="field"><label for="p-handle">Pseudo</label><div class="at-in"><span>@</span><input id="p-handle" data-set="handle" maxlength="20" autocapitalize="none" spellcheck="false" value="${esc(me.handle)}"></div><small class="hint">Visible par tous. Vous pouvez le changer quand vous voulez, une fois par mois au maximum.</small></div>
+      <div class="field"><label for="p-name">Prénom et nom <small>(facultatif)</small></label><input id="p-name" data-set="name" maxlength="40" value="${esc(me.rawName != null ? me.rawName : me.name)}"><small class="hint">Visible seulement par vos contacts.</small></div>
       ${f('pub', 'bio', 'Qui suis-je', 'Quelques mots sur vous')}${f('pub', 'metier', 'Métier ou études')}${f('pub', 'ville', 'Ville', 'Ex. : Dakar, Sénégal')}${f('pub', 'langues', 'Langues parlées', 'Ex. : Français, Wolof')}${f('pub', 'interets', 'Centres d’intérêt')}
       <div class="field"><span class="lbl">Jour et mois de naissance</span><div class="bd-row"><select id="p-bd" data-set="pub" data-k="bd" aria-label="Jour"><option value="">Jour</option>${Array.from({length: 31}, (_, i) => `<option value="${i + 1}"${+p.bd === i + 1 ? ' selected' : ''}>${i + 1}</option>`).join('')}</select><select id="p-bm" data-set="pub" data-k="bm" aria-label="Mois"><option value="">Mois</option>${MOIS.map((m, i) => `<option value="${i + 1}"${+p.bm === i + 1 ? ' selected' : ''}>${m}</option>`).join('')}</select></div></div>
       ${picsEdit('pub')}
-      <label class="pick chk"><input type="checkbox" data-act="listedTog"${me.listed !== false ? ' checked' : ''}><span>Apparaître dans la liste « Membres de Tam-Tam » (le + en haut). Décoché, on peut toujours vous trouver par votre nom ou votre pseudo exact.</span></label>
+      <label class="pick chk"><input type="checkbox" data-act="listedTog"${me.listed !== false ? ' checked' : ''}><span>Apparaître dans la liste « Membres de Tam-Tam » (le + en haut). Décoché, on peut toujours vous trouver par votre pseudo exact.</span></label>
       <div><button class="btn sm ghost" type="button" data-act="prof" data-id="${me.id}">${I.eye}Voir mon profil public comme les autres</button></div></div>
 ` : `<p class="note">${I.lock}<span>Votre profil privé n’est jamais visible par des inconnus. Votre <b>numéro de téléphone</b> reste caché, même pour vos amis : vous le montrez seulement à qui vous voulez, depuis son profil (« Lui montrer mon numéro »).</span></p>
     <div class="set-block">
@@ -1170,14 +1193,14 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.40</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.41</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
   for (const k of Object.keys(patch)) { if (typeof patch[k] === 'object' && patch[k] && !Array.isArray(patch[k])) pending[k] = Object.assign(pending[k] || {}, patch[k]); else pending[k] = patch[k]; }
   clearTimeout(saveT); saveT = setTimeout(async () => { const body = pending; pending = {}; try { const r = await api('/api/me', body); S.me = r.me; keepUsers([r.me]); } catch (e) { toast(e.message); } }, 700);
 }
-async function saveNow(body, msg) { try { const r = await api('/api/me', body); S.me = r.me; keepUsers([r.me]); renderBody(); renderHead(); if ('trConsent' in body && S.chatId) { renderComposer(); renderMessages(true); } if (msg) toast(msg); } catch (e) { toast(e.message); } }
+async function saveNow(body, msg) { try { const r = await api('/api/me', body); S.me = r.me; keepUsers([r.me]); renderBody(); renderHead(); if ('trConsent' in body && S.chatId) { renderComposer(); renderMessages(true); } if (msg) toast(msg); } catch (e) { toast(e.message); renderBody(); } }
 async function adminLoad() {
   try {
     const r = await api('/api/admin'), el = $('#adm');
