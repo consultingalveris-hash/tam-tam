@@ -743,7 +743,7 @@ body.in-cam{overflow:hidden}
 .st-fonts button small{font:500 11px/1.2 system-ui,sans-serif;color:#a9b6ba}
 .st-fonts button[aria-pressed="true"]{border-color:#14B8C9;background:#0f2a2f}
 .st-comp .st-tools{display:flex;flex-direction:row;justify-content:space-between;gap:2px;padding:10px max(8px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 10px) max(8px,env(safe-area-inset-left,0px));overflow-x:auto;scrollbar-width:none}
-.st-tool{flex:1;min-width:52px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px;border:0;border-radius:12px;background:none;color:#cfd9dc;font:inherit;font-size:11.5px;cursor:pointer}
+.st-tool{flex:1;min-width:44px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px;border:0;border-radius:12px;background:none;color:#cfd9dc;font:inherit;font-size:11.5px;cursor:pointer}
 .st-tool svg{width:22px;height:22px}
 .st-tool .aa{font-size:19px;line-height:22px}
 .st-tool .aa.serif{font-family:Georgia,serif;font-style:italic}
