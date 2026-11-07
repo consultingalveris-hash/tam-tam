@@ -35,7 +35,8 @@ const Cam = {
     this.el.innerHTML = `<video class="cam-v${this.facing === 'user' ? ' mirror' : ''}" autoplay playsinline muted></video><div class="cam-flash" hidden></div>
       <div class="cam-top"><button class="cib" type="button" data-cam="close" aria-label="Fermer">${I.close}</button>
         ${rec ? `<span class="cam-rec"><i></i><b id="camT">0:00</b> / ${fmtT(VID_MAX_S)}</span>` : '<span></span>'}
-        <button class="cib" type="button" data-cam="torch" aria-label="${this.torch ? 'Éteindre le flash' : 'Allumer le flash'}"${this.hasTorch ? '' : ' hidden'}>${this.torch ? CI.flashOn : CI.flashOff}</button></div>
+        <span class="cam-tr"><button class="cib hd" type="button" data-cam="native" aria-label="Utiliser l’appareil photo du téléphone (qualité maximale, mode nuit)" title="Appareil du téléphone"${rec ? ' hidden' : ''}>HD</button>
+        <button class="cib" type="button" data-cam="torch" aria-label="${this.torch ? 'Éteindre le flash' : 'Allumer le flash'}"${this.hasTorch ? '' : ' hidden'}>${this.torch ? CI.flashOn : CI.flashOff}</button></span></div>
       <div class="cam-bot">
         <div class="cam-row">
           <button class="cib" type="button" data-cam="gallery" aria-label="Choisir dans la galerie"${rec ? ' hidden' : ''}>${CI.gallery}</button>
@@ -49,13 +50,16 @@ const Cam = {
   },
   async start() {
     this.stopStream();
-    const base = {width: {ideal: 1920}, height: {ideal: 1080}};
+    const base = this.mode === 'photo' ? {width: {ideal: 4096}, height: {ideal: 3072}} : {width: {ideal: 1920}, height: {ideal: 1080}, frameRate: {ideal: 30}};
     let s = null;
     for (const v of [{...base, facingMode: {exact: this.facing}}, {...base, facingMode: this.facing}, true]) { try { s = await navigator.mediaDevices.getUserMedia({video: v}); break; } catch (e) { this.err = e; } }
     if (!this.el) { if (s) s.getTracks().forEach(t => t.stop()); return; }
     if (!s) { this.close(); toast(this.err && this.err.name === 'NotAllowedError' ? 'Autorisez la caméra pour Tam-Tam, puis réessayez.' : 'Caméra introuvable sur cet appareil.'); return; }
     this.stream = s; const tr = s.getVideoTracks()[0], caps = tr.getCapabilities ? tr.getCapabilities() : {};
-    this.hasTorch = !!caps.torch; this.torch = false; this.render();
+    this.hasTorch = !!caps.torch; this.torch = false;
+    const adv = {}; for (const k of ['focusMode', 'exposureMode', 'whiteBalanceMode']) if ((caps[k] || []).includes('continuous')) adv[k] = 'continuous';
+    if (Object.keys(adv).length) tr.applyConstraints({advanced: [adv]}).catch(() => {});
+    this.render();
   },
   stopStream() { if (this.stream) this.stream.getTracks().forEach(t => t.stop()); this.stream = null; },
   close() {
@@ -65,15 +69,31 @@ const Cam = {
   async flip() { if (this.rec || this.busy) return; this.busy = true; this.facing = this.facing === 'user' ? 'environment' : 'user'; await this.start(); this.busy = false; },
   async setTorch() { const tr = this.stream && this.stream.getVideoTracks()[0]; if (!tr) return; try { await tr.applyConstraints({advanced: [{torch: !this.torch}]}); this.torch = !this.torch; this.render(); } catch { toast('Flash indisponible sur cette caméra.'); } },
   // La photo garde exactement ce qui est affiché en plein écran.
-  snap() {
-    const v = this.el.querySelector('video'); if (!v || !v.videoWidth) return;
-    const vw = v.videoWidth, vh = v.videoHeight, W = v.clientWidth, H = v.clientHeight, k = Math.max(W / vw, H / vh);
-    const sw = W / k, sh = H / k, sx = (vw - sw) / 2, sy = (vh - sh) / 2, out = Math.min(1, 1920 / Math.max(sw, sh));
-    const cv = document.createElement('canvas'); cv.width = Math.round(sw * out); cv.height = Math.round(sh * out);
-    const g = cv.getContext('2d'); if (this.facing === 'user') { g.translate(cv.width, 0); g.scale(-1, 1); }
-    g.drawImage(v, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+  // Quand le téléphone le permet, on demande une vraie photo au capteur (pleine définition), sinon on prend l'image de l'aperçu.
+  async snap() {
+    const v = this.el && this.el.querySelector('video'); if (!v || !v.videoWidth || this.snapping) return; this.snapping = true;
     const fl = this.el.querySelector('.cam-flash'); if (fl) { fl.hidden = false; setTimeout(() => { fl.hidden = true; }, 160); }
-    cv.toBlob(b => { if (!b) return toast('Photo impossible.'); this.close(); Edit.photo(b); }, 'image/jpeg', .9);
+    const W = v.clientWidth, H = v.clientHeight, user = this.facing === 'user';
+    let src = v, sw0 = v.videoWidth, sh0 = v.videoHeight;
+    const tr = this.stream && this.stream.getVideoTracks()[0];
+    if (window.ImageCapture && tr) {
+      try {
+        const ic = new ImageCapture(tr), pc = await ic.getPhotoCapabilities().catch(() => null), opt = {};
+        if (pc && pc.imageWidth && pc.imageWidth.max) opt.imageWidth = pc.imageWidth.max;
+        if (pc && (pc.fillLightMode || []).length) opt.fillLightMode = this.torch && pc.fillLightMode.includes('flash') ? 'flash' : (pc.fillLightMode.includes('off') ? 'off' : undefined);
+        if (!opt.fillLightMode) delete opt.fillLightMode;
+        const blob = await Promise.race([ic.takePhoto(opt), new Promise((_, ko) => setTimeout(() => ko(new Error('lent')), 6000))]);
+        const bmp = await createImageBitmap(blob);
+        // même cadrage que l'aperçu : on tient compte du sens de la photo par rapport à l'aperçu
+        if ((bmp.width > bmp.height) === (v.videoWidth > v.videoHeight)) { src = bmp; sw0 = bmp.width; sh0 = bmp.height; }
+      } catch {}
+    }
+    const k = Math.max(W / sw0, H / sh0), sw = W / k, sh = H / k, sx = (sw0 - sw) / 2, sy = (sh0 - sh) / 2, out = Math.min(1, 3000 / Math.max(sw, sh));
+    const cv = document.createElement('canvas'); cv.width = Math.round(sw * out); cv.height = Math.round(sh * out);
+    const g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; if (user) { g.translate(cv.width, 0); g.scale(-1, 1); }
+    g.drawImage(src, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+    if (src.close) src.close();
+    cv.toBlob(b => { this.snapping = false; if (!b) return toast('Photo impossible.'); this.close(); Edit.photo(b, 'cam'); }, 'image/jpeg', .95);
   },
   async recStart() {
     if (!window.MediaRecorder) return toast('Ce téléphone ne permet pas de filmer ici.');
@@ -93,15 +113,15 @@ const Cam = {
     const r = this.rec; if (!r) return; this.rec = null; clearInterval(r.tick); r.extra.forEach(t => t.stop());
     const dur = Math.max(1, Math.round((Date.now() - r.t0) / 1000)), blob = new Blob(r.chunks, {type: r.mime});
     this.close(); if (blob.size < 1000) return toast('Vidéo trop courte.');
-    Edit.video(blob, r.mime, dur, r.mirror);
+    Edit.video(blob, r.mime, dur, r.mirror, 'cam');
   },
   act(a) {
     if (a === 'close') this.close();
     else if (a === 'flip') this.flip();
     else if (a === 'torch') this.setTorch();
     else if (a === 'gallery') { this.close(); $('#fileIn').click(); }
-    else if (a === 'mode') { this.mode = this.mode === 'photo' ? 'video' : 'photo'; this.render(); }
-    else if (a === 'setVideo' || a === 'setPhoto') { this.mode = a === 'setVideo' ? 'video' : 'photo'; this.render(); }
+    else if (a === 'mode' || a === 'setVideo' || a === 'setPhoto') { const m = a === 'mode' ? (this.mode === 'photo' ? 'video' : 'photo') : a === 'setVideo' ? 'video' : 'photo'; if (m !== this.mode) { this.mode = m; this.render(); this.start(); } }
+    else if (a === 'native') { this.close(); $('#camIn').click(); }
     else if (a === 'shoot') { if (this.mode === 'photo') this.snap(); else if (this.rec) this.recStop(); else this.recStart(); }
   },
 };
@@ -111,24 +131,24 @@ const Edit = {
   el: null, s: null,
   async photoFile(file) {
     if (!file || !/^image\//.test(file.type)) return toast('Choisissez une photo.');
-    this.photo(file);
+    this.photo(file, 'gal');
   },
-  async photo(blob) {
+  async photo(blob, from) {
     const url = URL.createObjectURL(blob), img = new Image();
     try { await new Promise((ok, ko) => { img.onload = ok; img.onerror = ko; img.src = url; }); } catch { URL.revokeObjectURL(url); return toast('Cette photo n’a pas pu être lue.'); }
-    this.s = {kind: 'photo', img, url, rot: 0, crop: null, f: 0, tool: null, hist: []};
+    this.s = {kind: 'photo', img, url, rot: 0, crop: null, f: 0, tool: null, hist: [], from};
     this.mount(); this.draw();
   },
-  video(blob, mime, dur, mirror) {
+  video(blob, mime, dur, mirror, from) {
     if (blob.size > VID_MAX_BYTES) return toast(`Vidéo trop lourde (${Math.round(blob.size / 1e6)} Mo). Limite : ${VID_MAX_BYTES / 1e6} Mo, soit environ une minute.`);
-    this.s = {kind: 'video', blob, mime: (mime || blob.type || 'video/mp4').split(';')[0], dur: dur || 0, url: URL.createObjectURL(blob), mirror: !!mirror};
+    this.s = {kind: 'video', blob, mime: (mime || blob.type || 'video/mp4').split(';')[0], dur: dur || 0, url: URL.createObjectURL(blob), mirror: !!mirror, from};
     this.mount();
   },
   videoFile(file) {
     if (!file || !/^video\//.test(file.type)) return toast('Choisissez une vidéo.');
     const v = document.createElement('video'); v.preload = 'metadata'; const u = URL.createObjectURL(file);
-    v.onloadedmetadata = () => { const d = Math.round(v.duration || 0); URL.revokeObjectURL(u); if (d > VID_MAX_S + 2) return toast(`Vidéo trop longue (${fmtT(d)}). Maximum : ${fmtT(VID_MAX_S)}.`); this.video(file, file.type, d); };
-    v.onerror = () => { URL.revokeObjectURL(u); this.video(file, file.type, 0); };
+    v.onloadedmetadata = () => { const d = Math.round(v.duration || 0); URL.revokeObjectURL(u); if (d > VID_MAX_S + 2) return toast(`Vidéo trop longue (${fmtT(d)}). Maximum : ${fmtT(VID_MAX_S)}.`); this.video(file, file.type, d, false, 'gal'); };
+    v.onerror = () => { URL.revokeObjectURL(u); this.video(file, file.type, 0, false, 'gal'); };
     v.src = u;
   },
   mount() {
@@ -140,7 +160,8 @@ const Edit = {
   render() {
     const s = this.s, c = S.chats.get(S.chatId), ph = s.kind === 'photo', crop = s.tool === 'crop';
     this.el.innerHTML = `<div class="ed-top">
-        <button class="cib" type="button" data-ed="${crop ? 'cropCancel' : 'close'}" aria-label="${crop ? 'Annuler le rognage' : 'Annuler'}">${I.close}</button>
+        <button class="cib" type="button" data-ed="${crop ? 'cropCancel' : 'close'}" aria-label="${crop ? 'Annuler le rognage' : 'Annuler et revenir à la discussion'}">${I.close}</button>
+        ${!crop && s.from ? `<button class="ed-retake" type="button" data-ed="retake">${CI.rotL}<span>${s.from === 'cam' ? (ph ? 'Reprendre' : 'Refilmer') : 'Choisir une autre'}</span></button>` : ''}
         <b class="ed-to">${crop ? 'Rogner' : 'À ' + esc(chatTitle(c))}</b>
         ${ph ? (crop ? `<button class="cib ok" type="button" data-ed="cropOk" aria-label="Valider le rognage">${CI.ok}</button>`
           : `<span class="ed-tools">${s.hist.length ? `<button class="cib" type="button" data-ed="undo" aria-label="Annuler la dernière retouche">${CI.undo}</button>` : ''}<button class="cib" type="button" data-ed="rotL" aria-label="Pivoter vers la gauche">${CI.rotL}</button><button class="cib" type="button" data-ed="rotR" aria-label="Pivoter vers la droite">${CI.rotR}</button><button class="cib" type="button" data-ed="crop" aria-label="Rogner">${CI.crop}</button><button class="cib${s.tool === 'filt' ? ' sel' : ''}" type="button" data-ed="filt" aria-label="Filtres">${CI.filt}</button></span>`) : '<span></span>'}
@@ -199,7 +220,7 @@ const Edit = {
     const cap = ($('#edCap') || {}).value?.trim() || '', once = !!S.once; btn.disabled = true; btn.classList.add('busy');
     try {
       let blob, payload;
-      if (s.kind === 'photo') { const cv = document.createElement('canvas'); this.paint(cv, 1600); blob = await new Promise((ok, ko) => cv.toBlob(b => b ? ok(b) : ko(new Error('Photo illisible.')), 'image/jpeg', .86)); payload = {t: cap}; }
+      if (s.kind === 'photo') { const cv = document.createElement('canvas'); this.paint(cv, 2560); blob = await new Promise((ok, ko) => cv.toBlob(b => b ? ok(b) : ko(new Error('Photo illisible.')), 'image/jpeg', .9)); payload = {t: cap}; }
       else { blob = s.blob; payload = {t: cap, mime: s.mime, dur: s.dur}; }
       const sealed = await E2E.seal(payload, recipients(c), await blob.arrayBuffer());
       const up = await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'});
@@ -214,6 +235,7 @@ const Edit = {
     const s = this.s; if (!s) return;
     const cap = $('#edCap'); if (cap) s.cap = cap.value;
     if (a === 'close') this.close();
+    else if (a === 'retake') { const from = s.from, mode = s.kind === 'video' ? 'video' : 'photo'; S.once = false; this.close(); if (from === 'cam') { Cam.mode = mode; Cam.open(); } else $('#fileIn').click(); }
     else if (a === 'rotL' || a === 'rotR') { this.push(); s.rot = (s.rot + (a === 'rotR' ? 90 : 270)) % 360; s.crop = null; this.render(); }
     else if (a === 'crop') { s.tool = 'crop'; s.ratio = 0; this.cr = null; this.render(); }
     else if (a === 'cropCancel') { s.tool = null; this.cr = null; this.render(); }

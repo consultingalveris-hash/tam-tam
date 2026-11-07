@@ -1101,7 +1101,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.29</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.30</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {

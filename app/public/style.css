@@ -674,3 +674,8 @@ body.in-cam{overflow:hidden}
 .vid-d{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.55);color:#fff;padding:1px 6px;border-radius:8px;font-size:12px}
 .once-view video{max-width:100%;max-height:100%}
 .ed-send .once-tog{color:#fff}
+.cam-tr{display:flex;gap:8px}
+.cib.hd{font:700 13px/1 system-ui,sans-serif;letter-spacing:.5px}
+.ed-retake{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 14px;border:0;border-radius:20px;background:rgba(255,255,255,.16);color:#fff;font:inherit;font-weight:600;font-size:14px;cursor:pointer;flex:none;white-space:nowrap}
+.ed-retake svg{width:18px;height:18px}
+@media (max-width:420px){.ed-to{display:none}}
