@@ -63,13 +63,14 @@ const E2E = {
     this.shared.set(id, key); return key;
   },
   /* chiffre un message pour tous les membres (dont soi-même) ; renvoie l'enveloppe et la clé du message */
-  async seal(payload, recipients, bytes) {
+  async seal(payload, recipients, bytes, bytes2) {
     const raw = crypto.getRandomValues(new Uint8Array(32)), k = await subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
-    let blob = null; if (bytes) { const e = await this.encBytes(k, bytes); payload.miv = e.iv; blob = new Blob([e.data], {type: 'application/octet-stream'}); }
+    let blob = null, blob2 = null; if (bytes) { const e = await this.encBytes(k, bytes); payload.miv = e.iv; blob = new Blob([e.data], {type: 'application/octet-stream'}); }
+    if (bytes2) { const e = await this.encBytes(k, bytes2); payload.mmiv = e.iv; blob2 = new Blob([e.data], {type: 'application/octet-stream'}); }
     const iv = crypto.getRandomValues(new Uint8Array(12)), ct = await subtle.encrypt({name: 'AES-GCM', iv}, k, te.encode(JSON.stringify(payload)));
     const keys = {};
     for (const [uid, pub] of recipients) { const wiv = crypto.getRandomValues(new Uint8Array(12)); keys[uid] = {iv: b64(wiv), wk: b64(await subtle.encrypt({name: 'AES-GCM', iv: wiv}, await this.sharedWith(pub), raw))}; }
-    return {env: {iv: b64(iv), ct: b64(ct), keys, from: {x: this.pubJwk.x, y: this.pubJwk.y}}, key: k, blob};
+    return {env: {iv: b64(iv), ct: b64(ct), keys, from: {x: this.pubJwk.x, y: this.pubJwk.y}}, key: k, blob, blob2};
   },
   async open(env, myId) {
     const w = env.keys && env.keys[myId]; if (!w) return {err: 'absent'};

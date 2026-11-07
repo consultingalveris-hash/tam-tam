@@ -23,8 +23,10 @@ const fmtT = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 /* ---------- appareil photo ---------- */
 const Cam = {
   facing: 'environment', mode: 'photo', el: null, stream: null, torch: false,
-  async open() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return $('#camIn').click();
+  // opts.target : la photo ou la vidéo sert à autre chose qu'un message (un statut) ; opts.mode : 'photo' ou 'video'.
+  async open(opts = {}) {
+    this.opts = opts; if (opts.mode) this.mode = opts.mode;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return this.native();
     if (typeof Call !== 'undefined' && Call.c) return toast('Terminez l’appel avant de prendre une photo.');
     this.el = document.createElement('div'); this.el.className = 'cam'; this.el.setAttribute('role', 'dialog'); this.el.setAttribute('aria-modal', 'true'); this.el.setAttribute('aria-label', 'Appareil photo');
     document.body.appendChild(this.el); document.body.classList.add('in-cam'); this.render();
@@ -61,6 +63,7 @@ const Cam = {
     if (Object.keys(adv).length) tr.applyConstraints({advanced: [adv]}).catch(() => {});
     this.render();
   },
+  native() { const o = this.opts || {}; if (o.native) return o.native(); const i = $('#camIn'); if (i) i.click(); },
   stopStream() { if (this.stream) this.stream.getTracks().forEach(t => t.stop()); this.stream = null; },
   close() {
     if (this.rec) { try { this.rec.mr.onstop = null; this.rec.mr.stop(); } catch {} this.rec.extra.forEach(t => t.stop()); clearInterval(this.rec.tick); this.rec = null; }
@@ -93,7 +96,7 @@ const Cam = {
     const g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; if (user) { g.translate(cv.width, 0); g.scale(-1, 1); }
     g.drawImage(src, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
     if (src.close) src.close();
-    cv.toBlob(b => { this.snapping = false; if (!b) return toast('Photo impossible.'); this.close(); Edit.photo(b, 'cam'); }, 'image/jpeg', .95);
+    cv.toBlob(b => { this.snapping = false; if (!b) return toast('Photo impossible.'); const o = this.opts || {}; this.close(); Edit.photo(b, 'cam', o); }, 'image/jpeg', .95);
   },
   async recStart() {
     if (!window.MediaRecorder) return toast('Ce téléphone ne permet pas de filmer ici.');
@@ -112,16 +115,16 @@ const Cam = {
   recDone() {
     const r = this.rec; if (!r) return; this.rec = null; clearInterval(r.tick); r.extra.forEach(t => t.stop());
     const dur = Math.max(1, Math.round((Date.now() - r.t0) / 1000)), blob = new Blob(r.chunks, {type: r.mime});
-    this.close(); if (blob.size < 1000) return toast('Vidéo trop courte.');
-    Edit.video(blob, r.mime, dur, r.mirror, 'cam');
+    const o = this.opts || {}; this.close(); if (blob.size < 1000) return toast('Vidéo trop courte.');
+    Edit.video(blob, r.mime, dur, r.mirror, 'cam', o);
   },
   act(a) {
     if (a === 'close') this.close();
     else if (a === 'flip') this.flip();
     else if (a === 'torch') this.setTorch();
-    else if (a === 'gallery') { this.close(); $('#fileIn').click(); }
+    else if (a === 'gallery') { const o = this.opts || {}; this.close(); if (o.gallery) o.gallery(); else $('#fileIn').click(); }
     else if (a === 'mode' || a === 'setVideo' || a === 'setPhoto') { const m = a === 'mode' ? (this.mode === 'photo' ? 'video' : 'photo') : a === 'setVideo' ? 'video' : 'photo'; if (m !== this.mode) { this.mode = m; this.render(); this.start(); } }
-    else if (a === 'native') { this.close(); $('#camIn').click(); }
+    else if (a === 'native') { this.close(); this.native(); }
     else if (a === 'shoot') { if (this.mode === 'photo') this.snap(); else if (this.rec) this.recStop(); else this.recStart(); }
   },
 };
@@ -129,40 +132,40 @@ const Cam = {
 /* ---------- retouche avant envoi ---------- */
 const Edit = {
   el: null, s: null,
-  async photoFile(file) {
+  async photoFile(file, opts) {
     if (!file || !/^image\//.test(file.type)) return toast('Choisissez une photo.');
-    this.photo(file, 'gal');
+    this.photo(file, 'gal', opts);
   },
-  async photo(blob, from) {
+  async photo(blob, from, opts = {}) {
     const url = URL.createObjectURL(blob), img = new Image();
     try { await new Promise((ok, ko) => { img.onload = ok; img.onerror = ko; img.src = url; }); } catch { URL.revokeObjectURL(url); return toast('Cette photo n’a pas pu être lue.'); }
-    this.s = {kind: 'photo', img, url, rot: 0, crop: null, f: 0, tool: null, hist: [], from};
+    this.s = {kind: 'photo', img, url, rot: 0, crop: null, f: 0, tool: null, hist: [], from, opts};
     this.mount(); this.draw();
   },
-  video(blob, mime, dur, mirror, from) {
+  video(blob, mime, dur, mirror, from, opts = {}) {
     if (blob.size > VID_MAX_BYTES) return toast(`Vidéo trop lourde (${Math.round(blob.size / 1e6)} Mo). Limite : ${VID_MAX_BYTES / 1e6} Mo, soit environ une minute.`);
-    this.s = {kind: 'video', blob, mime: (mime || blob.type || 'video/mp4').split(';')[0], dur: dur || 0, url: URL.createObjectURL(blob), mirror: !!mirror, from};
+    this.s = {kind: 'video', blob, mime: (mime || blob.type || 'video/mp4').split(';')[0], dur: dur || 0, url: URL.createObjectURL(blob), mirror: !!mirror, from, opts};
     this.mount();
   },
-  videoFile(file) {
+  videoFile(file, opts) {
     if (!file || !/^video\//.test(file.type)) return toast('Choisissez une vidéo.');
     const v = document.createElement('video'); v.preload = 'metadata'; const u = URL.createObjectURL(file);
-    v.onloadedmetadata = () => { const d = Math.round(v.duration || 0); URL.revokeObjectURL(u); if (d > VID_MAX_S + 2) return toast(`Vidéo trop longue (${fmtT(d)}). Maximum : ${fmtT(VID_MAX_S)}.`); this.video(file, file.type, d, false, 'gal'); };
-    v.onerror = () => { URL.revokeObjectURL(u); this.video(file, file.type, 0, false, 'gal'); };
+    v.onloadedmetadata = () => { const d = Math.round(v.duration || 0); URL.revokeObjectURL(u); if (d > VID_MAX_S + 2) return toast(`Vidéo trop longue (${fmtT(d)}). Maximum : ${fmtT(VID_MAX_S)}.`); this.video(file, file.type, d, false, 'gal', opts); };
+    v.onerror = () => { URL.revokeObjectURL(u); this.video(file, file.type, 0, false, 'gal', opts); };
     v.src = u;
   },
   mount() {
-    const c = S.chats.get(S.chatId); if (!c) { this.close(); return toast('Ouvrez d’abord une discussion.'); }
+    const c = S.chats.get(S.chatId); if (!c && !(this.s.opts || {}).target) { this.close(); return toast('Ouvrez d’abord une discussion.'); }
     if (this.el) this.el.remove();
     this.el = document.createElement('div'); this.el.className = 'edit'; this.el.setAttribute('role', 'dialog'); this.el.setAttribute('aria-modal', 'true'); this.el.setAttribute('aria-label', 'Retoucher avant d’envoyer');
     document.body.appendChild(this.el); document.body.classList.add('in-cam'); this.render();
   },
   render() {
-    const s = this.s, c = S.chats.get(S.chatId), ph = s.kind === 'photo', crop = s.tool === 'crop';
+    const s = this.s, c = S.chats.get(S.chatId), ph = s.kind === 'photo', crop = s.tool === 'crop', tgt = !!(s.opts || {}).target;
     this.el.innerHTML = `<div class="ed-top">
         <button class="cib" type="button" data-ed="${crop ? 'cropCancel' : 'close'}" aria-label="${crop ? 'Annuler le rognage' : 'Annuler et revenir à la discussion'}">${I.close}</button>
         ${!crop && s.from ? `<button class="ed-retake" type="button" data-ed="retake">${CI.rotL}<span>${s.from === 'cam' ? (ph ? 'Reprendre' : 'Refilmer') : 'Choisir une autre'}</span></button>` : ''}
-        <b class="ed-to">${crop ? 'Rogner' : 'À ' + esc(chatTitle(c))}</b>
+        <b class="ed-to">${crop ? 'Rogner' : tgt ? (s.opts.title || 'Pour mon statut') : 'À ' + esc(chatTitle(c))}</b>
         ${ph ? (crop ? `<button class="cib ok" type="button" data-ed="cropOk" aria-label="Valider le rognage">${CI.ok}</button>`
           : `<span class="ed-tools">${s.hist.length ? `<button class="cib" type="button" data-ed="undo" aria-label="Annuler la dernière retouche">${CI.undo}</button>` : ''}<button class="cib" type="button" data-ed="rotL" aria-label="Pivoter vers la gauche">${CI.rotL}</button><button class="cib" type="button" data-ed="rotR" aria-label="Pivoter vers la droite">${CI.rotR}</button><button class="cib" type="button" data-ed="crop" aria-label="Rogner">${CI.crop}</button><button class="cib${s.tool === 'filt' ? ' sel' : ''}" type="button" data-ed="filt" aria-label="Filtres">${CI.filt}</button></span>`) : '<span></span>'}
       </div>
@@ -170,8 +173,8 @@ const Edit = {
         : `<video class="ed-vid${s.mirror ? ' mirror' : ''}" src="${s.url}" playsinline autoplay loop controls controlslist="nodownload"></video>`}</div>
       ${crop ? `<div class="ed-ratios"><button type="button" data-ed="ratio" data-r="0" aria-pressed="${!s.ratio}">Libre</button><button type="button" data-ed="ratio" data-r="1" aria-pressed="${s.ratio === 1}">Carré</button><button type="button" data-ed="ratio" data-r="0.8" aria-pressed="${s.ratio === .8}">4:5</button><button type="button" data-ed="ratio" data-r="1.7778" aria-pressed="${s.ratio === 1.7778}">16:9</button><button type="button" data-ed="cropAll">Tout</button></div>` : ''}
       ${ph && s.tool === 'filt' ? `<div class="ed-filts" role="listbox" aria-label="Filtres">${FILTERS.map(([n], i) => `<button type="button" role="option" data-ed="setF" data-i="${i}" aria-selected="${s.f === i}"><img alt="" data-fth="${i}"><span>${n}</span></button>`).join('')}</div>` : ''}
-      ${crop ? '' : `<form class="ed-send" data-edform="1"><button class="cib once-tog" type="button" data-ed="once" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique"><span class="one" aria-hidden="true">1</span></button>
-        <input id="edCap" maxlength="1000" placeholder="Ajouter une légende…" autocomplete="off" value="${esc(s.cap || '')}"><button class="ed-go" type="submit" aria-label="Envoyer">${I.send}</button></form>`}`;
+      ${crop ? '' : `<form class="ed-send" data-edform="1">${tgt ? '' : `<button class="cib once-tog" type="button" data-ed="once" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique"><span class="one" aria-hidden="true">1</span></button>`}
+        ${Emoji.btn('#edCap', 'cib')}<input id="edCap" maxlength="1000" placeholder="Ajouter une légende…" autocomplete="off" value="${esc(s.cap || '')}"><button class="ed-go" type="submit" aria-label="${tgt ? 'Valider' : 'Envoyer'}">${tgt ? CI.ok : I.send}</button></form>`}`;
     if (ph) { this.draw(); if (s.tool === 'filt') this.thumbs(); if (crop) requestAnimationFrame(() => this.cropInit()); }
   },
   dims() { const {img, rot} = this.s, iw = img.naturalWidth, ih = img.naturalHeight; return rot % 180 ? [ih, iw] : [iw, ih]; },
@@ -216,12 +219,13 @@ const Edit = {
     this.render();
   },
   async send() {
-    const s = this.s, c = S.chats.get(S.chatId), btn = this.el.querySelector('.ed-go'); if (!s || !c) return;
+    const s = this.s, c = S.chats.get(S.chatId), btn = this.el.querySelector('.ed-go'), tgt = (s && s.opts || {}).target; if (!s || (!c && !tgt)) return;
     const cap = ($('#edCap') || {}).value?.trim() || '', once = !!S.once; btn.disabled = true; btn.classList.add('busy');
     try {
       let blob, payload;
       if (s.kind === 'photo') { const cv = document.createElement('canvas'); this.paint(cv, 2560); blob = await new Promise((ok, ko) => cv.toBlob(b => b ? ok(b) : ko(new Error('Photo illisible.')), 'image/jpeg', .9)); payload = {t: cap}; }
       else { blob = s.blob; payload = {t: cap, mime: s.mime, dur: s.dur}; }
+      if (tgt) { const r = {kind: s.kind, blob, mime: s.kind === 'video' ? s.mime : 'image/jpeg', dur: s.dur || 0, cap, mirror: !!s.mirror}; this.close(); return tgt(r); }
       const sealed = await E2E.seal(payload, recipients(c), await blob.arrayBuffer());
       const up = await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'});
       S.once = false;
@@ -235,7 +239,7 @@ const Edit = {
     const s = this.s; if (!s) return;
     const cap = $('#edCap'); if (cap) s.cap = cap.value;
     if (a === 'close') this.close();
-    else if (a === 'retake') { const from = s.from, mode = s.kind === 'video' ? 'video' : 'photo'; S.once = false; this.close(); if (from === 'cam') { Cam.mode = mode; Cam.open(); } else $('#fileIn').click(); }
+    else if (a === 'retake') { const from = s.from, mode = s.kind === 'video' ? 'video' : 'photo', o = s.opts || {}; S.once = false; this.close(); if (from === 'cam') Cam.open({...o, mode}); else if (o.gallery) o.gallery(); else $('#fileIn').click(); }
     else if (a === 'rotL' || a === 'rotR') { this.push(); s.rot = (s.rot + (a === 'rotR' ? 90 : 270)) % 360; s.crop = null; this.render(); }
     else if (a === 'crop') { s.tool = 'crop'; s.ratio = 0; this.cr = null; this.render(); }
     else if (a === 'cropCancel') { s.tool = null; this.cr = null; this.render(); }

@@ -220,7 +220,7 @@ async function loadStatuses() {
   const r = await api('/api/statuses');
   for (const it of [...r.mine.items, ...r.others.flatMap(g => g.items)]) if (it.enc) {
     const o = E2E.ready() ? await E2E.open(it.enc, S.me.id) : {err: 1};
-    if (o.err) { it.text = '🔒 Statut chiffré'; it.locked = true; } else { it.text = o.payload.t || ''; it.miv = o.payload.miv || null; it._key = o.key; }
+    if (o.err) { it.text = '🔒 Statut chiffré'; it.locked = true; } else { it.text = o.payload.t || ''; it.miv = o.payload.miv || null; it._key = o.key; it.font = o.payload.f || 0; it.vmime = o.payload.mime || null; it.dur = o.payload.dur || 0; it.mir = !!o.payload.mir; it.mmiv = o.payload.mmiv || null; it.mname = o.payload.mname || ''; }
   }
   S.statuses = r; keepUsers([r.mine.user, ...r.others.map(g => g.user)]);
 }
@@ -415,7 +415,7 @@ function renderComposer() {
     el.innerHTML = `<div class="blocked-bar">${I.block}<span>${mine ? `Vous avez bloqué ${esc(first(u.name))}.` : 'Vous ne pouvez plus écrire à cette personne.'}</span>${mine ? `<button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button>` : ''}</div>`; return;
   }
   const trOn = !!(Tr.inL(c.id) || Tr.outL(c.id));
-  el.innerHTML = `<form class="composer" data-form="send" autocomplete="off">${Tr.st && Tr.st.on ? `<button class="ib tr-tog" type="button" data-act="trAuto" aria-pressed="${trOn}" aria-label="Langues de cette discussion" title="Langues de traduction de cette discussion">${I.translate}${Tr.label(c.id)}</button>` : ''}<div class="inwrap"><textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
+  el.innerHTML = `<form class="composer" data-form="send" autocomplete="off">${Tr.st && Tr.st.on ? `<button class="ib tr-tog" type="button" data-act="trAuto" aria-pressed="${trOn}" aria-label="Langues de cette discussion" title="Langues de traduction de cette discussion">${I.translate}${Tr.label(c.id)}</button>` : ''}<div class="inwrap">${Emoji.btn('#msgIn')}<textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
     <button class="ib" type="button" data-act="attach" aria-label="Joindre une photo ou une vidéo">${I.clip}</button><button class="ib" type="button" data-act="camera" aria-label="Prendre une photo ou une vidéo">${I.camera}</button><button class="ib once-tog" type="button" data-act="onceTog" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique : le message ne peut être ouvert qu’une fois"><span class="one" aria-hidden="true">1</span></button></div>
     <input type="file" id="fileIn" accept="image/*,video/*" hidden><input type="file" id="camIn" accept="image/*" capture="environment" hidden>
     <button class="send" id="sendBtn" type="button" data-act="recStart" aria-label="Enregistrer un message vocal">${I.mic}</button></form>`;
@@ -715,30 +715,64 @@ function msgMenu(id) {
 
 /* ---------- statuts : création et lecture ---------- */
 const BGS = [170, 200, 260, 300, 340, 20, 45, 130];
+// Polices des statuts (chargées à la demande depuis Google Fonts).
+const ST_FONTS = [['Classique', 'inherit', ''], ['Élégante', "'Playfair Display', Georgia, serif", 'Playfair+Display:wght@700'], ['Manuscrite', "Pacifico, 'Brush Script MT', cursive", 'Pacifico'],
+  ['Écriture', "Caveat, 'Segoe Print', cursive", 'Caveat:wght@700'], ['Affiche', "'Bebas Neue', Impact, sans-serif", 'Bebas+Neue'], ['Machine', "'Courier Prime', 'Courier New', monospace", 'Courier+Prime:wght@700']];
+function stFontsLoad() {
+  if (document.getElementById('stFonts')) return;
+  const l = document.createElement('link'); l.id = 'stFonts'; l.rel = 'stylesheet';
+  l.href = 'https://fonts.googleapis.com/css2?' + ST_FONTS.filter(f => f[2]).map(f => 'family=' + f[2]).join('&') + '&display=swap'; document.head.appendChild(l);
+}
+const stFont = i => (ST_FONTS[i] || ST_FONTS[0])[1];
+const ST_MUS_MAX = 8_000_000;
+function stOpts() {
+  return {target: stMedia, title: 'Pour mon statut', gallery: () => $('#stIn') && $('#stIn').click(), native: () => $('#stCamIn') && $('#stCamIn').click()};
+}
+function stMedia(r) {
+  const s = S.sc; if (!s) return; if (s.url) URL.revokeObjectURL(s.url);
+  Object.assign(s, {kind: r.kind, blob: r.blob, url: URL.createObjectURL(r.blob), mime: r.mime, dur: r.dur || 0, mirror: !!r.mirror});
+  if (r.cap) s.text = r.cap; s.tab = null; stComposer();
+}
 function stComposer() {
-  S.sc = S.sc || {aud: 'public', bg: 170, text: '', blob: null, url: null};
-  const s = S.sc, closeN = (S.me.close || []).length;
-  layer.innerHTML = `<div class="st-comp" role="dialog" aria-modal="true" aria-label="Nouveau statut"><div class="chat-head"><button class="ib" type="button" data-act="stCancel" aria-label="Annuler">${I.close}</button><b style="flex:1">Nouveau statut</b><button class="btn sm" type="button" data-act="stPublish">Publier</button></div>
-    <div class="stage"><div class="st-box" style="--h:${s.bg}">${s.url ? `<img src="${s.url}" alt="Aperçu">` : `<textarea id="stText" maxlength="700" placeholder="Écrivez votre statut…">${esc(s.text)}</textarea>`}</div></div>
-    <div class="st-tools">
-      <div class="seg" role="group" aria-label="Visibilité"><button type="button" data-act="stAud" data-a="public" aria-pressed="${s.aud === 'public'}">${I.globe}Public</button><button type="button" data-act="stAud" data-a="private" aria-pressed="${s.aud === 'private'}">${I.lock}Privé</button></div>
-      ${s.aud === 'private' ? closePicker() : '<p class="hint">Visible par tous vos contacts pendant 24 heures.</p>'}
-      ${s.url ? `<div class="field"><label for="stCap">Légende</label><input id="stCap" maxlength="700" value="${esc(s.text)}"></div><div><button class="btn sm ghost" type="button" data-act="stNoPhoto">Retirer la photo</button></div>`
-      : `<div class="bgs">${BGS.map(h => `<button class="sw" type="button" style="--c:hsl(${h} 55% 35%)" data-act="stBg" data-h="${h}" aria-pressed="${s.bg === h}" aria-label="Couleur de fond"></button>`).join('')}</div><div><button class="btn sm ghost" type="button" data-act="stPhoto">${I.image}Ajouter une photo</button><input type="file" id="stIn" accept="image/*" hidden></div>`}
-    </div></div>`;
-  const t = $('#stText'); if (t) t.focus();
+  S.sc = S.sc || {aud: 'public', bg: 170, text: '', font: 0, kind: 'text', blob: null, url: null, music: null, tab: null, grp: false};
+  if (!S.sc.kind) S.sc.kind = S.sc.blob ? 'photo' : 'text'; if (S.sc.font == null) S.sc.font = 0;
+  const s = S.sc, closeN = (S.me.close || []).length, media = s.kind !== 'text', capSel = media ? '#stCap' : '#stText'; stFontsLoad();
+  const tool = (act, ic, label, on) => `<button class="st-tool${on ? ' on' : ''}" type="button" data-act="${act}">${ic}<span>${label}</span></button>`;
+  layer.innerHTML = `<div class="st-comp" role="dialog" aria-modal="true" aria-label="Nouveau statut">
+    <div class="st-head"><button class="ib" type="button" data-act="stCancel" aria-label="Annuler">${I.close}</button>
+      <div class="seg st-aud" role="group" aria-label="Qui voit ce statut"><button type="button" data-act="stAud" data-a="public" aria-pressed="${s.aud === 'public'}">${I.globe}Public</button><button type="button" data-act="stAud" data-a="private" aria-pressed="${s.aud === 'private'}">${I.lock}Privé</button></div>
+      <button class="btn sm" type="button" data-act="stPublish" id="stPub">Publier</button></div>
+    ${s.aud === 'private' ? `<button class="st-grp-row" type="button" data-act="stGrp">${I.users}<span><b>Mon groupe privé</b><small>${closeN ? `${closeN} personne${closeN > 1 ? 's' : ''} verront ce statut` : 'Touchez ici pour choisir qui verra ce statut'}</small></span>${I.chev || '›'}</button>`
+      : '<p class="st-note">Visible par tous vos contacts pendant 24 heures.</p>'}
+    <div class="stage"><div class="st-box${media ? ' media' : ''}" style="--h:${s.bg};--stf:${stFont(s.font)}">
+      ${s.kind === 'photo' ? `<img src="${s.url}" alt="Aperçu">` : s.kind === 'video' ? `<video src="${s.url}" class="${s.mirror ? 'mirror' : ''}" autoplay loop muted playsinline></video>` : `<textarea id="stText" maxlength="700" placeholder="Touchez pour écrire…">${esc(s.text)}</textarea>`}
+      ${media ? `<button class="st-rm" type="button" data-act="stNoPhoto" aria-label="Retirer ${s.kind === 'video' ? 'la vidéo' : 'la photo'}">${I.close}</button><input id="stCap" class="st-cap" maxlength="700" placeholder="Ajouter une légende…" value="${esc(s.text)}" autocomplete="off">` : ''}
+      ${s.music ? `<div class="st-mus">🎵 <span>${esc(s.music.name)}</span><button type="button" data-act="stMusOff" aria-label="Retirer la musique">${I.close}</button></div><audio src="${s.music.url}" id="stMusPrev"></audio>` : ''}
+    </div></div>
+    ${s.tab === 'font' ? `<div class="st-fonts">${ST_FONTS.map(([n, f], i) => `<button type="button" data-act="stFont" data-i="${i}" aria-pressed="${s.font === i}" style="font-family:${f}">Aa<small>${n}</small></button>`).join('')}</div>` : ''}
+    ${!media ? `<div class="bgs st-bgs">${BGS.map(h => `<button class="sw" type="button" style="--c:hsl(${h} 55% 35%)" data-act="stBg" data-h="${h}" aria-pressed="${s.bg === h}" aria-label="Couleur de fond"></button>`).join('')}</div>` : ''}
+    <div class="st-tools">${tool('stText', '<b class="aa">Aa</b>', 'Texte', !media)}${tool('stPhoto', I.image, 'Photo', s.kind === 'photo')}${tool('stCam', CI.photo, 'Caméra', false)}${tool('stVid', CI.video, 'Vidéo', s.kind === 'video')}${tool('stFontTab', '<b class="aa serif">F</b>', 'Police', s.tab === 'font')}${tool('stMus', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>', 'Musique', !!s.music)}${Emoji.btn(capSel, 'st-tool emo')}</div>
+    <input type="file" id="stIn" accept="image/*,video/*" hidden><input type="file" id="stCamIn" accept="image/*" capture="environment" hidden><input type="file" id="stMusIn" accept="audio/*" hidden>
+    ${s.grp ? `<div class="st-grp-panel" data-act="stGrpBg"><div class="st-grp-card">${closePicker(true)}</div></div>` : ''}
+  </div>`;
 }
 async function stPublish() {
-  const s = S.sc; const t = ($('#stText') || $('#stCap') || {}).value; if (t != null) s.text = t;
-  if (!s.blob && !s.text.trim()) return toast('Écrivez un texte ou ajoutez une photo.');
-  if (s.aud === 'private' && !(S.me.close || []).length) return toast('Choisissez d’abord les personnes de votre groupe privé.');
+  const s = S.sc; keepSt();
+  if (s.kind === 'text' && !s.text.trim()) return toast('Écrivez un texte, ou ajoutez une photo ou une vidéo.');
+  if (s.aud === 'private' && !(S.me.close || []).length) { s.grp = true; stComposer(); return toast('Choisissez d’abord qui verra ce statut privé.'); }
+  const b = $('#stPub'); if (b) { b.disabled = true; b.textContent = 'Publication…'; }
   try {
     // Statut chiffré de bout en bout pour vos contacts (ou votre seul groupe privé).
     const cs = S.contacts.contacts.filter(u => u.pubkey && !u.blocked && (s.aud !== 'private' || (S.me.close || []).includes(u.id)));
-    const sealed = await E2E.seal({t: s.text}, [[S.me.id, E2E.pubJwk], ...cs.map(u => [u.id, u.pubkey])], s.blob ? await s.blob.arrayBuffer() : undefined);
-    let media = null; if (sealed.blob) media = (await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'})).id;
-    await api('/api/statuses', {enc: sealed.env, bg: s.bg, media, aud: s.aud}); S.sc = null; closeLayer(); await loadStatuses(); renderStories(); toast('Statut publié pour 24 heures'); }
-  catch (e) { toast(e.message); }
+    const payload = {t: s.text, f: s.font || 0}; if (s.kind === 'video') Object.assign(payload, {mime: s.mime, dur: s.dur, mir: s.mirror ? 1 : 0}); if (s.music) payload.mname = s.music.name;
+    const sealed = await E2E.seal(payload, [[S.me.id, E2E.pubJwk], ...cs.map(u => [u.id, u.pubkey])], s.blob ? await s.blob.arrayBuffer() : undefined, s.music ? await s.music.blob.arrayBuffer() : undefined);
+    let media = null, music = null;
+    if (sealed.blob) media = (await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'})).id;
+    if (sealed.blob2) music = (await api('/api/media', sealed.blob2, {raw: true, type: 'application/octet-stream'})).id;
+    await api('/api/statuses', {enc: sealed.env, bg: s.bg, media, music, aud: s.aud, ...(s.kind === 'video' ? {kind: 'video'} : {})});
+    if (s.url) URL.revokeObjectURL(s.url); if (s.music) URL.revokeObjectURL(s.music.url);
+    S.sc = null; closeLayer(); await loadStatuses(); renderStories(); toast('Statut publié pour 24 heures');
+  } catch (e) { toast(e.message); if (b) { b.disabled = false; b.textContent = 'Publier'; } }
 }
 let svT;
 function stOpen(uid) {
@@ -750,13 +784,18 @@ function renderSV() {
   const mine = v.uid === S.me.id, g = mine ? {user: S.me, items: S.statuses.mine.items} : S.statuses.others.find(x => x.user.id === v.uid);
   const it = g && g.items[v.i]; if (!it) return svNextUser();
   if (!mine && !it.seen) { it.seen = true; api(`/api/statuses/${it.id}/view`, {}).catch(() => {}); }
-  const dur = 6000;
+  const vid = it.kind === 'video', dur = vid ? (Math.min(62, Math.max(3, it.dur || 15)) + 2) * 1000 : it.music ? 15000 : 6000; stFontsLoad();
   layer.innerHTML = `<div class="sv" style="--h:${it.bg || 170}" role="dialog" aria-modal="true" aria-label="Statut"><div class="sv-bars">${g.items.map((_, k) => `<i class="${k < v.i ? 'done' : k === v.i ? 'run' : ''}"><b${k === v.i ? ` style="animation-duration:${dur / 1000}s"` : ''}></b></i>`).join('')}</div>
     <div class="sv-head">${avatar(g.user, 'sm')}<div class="grow"><b>${esc(mine ? 'Mon statut' : g.user.name)}</b><small>${dayLabel(it.at)}, ${hm(it.at)} · ${it.aud === 'private' ? 'Privé' : 'Public'}</small></div><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>
-    <div class="sv-stage"><div class="sv-box${it.aud === 'private' ? ' nocopy' : ''}">${it.media ? (it.enc ? `<img data-stenc="${it.id}" alt="" draggable="false">` : `<img src="${esc(it.media)}" alt="" draggable="false">`) : `<div class="sv-text">${esc(it.text)}</div>`}${it.media && it.text ? `<div class="sv-cap">${esc(it.text)}</div>` : ''}
+    <div class="sv-stage"><div class="sv-box${it.aud === 'private' ? ' nocopy' : ''}">${it.media ? (vid ? `<video data-stvid="${it.id}" class="${it.mir ? 'mirror' : ''}" playsinline autoplay controlslist="nodownload" disablepictureinpicture></video>` : it.enc ? `<img data-stenc="${it.id}" alt="" draggable="false">` : `<img src="${esc(it.media)}" alt="" draggable="false">`) : `<div class="sv-text" style="font-family:${stFont(it.font)}">${esc(it.text)}</div>`}${it.media && it.text ? `<div class="sv-cap" style="font-family:${stFont(it.font)}">${esc(it.text)}</div>` : ''}${it.music ? `<div class="sv-mus">🎵 ${esc(it.mname || 'Musique')}</div><audio data-stmus="${it.id}" loop></audio>` : ''}
       ${it.aud === 'private' && !mine ? watermark() : ''}<button class="sv-nav prev" type="button" data-act="svPrev" aria-label="Précédent"></button><button class="sv-nav next" type="button" data-act="svNext" aria-label="Suivant"></button></div></div>
     ${mine ? `<div class="sv-foot"><button class="btn sm ghost" type="button" data-act="svViews">${I.eye}${(it.views || []).length} vue${(it.views || []).length > 1 ? 's' : ''}</button><button class="btn sm ghost" type="button" data-act="stNew">${I.plus}Ajouter</button><button class="btn sm ghost" type="button" data-act="stDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}</div>`;
   clearTimeout(svT); svT = setTimeout(() => svStep(1), dur);
+  const dec = (url, iv, type) => fetch(url, {credentials: 'same-origin'}).then(r => r.arrayBuffer()).then(b => E2E.decBytes(it._key, iv, b)).then(b => URL.createObjectURL(new Blob([b], {type})));
+  const vv = layer.querySelector('video[data-stvid]');
+  if (vv && it._key && it.miv) dec(it.media, it.miv, it.vmime || 'video/mp4').then(u => { if (!layer.contains(vv)) return; vv.src = u; vv.play().catch(() => { vv.muted = true; vv.play().catch(() => {}); }); vv.onended = () => { clearTimeout(svT); svStep(1); }; }).catch(() => {});
+  const au = layer.querySelector('audio[data-stmus]');
+  if (au && it._key && it.mmiv) dec(it.music, it.mmiv, 'audio/mpeg').then(u => { if (!layer.contains(au)) return; au.src = u; au.play().catch(() => {}); }).catch(() => {});
   const im = layer.querySelector('img[data-stenc]');
   if (im && it._key && it.miv) fetch(it.media, {credentials: 'same-origin'}).then(r => r.arrayBuffer()).then(b => E2E.decBytes(it._key, it.miv, b)).then(b => { im.src = URL.createObjectURL(new Blob([b], {type: 'image/jpeg'})); }).catch(() => {});
 }
@@ -805,13 +844,13 @@ function picsEdit(set) {
       : `<button class="ph3-add" type="button" data-act="picAdd" data-set="${set}" data-i="${i}"><span aria-hidden="true">+</span>Photo ${i + 1}</button>`).join('')}</div>
     <input type="file" id="picIn" accept="image/*" hidden>`;
 }
-function closePicker() {
+function closePicker(ok) {
   const cs = S.contacts.contacts, close = new Set(S.me.close || []);
   return `<div class="grp-box"><b>${I.users} Mon groupe privé</b><p class="hint" style="margin:0">Ces amis voient vos statuts privés${S.me.privTo === 'grp' ? ' et votre profil privé verrouillé' : ''}.</p>
-    ${cs.length ? `<div class="cg-tools"><label class="pick cg-all"><input type="checkbox" name="closeAll"${cs.every(u => close.has(u.id)) ? ' checked' : ''}><span><b>Tout cocher</b></span></label><span class="hint" id="cgCount">${cs.filter(u => close.has(u.id)).length} sur ${cs.length}</span></div>
+    ${cs.length ? `<div class="cg-tools"><label class="pick cg-all"><input type="checkbox" name="closeAll"${cs.every(u => close.has(u.id)) ? ' checked' : ''}><span><b>Tout cocher</b></span></label><span class="hint" id="cgCount">${cs.filter(u => close.has(u.id)).length} sur ${cs.length}</span>${ok ? '<button class="btn sm" type="button" data-act="stGrpOk">Valider</button>' : ''}</div>
     ${cs.length > 8 ? `<label class="search" style="margin:0">${I.search}<span class="sr">Chercher un ami</span><input id="cgq" type="search" placeholder="Chercher un ami" autocomplete="off"></label>` : ''}
     <p class="hint" style="margin:0">Astuce : cochez tout, puis décochez seulement les personnes qui ne doivent pas voir.</p>` : ''}
-    ${cs.length ? `<div class="picks">${cs.slice().sort((a, b) => a.name.localeCompare(b.name, 'fr')).map(u => `<label class="pick"><input type="checkbox" name="close" value="${u.id}"${close.has(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint" style="margin:0">Ajoutez d’abord des amis.</p>'}</div>`;
+    ${cs.length ? `<div class="picks">${cs.slice().sort((a, b) => a.name.localeCompare(b.name, 'fr')).map(u => `<label class="pick"><input type="checkbox" name="close" value="${u.id}"${close.has(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint" style="margin:0">Ajoutez d’abord des amis.</p>'}${ok && !cs.length ? '<div><button class="btn sm" type="button" data-act="stGrpOk">Fermer</button></div>' : ''}</div>`;
 }
 function profileEditor() {
   const me = S.me, p = me.pub || {}, pv = me.priv || {}, t = S.profTab || 'pub';
@@ -1101,7 +1140,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.30</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.31</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1123,7 +1162,8 @@ const ACT = {
   ksLost() { S.ks.mode = 'lost'; renderKeySetup(); },
   ksBack() { S.ks.mode = 'restore'; renderKeySetup(); },
   async ksNew() { await E2E.forget(S.me.id); S.ks = {mode: 'new', fresh: true}; renderKeySetup(); },
-  async lockBio() { try { if (await Lock.bioVerify(S.lock.bio)) unlock(); } catch { const e = $('#lkErr'); if (e) { e.textContent = 'Empreinte non reconnue. Utilisez votre schéma.'; e.hidden = false; } } },
+  async lockBio() { S.bioTried = true; let ok = false; try { ok = await Lock.bioVerify(S.lock.bio); } catch {} if (ok) return unlock(); if (S.lockStep === 'bio' || !S.lockStep) S.lockStep = 'pattern'; showLock('Empreinte ou visage non reconnu : dessinez votre schéma.'); },
+  lockPassStep() { S.lockStep = 'pass'; showLock(); }, lockPatStep() { S.lockStep = 'pattern'; S.lockTries = 0; showLock(); },
   lockForgot() { confirmSheet('Se reconnecter ?', 'Vous allez être déconnecté. Reconnectez-vous avec votre e-mail et votre mot de passe, puis choisissez un nouveau schéma. Vos messages restent protégés par votre code de sauvegarde.', 'Me reconnecter', 'lockReset'); },
   async lockReset() { await Lock.set(S.me.id, {type: 'off', delay: 60}); ACT.logout(); },
   lockSetup() { lockSetupSheet(1); },
@@ -1238,11 +1278,21 @@ const ACT = {
   async delYes(d) { closeLayer(); try { await api(`/api/messages/${d.id}/delete`, {}); } catch (e) { toast(e.message); } },
   stNew(d, el, e) { e.stopPropagation(); stComposer(); },
   stOpen(d) { stOpen(+d.u); },
-  stCancel() { if (S.sc && S.sc.url) URL.revokeObjectURL(S.sc.url); S.sc = null; closeLayer(); },
-  stAud(d) { keepSt(); S.sc.aud = d.a; stComposer(); },
-  stBg(d) { keepSt(); S.sc.bg = +d.h; stComposer(); },
+  stCancel() { if (S.sc && S.sc.url) URL.revokeObjectURL(S.sc.url); if (S.sc && S.sc.music) URL.revokeObjectURL(S.sc.music.url); S.sc = null; Emoji.close(); closeLayer(); },
+  stAud(d) { keepSt(); S.sc.aud = d.a; if (d.a === 'private' && !(S.me.close || []).length) S.sc.grp = true; stComposer(); },
+  // Changer la couleur ne fait pas apparaître le clavier : on change seulement le fond.
+  stBg(d) { S.sc.bg = +d.h; const b = document.querySelector('.st-box'); if (b) b.style.setProperty('--h', d.h); document.querySelectorAll('.st-bgs .sw').forEach(x => x.setAttribute('aria-pressed', x.dataset.h === d.h)); },
   stPhoto() { keepSt(); $('#stIn').click(); },
-  stNoPhoto() { keepSt(); URL.revokeObjectURL(S.sc.url); S.sc.blob = S.sc.url = null; stComposer(); },
+  stCam() { keepSt(); Cam.open({...stOpts(), mode: 'photo'}); },
+  stVid() { keepSt(); Cam.open({...stOpts(), mode: 'video'}); },
+  stText() { keepSt(); if (S.sc.kind !== 'text') { if (S.sc.url) URL.revokeObjectURL(S.sc.url); Object.assign(S.sc, {kind: 'text', blob: null, url: null}); } S.sc.tab = null; stComposer(); },
+  stFontTab() { keepSt(); S.sc.tab = S.sc.tab === 'font' ? null : 'font'; stComposer(); },
+  stFont(d) { S.sc.font = +d.i; const b = document.querySelector('.st-box'); if (b) b.style.setProperty('--stf', stFont(S.sc.font)); document.querySelectorAll('.st-fonts button').forEach(x => x.setAttribute('aria-pressed', x.dataset.i === d.i)); },
+  stMus() { keepSt(); $('#stMusIn').click(); },
+  stMusOff() { keepSt(); if (S.sc.music) URL.revokeObjectURL(S.sc.music.url); S.sc.music = null; stComposer(); },
+  stGrp() { keepSt(); S.sc.grp = true; stComposer(); },
+  stGrpOk() { keepSt(); S.sc.grp = false; stComposer(); }, stGrpBg() { ACT.stGrpOk(); },
+  stNoPhoto() { keepSt(); if (S.sc.url) URL.revokeObjectURL(S.sc.url); Object.assign(S.sc, {kind: 'text', blob: null, url: null}); stComposer(); },
   stPublish() { stPublish(); },
   closeEdit() { keepSt(); S.sc = S.sc; closeLayer(); S.tab = 'settings'; renderAll(); setTimeout(() => { const el = document.querySelector('input[name="close"]'); if (el) el.scrollIntoView({block: 'center'}); }, 50); toast('Cochez les personnes de votre groupe privé, puis revenez publier votre statut.'); },
   svNext() { svStep(1); }, svPrev() { svStep(-1); },
@@ -1304,6 +1354,7 @@ const ACT = {
 function keepSt() { const t = ($('#stText') || $('#stCap') || {}).value; if (t != null && S.sc) S.sc.text = t; }
 
 const FORMS = {
+  async lockPass(f) { const i = $('#lkPass'), b = f.querySelector('button'); if (!i.value) return; b.disabled = true; try { await api('/api/me/unlock', {pass: i.value}); unlock(); } catch (e) { b.disabled = false; i.value = ''; const er = $('#lkErr'); er.textContent = e.message; er.hidden = false; } },
   auth: submitAuth,
   keys: submitKeys,
   async rekey() { const a = $('#rk1').value, b = $('#rk2').value, er = $('#rkErr'); if (codeWeak(a)) { er.textContent = codeWeak(a); er.hidden = false; return; } if (a !== b) { er.textContent = 'Les deux codes ne sont pas identiques.'; er.hidden = false; return; }
@@ -1368,6 +1419,7 @@ const FORMS = {
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
   const fn = ACT[el.dataset.act]; if (!fn) return;
+  if (el.dataset.act === 'stGrpBg' && e.target !== el) return;
   if (el.dataset.act !== 'scrim') e.preventDefault();
   if (el.dataset.act === 'scrim' && e.target !== el) return;
   fn(el.dataset, el, e);
@@ -1385,7 +1437,8 @@ document.addEventListener('input', e => {
 document.addEventListener('change', async e => {
   const t = e.target;
   if (t.id === 'fileIn' || t.id === 'camIn') { const f = t.files[0]; t.value = ''; if (f) { if (/^video\//.test(f.type)) Edit.videoFile(f); else Edit.photoFile(f); } }
-  else if (t.id === 'stIn') { const f = t.files[0]; t.value = ''; if (!f) return; try { const b = await shrink(f); S.sc.blob = b; S.sc.url = URL.createObjectURL(b); stComposer(); } catch (er) { toast(er.message); } }
+  else if (t.id === 'stIn' || t.id === 'stCamIn') { const f = t.files[0]; t.value = ''; if (!f) return; keepSt(); if (/^video\//.test(f.type)) Edit.videoFile(f, stOpts()); else Edit.photoFile(f, stOpts()); }
+  else if (t.id === 'stMusIn') { const f = t.files[0]; t.value = ''; if (!f) return; if (!/^audio\//.test(f.type)) return toast('Choisissez un fichier son.'); if (f.size > ST_MUS_MAX) return toast('Musique trop lourde (8 Mo au maximum).'); keepSt(); S.sc.music = {blob: f, name: f.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 60), url: URL.createObjectURL(f)}; stComposer(); toast('Musique ajoutée : elle sera jouée avec votre statut.'); }
   else if (t.id === 'trLang') { Tr.setLang(t.value); Tr.shown.clear(); toast('Les prochaines traductions seront en ' + (LANG_FR[t.value] || t.value)); }
   else if (t.id === 'picIn') { const f = t.files[0]; t.value = ''; const sl = S.picSlot; if (!f || !sl) return;
     (async () => { try { toast('Envoi de la photo…'); const b = await shrink(f, 1280);
@@ -1499,24 +1552,30 @@ function bindPad(id, done) {
   const end = () => { if (!on) return; on = false; draw(); const s2 = seq.slice(); setTimeout(() => { seq = []; draw(); }, 350); if (s2.length) done(s2); };
   pad.addEventListener('pointerup', end); pad.addEventListener('pointercancel', end);
 }
+// Écran de verrouillage : fond noir, logo turquoise, rien de personnel.
+// Ordre : empreinte ou visage → si échec, schéma → après 5 schémas faux, mot de passe Tam-Tam.
 function showLock(msg) {
   const L = S.lock; S.lockTries = S.lockTries || 0;
+  if (!S.lockStep) S.lockStep = L.bio && !S.bioTried ? 'bio' : 'pattern';
   let el = $('#lockScreen'); if (!el) { el = document.createElement('div'); el.id = 'lockScreen'; el.className = 'lock-screen'; document.body.appendChild(el); }
-  const wait = Math.ceil(((S.lockUntil || 0) - Date.now()) / 1000);
-  el.innerHTML = `<div class="lock-card" role="dialog" aria-modal="true" aria-label="tam-tam est verrouillé"><div class="auth-top"><h1 class="brand-h">${BRAND()}</h1></div>
-    ${avatar(S.me, 'lg')}<b>${esc(S.me.name)}</b><p class="hint">${wait > 0 ? `Trop d’essais. Réessayez dans ${wait} s.` : 'Dessinez votre schéma pour ouvrir tam-tam.'}</p>
-    ${patternPad('lockPad')}<p class="err" id="lkErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p>
-    ${L.bio ? `<button class="btn" type="button" data-act="lockBio">${I.key}Utiliser l’empreinte ou le visage</button>` : ''}
-    <button class="linkb" type="button" data-act="lockForgot">Schéma oublié ? Me reconnecter avec mon mot de passe</button></div>`;
-  bindPad('lockPad', async seq => {
-    if ((S.lockUntil || 0) > Date.now()) return showLock();
+  el.classList.add('dark'); const st = S.lockStep;
+  el.innerHTML = `<div class="lock-card dark" role="dialog" aria-modal="true" aria-label="Tam-Tam est verrouillé"><div class="auth-top"><h1 class="brand-h">${BRAND('lock-logo')}</h1></div>
+    ${st === 'bio' ? `<p class="lk-hint">Déverrouillage par empreinte ou visage…</p><div class="lk-spin" aria-hidden="true"></div>`
+    : st === 'pattern' ? `<p class="lk-hint">Dessinez votre schéma</p>${patternPad('lockPad')}`
+    : `<form class="lk-pass" data-form="lockPass"><p class="lk-hint">Schéma oublié ? Entrez votre mot de passe Tam-Tam.</p><input id="lkPass" type="password" autocomplete="current-password" placeholder="Mot de passe" aria-label="Mot de passe"><button class="btn" type="submit">Déverrouiller</button></form>`}
+    <p class="err" id="lkErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p>
+    <div class="lk-links">${st !== 'bio' && L.bio ? `<button class="linkb" type="button" data-act="lockBio">Utiliser l’empreinte ou le visage</button>` : ''}
+    ${st === 'pattern' ? '<button class="linkb" type="button" data-act="lockPassStep">Utiliser mon mot de passe</button>' : ''}${st === 'pass' ? '<button class="linkb" type="button" data-act="lockPatStep">Revenir au schéma</button><button class="linkb" type="button" data-act="lockForgot">Mot de passe oublié ? Me reconnecter</button>' : ''}</div></div>`;
+  if (st === 'pattern') bindPad('lockPad', async seq => {
     if (await Lock.hashPattern(seq, L.salt) === L.hash) return unlock();
-    S.lockTries++; if (S.lockTries >= 5) { S.lockTries = 0; S.lockUntil = Date.now() + 30000; setTimeout(() => showLock(), 30500); return showLock(); }
+    S.lockTries++;
+    if (S.lockTries >= 5) { S.lockTries = 0; S.lockStep = 'pass'; return showLock('Schéma incorrect 5 fois : entrez votre mot de passe.'); }
     showLock(`Schéma incorrect. ${5 - S.lockTries} essai${5 - S.lockTries > 1 ? 's' : ''} restant${5 - S.lockTries > 1 ? 's' : ''}.`);
   });
-  if (L.bio && !msg && !S.bioTried) { S.bioTried = true; setTimeout(() => ACT.lockBio(), 300); }
+  if (st === 'pass') setTimeout(() => { const i = $('#lkPass'); if (i) i.focus(); }, 50);
+  if (st === 'bio' && !S.bioTried) { S.bioTried = true; setTimeout(() => ACT.lockBio(), 250); }
 }
-function unlock() { S.locked = false; S.lockTries = 0; S.bioTried = false; const el = $('#lockScreen'); if (el) el.remove(); if (S.chatId) markRead(); }
+function unlock() { S.locked = false; S.lockTries = 0; S.bioTried = false; S.lockStep = null; const el = $('#lockScreen'); if (el) el.remove(); if (S.chatId) markRead(); }
 function lockSettingsHtml() {
   const L = S.lock || {type: 'off', delay: 60};
   return `<div class="set-block"><h2>${I.lock} Verrouillage de l’application</h2><p class="hint">Vous restez connecté, mais tam-tam demande votre schéma${L.bio ? ' ou votre empreinte' : ''} à chaque ouverture. Personne ne peut lire vos messages si on prend votre téléphone.</p>
