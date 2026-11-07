@@ -129,6 +129,54 @@ const Cam = {
   },
 };
 
+/* ---------- vidéos longues ou lourdes : découpées en parties d'une minute (et allégées) ---------- */
+const VID_MAX_TOTAL = 5 * 60;
+const VCut = {
+  // Propose de couper : une seule fenêtre au-dessus de tout (statut ou discussion).
+  ask(file, dur, done) {
+    const n = Math.max(1, Math.ceil(dur / VID_MAX_S)), el = document.createElement('div'); el.className = 'vprep';
+    el.innerHTML = `<div class="vp-card" role="dialog" aria-modal="true" aria-label="Vidéo longue"><h2>${n > 1 ? 'Vidéo longue' : 'Vidéo lourde'}</h2>
+      <p>${n > 1 ? `Cette vidéo dure <b>${fmtT(dur)}</b>. Une vidéo dure 1 minute au maximum : Tam-Tam peut la couper en <b>${n} parties</b> qui se suivront.` : 'Cette vidéo est trop lourde pour être envoyée telle quelle : Tam-Tam peut l’alléger.'}</p>
+      <p class="hint">La préparation prend à peu près la durée de la vidéo (${fmtT(dur)}). Gardez l’écran allumé et Tam-Tam ouvert.</p>
+      <div class="vp-act"><button class="btn ghost" type="button" data-vp="no">Annuler</button><button class="btn" type="button" data-vp="yes">${n > 1 ? `Couper en ${n} parties` : 'Alléger la vidéo'}</button></div></div>`;
+    document.body.appendChild(el);
+    el.addEventListener('click', e => { const b = e.target.closest('[data-vp]'); if (!b) return; if (b.dataset.vp === 'no') { el.remove(); return; } this.run(file, dur, el, done); });
+  },
+  async run(file, dur, el, done) {
+    const card = el.querySelector('.vp-card');
+    card.innerHTML = `<h2>Préparation de la vidéo…</h2><div class="vp-bar"><i style="width:0%"></i></div><p class="vp-t">0:00 / ${fmtT(dur)}</p><p class="hint">Gardez l’écran allumé.</p><div class="vp-act"><button class="btn ghost" type="button" data-vp2="stop">Annuler</button></div>`;
+    const url = URL.createObjectURL(file), v = document.createElement('video'); v.src = url; v.playsInline = true; v.preload = 'auto';
+    let stopped = false; card.querySelector('[data-vp2]').onclick = () => { stopped = true; v.pause(); };
+    try {
+      await new Promise((ok, ko) => { v.onloadedmetadata = ok; v.onerror = () => ko(new Error('Vidéo illisible sur ce téléphone.')); });
+      const k = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight)), cv = document.createElement('canvas'); cv.width = Math.round(v.videoWidth * k / 2) * 2; cv.height = Math.round(v.videoHeight * k / 2) * 2;
+      const g = cv.getContext('2d'), vs = cv.captureStream(30);
+      let at = null; try { const ac = new (window.AudioContext || window.webkitAudioContext)(), src = ac.createMediaElementSource(v), dst = ac.createMediaStreamDestination(); src.connect(dst); at = dst.stream.getAudioTracks()[0]; this.ac = ac; } catch {}
+      const ms = new MediaStream([...vs.getVideoTracks(), ...(at ? [at] : [])]);
+      const mime = ['video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm'].find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+      const parts = []; let rec = null, chunks = [], t0 = 0;
+      const startRec = () => { chunks = []; t0 = v.currentTime; rec = new MediaRecorder(ms, {...(mime ? {mimeType: mime} : {}), videoBitsPerSecond: 1_400_000, audioBitsPerSecond: 64_000}); rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); }; rec.start(1000); };
+      const stopRec = () => new Promise(ok => { const r = rec, c = chunks, d = Math.max(1, Math.round(v.currentTime - t0)); r.onstop = () => { parts.push({blob: new Blob(c, {type: (r.mimeType || mime || 'video/webm').split(';')[0]}), dur: d, mime: (r.mimeType || mime || 'video/webm').split(';')[0]}); ok(); }; r.stop(); });
+      const draw = () => { if (!v.paused && !v.ended) g.drawImage(v, 0, 0, cv.width, cv.height); };
+      let raf = 0; const loop = () => { draw(); raf = requestAnimationFrame(loop); };
+      g.drawImage(v, 0, 0, cv.width, cv.height); startRec(); await v.play(); loop();
+      await new Promise(ok => {
+        const tick = setInterval(async () => {
+          const bar = card.querySelector('.vp-bar i'), tt = card.querySelector('.vp-t'); if (bar) bar.style.width = Math.min(100, v.currentTime / dur * 100) + '%'; if (tt) tt.textContent = `${fmtT(Math.floor(v.currentTime))} / ${fmtT(dur)}${parts.length ? ` · partie ${parts.length + 1}` : ''}`;
+          if (stopped || v.ended) { clearInterval(tick); ok(); return; }
+          if (v.currentTime - t0 >= VID_MAX_S) { v.pause(); await stopRec(); startRec(); await v.play(); }
+        }, 200);
+      });
+      cancelAnimationFrame(raf); if (rec && rec.state !== 'inactive') await stopRec();
+      ms.getTracks().forEach(t => t.stop()); if (this.ac) this.ac.close().catch(() => {});
+      URL.revokeObjectURL(url); el.remove();
+      if (stopped) return toast('Préparation annulée.');
+      const good = parts.filter(p => p.blob.size > 1000); if (!good.length) return toast('Cette vidéo n’a pas pu être préparée.');
+      done(good);
+    } catch (e) { URL.revokeObjectURL(url); el.remove(); toast(e.message || 'Cette vidéo n’a pas pu être préparée.'); }
+  },
+};
+
 /* ---------- retouche avant envoi ---------- */
 const Edit = {
   el: null, s: null,
@@ -142,15 +190,18 @@ const Edit = {
     this.s = {kind: 'photo', img, url, rot: 0, crop: null, f: 0, tool: null, hist: [], from, opts};
     this.mount(); this.draw();
   },
-  video(blob, mime, dur, mirror, from, opts = {}) {
-    if (blob.size > VID_MAX_BYTES) return toast(`Vidéo trop lourde (${Math.round(blob.size / 1e6)} Mo). Limite : ${VID_MAX_BYTES / 1e6} Mo, soit environ une minute.`);
-    this.s = {kind: 'video', blob, mime: (mime || blob.type || 'video/mp4').split(';')[0], dur: dur || 0, url: URL.createObjectURL(blob), mirror: !!mirror, from, opts};
+  video(blob, mime, dur, mirror, from, opts = {}, parts = null) {
+    if (!parts && blob.size > VID_MAX_BYTES) return toast(`Vidéo trop lourde (${Math.round(blob.size / 1e6)} Mo). Limite : ${VID_MAX_BYTES / 1e6} Mo, soit environ une minute.`);
+    this.s = {kind: 'video', blob, mime: (mime || blob.type || 'video/mp4').split(';')[0], dur: dur || 0, url: URL.createObjectURL(blob), mirror: !!mirror, from, opts, parts: parts && parts.length > 1 ? parts : null, pi: 0};
     this.mount();
   },
   videoFile(file, opts) {
     if (!file || !/^video\//.test(file.type)) return toast('Choisissez une vidéo.');
     const v = document.createElement('video'); v.preload = 'metadata'; const u = URL.createObjectURL(file);
-    v.onloadedmetadata = () => { const d = Math.round(v.duration || 0); URL.revokeObjectURL(u); if (d > VID_MAX_S + 2) return toast(`Vidéo trop longue (${fmtT(d)}). Maximum : ${fmtT(VID_MAX_S)}.`); this.video(file, file.type, d, false, 'gal', opts); };
+    v.onloadedmetadata = () => { const d = Math.round(v.duration || 0); URL.revokeObjectURL(u);
+      if (d > VID_MAX_TOTAL) return toast(`Vidéo trop longue (${fmtT(d)}). Maximum : ${fmtT(VID_MAX_TOTAL)}, coupée en parties d’une minute.`);
+      if (d > VID_MAX_S + 2 || file.size > VID_MAX_BYTES) return VCut.ask(file, d, parts => this.video(parts[0].blob, parts[0].mime, parts[0].dur, false, 'gal', opts, parts));
+      this.video(file, file.type, d, false, 'gal', opts); };
     v.onerror = () => { URL.revokeObjectURL(u); this.video(file, file.type, 0, false, 'gal', opts); };
     v.src = u;
   },
@@ -170,7 +221,7 @@ const Edit = {
           : `<span class="ed-tools">${s.hist.length ? `<button class="cib" type="button" data-ed="undo" aria-label="Annuler la dernière retouche">${CI.undo}</button>` : ''}<button class="cib" type="button" data-ed="rotL" aria-label="Pivoter vers la gauche">${CI.rotL}</button><button class="cib" type="button" data-ed="rotR" aria-label="Pivoter vers la droite">${CI.rotR}</button><button class="cib" type="button" data-ed="crop" aria-label="Rogner">${CI.crop}</button><button class="cib${s.tool === 'filt' ? ' sel' : ''}" type="button" data-ed="filt" aria-label="Filtres">${CI.filt}</button></span>`) : '<span></span>'}
       </div>
       <div class="ed-stage">${ph ? '<canvas class="ed-cv"></canvas><div class="ed-crop" hidden><div class="ed-box"><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i></div></div>'
-        : `<video class="ed-vid${s.mirror ? ' mirror' : ''}" src="${s.url}" playsinline autoplay loop controls controlslist="nodownload"></video>`}</div>
+        : `<video class="ed-vid${s.mirror ? ' mirror' : ''}" src="${s.url}" playsinline autoplay loop controls controlslist="nodownload"></video>${s.parts ? `<div class="ed-parts">${s.parts.map((p, i) => `<button type="button" data-ed="part" data-i="${i}" aria-pressed="${s.pi === i}">Partie ${i + 1}<small>${fmtT(p.dur)}</small></button>`).join('')}</div>` : ''}`}</div>
       ${crop ? `<div class="ed-ratios"><button type="button" data-ed="ratio" data-r="0" aria-pressed="${!s.ratio}">Libre</button><button type="button" data-ed="ratio" data-r="1" aria-pressed="${s.ratio === 1}">Carré</button><button type="button" data-ed="ratio" data-r="0.8" aria-pressed="${s.ratio === .8}">4:5</button><button type="button" data-ed="ratio" data-r="1.7778" aria-pressed="${s.ratio === 1.7778}">16:9</button><button type="button" data-ed="cropAll">Tout</button></div>` : ''}
       ${ph && s.tool === 'filt' ? `<div class="ed-filts" role="listbox" aria-label="Filtres">${FILTERS.map(([n], i) => `<button type="button" role="option" data-ed="setF" data-i="${i}" aria-selected="${s.f === i}"><img alt="" data-fth="${i}"><span>${n}</span></button>`).join('')}</div>` : ''}
       ${crop ? '' : `<form class="ed-send" data-edform="1">${tgt ? '' : `<button class="cib once-tog" type="button" data-ed="once" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique"><span class="one" aria-hidden="true">1</span></button>`}
@@ -225,13 +276,19 @@ const Edit = {
       let blob, payload;
       if (s.kind === 'photo') { const cv = document.createElement('canvas'); this.paint(cv, 2560); blob = await new Promise((ok, ko) => cv.toBlob(b => b ? ok(b) : ko(new Error('Photo illisible.')), 'image/jpeg', .9)); payload = {t: cap}; }
       else { blob = s.blob; payload = {t: cap, mime: s.mime, dur: s.dur}; }
-      if (tgt) { const r = {kind: s.kind, blob, mime: s.kind === 'video' ? s.mime : 'image/jpeg', dur: s.dur || 0, cap, mirror: !!s.mirror}; this.close(); return tgt(r); }
-      const sealed = await E2E.seal(payload, recipients(c), await blob.arrayBuffer());
-      const up = await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'});
+      if (tgt) { const r = {kind: s.kind, blob, mime: s.kind === 'video' ? s.mime : 'image/jpeg', dur: s.dur || 0, cap, mirror: !!s.mirror, parts: s.parts}; this.close(); return tgt(r); }
+      const list = s.parts || [{blob, mime: s.mime, dur: s.dur}];
       S.once = false;
-      const r = await api(`/api/chats/${c.id}/messages`, {media: up.id, enc: sealed.env, once, ...(s.kind === 'video' ? {kind: 'video'} : {})});
-      if (!once) { const u = URL.createObjectURL(blob); (s.kind === 'video' ? E2E.vids : E2E.imgs).set(r.msg.id, u); }
-      this.close(); renderComposer(); onMsg(r.msg);
+      for (let i = 0; i < list.length; i++) {
+        const p = list[i], b = s.kind === 'video' ? p.blob : blob, pl = s.kind === 'video' ? {t: list.length > 1 ? `${cap ? cap + ' ' : ''}(${i + 1}/${list.length})` : cap, mime: p.mime, dur: p.dur} : payload;
+        btn.textContent = list.length > 1 ? `${i + 1}/${list.length}` : '';
+        const sealed = await E2E.seal(pl, recipients(c), await b.arrayBuffer());
+        const up = await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'});
+        const r = await api(`/api/chats/${c.id}/messages`, {media: up.id, enc: sealed.env, once, ...(s.kind === 'video' ? {kind: 'video'} : {})});
+        if (!once) { const u = URL.createObjectURL(b); (s.kind === 'video' ? E2E.vids : E2E.imgs).set(r.msg.id, u); }
+        onMsg(r.msg);
+      }
+      this.close(); renderComposer();
     } catch (e) { toast(e.message); btn.disabled = false; btn.classList.remove('busy'); }
   },
   close() { if (this.s && this.s.url) URL.revokeObjectURL(this.s.url); this.s = null; this.cr = null; if (this.el) this.el.remove(); this.el = null; document.body.classList.remove('in-cam'); },
@@ -249,6 +306,7 @@ const Edit = {
     else if (a === 'filt') { s.tool = s.tool === 'filt' ? null : 'filt'; this.render(); }
     else if (a === 'setF') { if (s.f !== +d.i) { this.push(); s.f = +d.i; } this.render(); }
     else if (a === 'undo') { const h = s.hist.pop(); if (h) Object.assign(s, h); this.render(); }
+    else if (a === 'part') { s.pi = +d.i; URL.revokeObjectURL(s.url); const p = s.parts[s.pi]; Object.assign(s, {blob: p.blob, mime: p.mime, dur: p.dur, url: URL.createObjectURL(p.blob)}); this.render(); }
     else if (a === 'once') { S.once = !S.once; this.el.querySelectorAll('.once-tog').forEach(b => b.setAttribute('aria-pressed', S.once)); toast(S.once ? 'Vue unique : ne pourra être ouvert qu’une seule fois' : 'Vue unique désactivée'); }
   },
 };

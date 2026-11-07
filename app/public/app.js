@@ -753,7 +753,7 @@ function stOpts() {
 }
 function stMedia(r) {
   const s = S.sc; if (!s) return; if (s.url) URL.revokeObjectURL(s.url);
-  Object.assign(s, {kind: r.kind, blob: r.blob, url: URL.createObjectURL(r.blob), mime: r.mime, dur: r.dur || 0, mirror: !!r.mirror});
+  Object.assign(s, {kind: r.kind, blob: r.blob, url: URL.createObjectURL(r.blob), mime: r.mime, dur: r.dur || 0, mirror: !!r.mirror, parts: r.parts || null});
   if (r.cap) s.text = r.cap; s.tab = null; stComposer();
 }
 function stComposer() {
@@ -768,7 +768,7 @@ function stComposer() {
     ${s.aud === 'private' ? `<button class="st-grp-row" type="button" data-act="stGrp">${closeN ? '' : '<span class="need" aria-hidden="true"></span>'}${I.users}<span><b>Mon groupe privé</b><small>${closeN ? `${closeN} personne${closeN > 1 ? 's' : ''} verront ce statut` : 'Touchez ici pour choisir qui verra ce statut'}</small></span>${I.chev || '›'}</button>`
       : '<p class="st-note">Visible par tous vos contacts pendant 24 heures.</p>'}
     <div class="stage"><div class="st-box${media ? ' media' : ''}" style="${stBgStyle(s.bg)};--stf:${stFont(s.font)}">
-      ${s.kind === 'photo' ? `<img src="${s.url}" alt="Aperçu">` : s.kind === 'video' ? `<video src="${s.url}" class="${s.mirror ? 'mirror' : ''}" autoplay loop muted playsinline></video>` : `<textarea id="stText" maxlength="700" placeholder="Touchez pour écrire…">${esc(s.text)}</textarea>`}
+      ${s.kind === 'photo' ? `<img src="${s.url}" alt="Aperçu">` : s.kind === 'video' ? `<video src="${s.url}" class="${s.mirror ? 'mirror' : ''}" autoplay loop muted playsinline></video>${s.parts ? `<span class="st-parts">${s.parts.length} parties · ${s.parts.length} statuts à la suite</span>` : ''}` : `<textarea id="stText" maxlength="700" placeholder="Touchez pour écrire…">${esc(s.text)}</textarea>`}
       ${media ? `<button class="st-rm" type="button" data-act="stNoPhoto" aria-label="Retirer ${s.kind === 'video' ? 'la vidéo' : 'la photo'}">${I.close}</button><input id="stCap" class="st-cap" maxlength="700" placeholder="Ajouter une légende…" value="${esc(s.text)}" autocomplete="off">` : ''}
       ${s.music ? `<div class="st-mus">🎵 <span>${esc(s.music.name)}</span><button type="button" data-act="stMusOff" aria-label="Retirer la musique">${I.close}</button></div><audio src="${s.music.url}" id="stMusPrev"></audio>` : ''}
     </div></div>
@@ -788,12 +788,18 @@ async function stPublish() {
   try {
     // Statut chiffré de bout en bout pour vos contacts (ou votre seul groupe privé).
     const cs = S.contacts.contacts.filter(u => u.pubkey && !u.blocked && (s.aud !== 'private' || (S.me.close || []).includes(u.id)));
-    const payload = {t: s.text, f: s.font || 0}; if (s.kind === 'video') Object.assign(payload, {mime: s.mime, dur: s.dur, mir: s.mirror ? 1 : 0}); if (s.music) payload.mname = s.music.name;
-    const sealed = await E2E.seal(payload, [[S.me.id, E2E.pubJwk], ...cs.map(u => [u.id, u.pubkey])], s.blob ? await s.blob.arrayBuffer() : undefined, s.music ? await s.music.blob.arrayBuffer() : undefined);
-    let media = null, music = null;
-    if (sealed.blob) media = (await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'})).id;
-    if (sealed.blob2) music = (await api('/api/media', sealed.blob2, {raw: true, type: 'application/octet-stream'})).id;
-    await api('/api/statuses', {enc: sealed.env, bg: s.bg, media, music, aud: s.aud, ...(s.kind === 'video' ? {kind: 'video'} : {})});
+    // Vidéo longue : une partie par statut, publiées dans l'ordre (la légende sur chacune avec 1/3, 2/3…).
+    const list = s.kind === 'video' && s.parts ? s.parts : [{blob: s.blob, mime: s.mime, dur: s.dur}];
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i], n = list.length;
+      if (b && n > 1) b.textContent = `${i + 1}/${n}…`;
+      const payload = {t: n > 1 ? `${s.text ? s.text + ' ' : ''}(${i + 1}/${n})` : s.text, f: s.font || 0}; if (s.kind === 'video') Object.assign(payload, {mime: p.mime, dur: p.dur, mir: s.mirror ? 1 : 0}); if (s.music && i === 0) payload.mname = s.music.name;
+      const sealed = await E2E.seal(payload, [[S.me.id, E2E.pubJwk], ...cs.map(u => [u.id, u.pubkey])], p.blob ? await p.blob.arrayBuffer() : undefined, s.music && i === 0 ? await s.music.blob.arrayBuffer() : undefined);
+      let media = null, music = null;
+      if (sealed.blob) media = (await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'})).id;
+      if (sealed.blob2) music = (await api('/api/media', sealed.blob2, {raw: true, type: 'application/octet-stream'})).id;
+      await api('/api/statuses', {enc: sealed.env, bg: s.bg, media, music, aud: s.aud, ...(s.kind === 'video' ? {kind: 'video'} : {})});
+    }
     if (s.url) URL.revokeObjectURL(s.url); if (s.music) URL.revokeObjectURL(s.music.url);
     S.sc = null; closeLayer(); await loadStatuses(); renderStories(); toast('Statut publié pour 24 heures');
   } catch (e) { toast(e.message); if (b) { b.disabled = false; b.textContent = 'Publier'; } }
@@ -1164,7 +1170,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.39</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.40</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
