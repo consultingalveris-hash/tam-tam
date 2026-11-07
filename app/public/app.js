@@ -756,11 +756,12 @@ function stComposer() {
       ${s.music ? `<div class="st-mus">🎵 <span>${esc(s.music.name)}</span><button type="button" data-act="stMusOff" aria-label="Retirer la musique">${I.close}</button></div><audio src="${s.music.url}" id="stMusPrev"></audio>` : ''}
     </div></div>
     ${s.tab === 'font' ? `<div class="st-fonts">${ST_FONTS.map(([n, f], i) => `<button type="button" data-act="stFont" data-i="${i}" aria-pressed="${s.font === i}" style="font-family:${f}">Aa<small>${n}</small></button>`).join('')}</div>` : ''}
-    ${!media ? `<div class="bgs st-bgs">${BGS.map(h => `<button class="sw" type="button" style="--c:${stBgc(h) || `hsl(${h} 55% 35%)`}" data-act="stBg" data-h="${h}" aria-pressed="${s.bg === h}" aria-label="${h === 360 ? 'Fond noir' : h === 361 ? 'Fond gris foncé' : 'Couleur de fond'}"></button>`).join('')}</div>` : ''}
+    ${!media ? `<div class="bgs st-bgs">${BGS.map(h => `<button class="sw" type="button" style="--c:${stBgc(h) || `hsl(${h} 62% 47%)`}" data-act="stBg" data-h="${h}" aria-pressed="${s.bg === h}" aria-label="${h === 360 ? 'Fond noir' : h === 361 ? 'Fond gris foncé' : 'Couleur de fond'}"></button>`).join('')}</div>` : ''}
     <div class="st-tools">${tool('stText', '<b class="aa">Aa</b>', 'Texte', !media)}${tool('stPhoto', I.image, 'Photo', s.kind === 'photo')}${tool('stCam', CI.photo, 'Caméra', false)}${tool('stVid', CI.video, 'Vidéo', s.kind === 'video')}${tool('stFontTab', '<b class="aa serif">F</b>', 'Police', s.tab === 'font')}${tool('stMus', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>', 'Musique', !!s.music)}${Emoji.btn(capSel, 'st-tool emo')}</div>
     <input type="file" id="stIn" accept="image/*,video/*" hidden><input type="file" id="stCamIn" accept="image/*" capture="environment" hidden><input type="file" id="stMusIn" accept="audio/*" hidden>
     ${s.grp ? `<div class="st-grp-panel" data-act="stGrpBg"><div class="st-grp-card">${closePicker(true)}</div></div>` : ''}
   </div>`;
+  if (s.kind === 'text' && !s.grp && matchMedia('(min-width:821px) and (pointer:fine)').matches) { const t = $('#stText'); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }
 }
 async function stPublish() {
   const s = S.sc; keepSt();
@@ -1146,7 +1147,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.37</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.38</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1288,7 +1289,7 @@ const ACT = {
   stCancel() { if (S.sc && S.sc.url) URL.revokeObjectURL(S.sc.url); if (S.sc && S.sc.music) URL.revokeObjectURL(S.sc.music.url); S.sc = null; Emoji.close(); closeLayer(); },
   stAud(d) { keepSt(); S.sc.aud = d.a; if (d.a === 'private' && !(S.me.close || []).length && !matchMedia('(min-width:821px)').matches) S.sc.grp = true; stComposer(); },
   // Changer la couleur ne fait pas apparaître le clavier : on change seulement le fond.
-  stBg(d) { S.sc.bg = +d.h; const b = document.querySelector('.st-box'); if (b) { b.style.setProperty('--h', d.h); if (stBgc(d.h)) b.style.setProperty('--bgc', stBgc(d.h)); else b.style.removeProperty('--bgc'); } document.querySelectorAll('.st-bgs .sw').forEach(x => x.setAttribute('aria-pressed', x.dataset.h === d.h)); },
+  stBg(d) { S.sc.bg = +d.h; const b = document.querySelector('.st-box'); if (b) { b.style.setProperty('--h', d.h); if (stBgc(d.h)) b.style.setProperty('--bgc', stBgc(d.h)); else b.style.removeProperty('--bgc'); } document.querySelectorAll('.st-bgs .sw').forEach(x => x.setAttribute('aria-pressed', x.dataset.h === d.h)); if (matchMedia('(min-width:821px) and (pointer:fine)').matches) { const t = $('#stText'); if (t) t.focus(); } },
   stPhoto() { keepSt(); $('#stIn').click(); },
   stCam() { keepSt(); Cam.open({...stOpts(), mode: 'photo'}); },
   stVid() { keepSt(); Cam.open({...stOpts(), mode: 'video'}); },
