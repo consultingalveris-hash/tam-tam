@@ -121,8 +121,8 @@ function renderAuth(msg) {
     <p class="hint">${A.g && !m.ownerSetup ? (A.g.by ? `${esc(A.g.by)} vous invite sur tam-tam.` : 'Bienvenue sur tam-tam.') : m.ownerSetup ? `Premier compte de tam-tam${m.ownerEmail ? ` : utilisez l’adresse ${esc(m.ownerEmail)}` : ''}.` : m.invite ? `${esc(m.invite.by)} vous invite sur tam-tam.` : 'L’inscription se fait uniquement avec un lien d’invitation envoyé par un membre.'}</p>
     ${m.ownerSetup || m.invite || A.g ? `${A.g ? `<p class="g-ok">${gIcon()}<span>Compte Google confirmé : <b>${esc(A.g.email)}</b>. Il reste à choisir votre avatar et à accepter les conditions.</span></p>` : gBtn()}
     <div class="field"><label for="aHandle">Pseudo</label><div class="at-in"><span>@</span><input id="aHandle" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="20" required placeholder="ex. lion.du.sahel" pattern="[A-Za-z0-9._]{3,20}"></div><small class="hint">C’est le seul nom que voient les membres qui ne sont pas vos contacts. 3 à 20 caractères : lettres, chiffres, point ou tiret bas.</small></div>
-    <div class="field-row"><div class="field"><label for="aName">Prénom <small>(facultatif)</small></label><input id="aName" autocomplete="given-name" maxlength="30" value="${esc(A.g ? (A.g.name || '').split(' ')[0] : '')}"></div>
-    <div class="field"><label for="aLast">Nom <small>(facultatif)</small></label><input id="aLast" autocomplete="family-name" maxlength="30" value="${esc(A.g ? (A.g.name || '').split(' ').slice(1).join(' ') : '')}"></div></div>
+    <div class="field-row"><div class="field"><label for="aName">Prénom</label><input id="aName" autocomplete="given-name" maxlength="30" value="${esc(A.g ? (A.g.name || '').split(' ')[0] : '')}"></div>
+    <div class="field"><label for="aLast">Nom</label><input id="aLast" autocomplete="family-name" maxlength="30" value="${esc(A.g ? (A.g.name || '').split(' ').slice(1).join(' ') : '')}"></div></div>
     <p class="hint">Votre prénom et votre nom, si vous les indiquez, ne sont visibles que par vos contacts.</p>
     ${A.g ? '' : `<div class="field"><label for="aMail">Adresse e-mail</label><input id="aMail" type="email" autocomplete="email" required></div>
     <div class="field"><label for="aPass">Mot de passe (8 caractères minimum)</label><div class="pw"><input id="aPass" type="password" autocomplete="new-password" minlength="8" required><button type="button" data-act="pwShow">Voir</button></div></div>`}
@@ -915,7 +915,7 @@ function profileEditor() {
     ${t === 'pub' ? `<p class="note">${I.globe}Visible par tous les membres de Tam-Tam, notamment quand quelqu’un veut vous ajouter. Il l’aide à savoir qui vous êtes.</p>
     <div class="set-block">
       <div class="field"><label for="p-handle">Pseudo</label><div class="at-in"><span>@</span><input id="p-handle" data-set="handle" maxlength="20" autocapitalize="none" spellcheck="false" value="${esc(me.handle)}"></div><small class="hint">Visible par tous. Vous pouvez le changer quand vous voulez, une fois par mois au maximum.</small></div>
-      <div class="field"><label for="p-name">Prénom et nom <small>(facultatif)</small></label><input id="p-name" data-set="name" maxlength="40" value="${esc(me.rawName != null ? me.rawName : me.name)}"><small class="hint">Visible seulement par vos contacts.</small></div>
+      <div class="field"><label for="p-name">Prénom et nom</label><input id="p-name" data-set="name" maxlength="40" value="${esc(me.rawName != null ? me.rawName : me.name)}"><small class="hint">Visible seulement par vos contacts.</small></div>
       ${f('pub', 'bio', 'Qui suis-je', 'Quelques mots sur vous')}${f('pub', 'metier', 'Métier ou études')}${f('pub', 'ville', 'Ville', 'Ex. : Dakar, Sénégal')}${f('pub', 'langues', 'Langues parlées', 'Ex. : Français, Wolof')}${f('pub', 'interets', 'Centres d’intérêt')}
       <div class="field"><span class="lbl">Jour et mois de naissance</span><div class="bd-row"><select id="p-bd" data-set="pub" data-k="bd" aria-label="Jour"><option value="">Jour</option>${Array.from({length: 31}, (_, i) => `<option value="${i + 1}"${+p.bd === i + 1 ? ' selected' : ''}>${i + 1}</option>`).join('')}</select><select id="p-bm" data-set="pub" data-k="bm" aria-label="Mois"><option value="">Mois</option>${MOIS.map((m, i) => `<option value="${i + 1}"${+p.bm === i + 1 ? ' selected' : ''}>${m}</option>`).join('')}</select></div></div>
       ${picsEdit('pub')}
@@ -1193,7 +1193,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.41</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.42</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
