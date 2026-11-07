@@ -228,7 +228,7 @@ async function loadStatuses() {
 function renderAll() { renderTabs(); renderHead(); renderBody(); }
 
 /* ---------- liste ---------- */
-const TABS = [['chats', 'Discussions', I.chats], ['contacts', 'Contacts', I.users], ['calls', 'Appels', I.dialpad]];
+const TABS = [['chats', 'Discussions', I.chats], ['contacts', 'Contacts', I.users], ['souvenirs', 'Souvenirs', I.image], ['calls', 'Appels', I.dialpad]];
 function renderTabs() {
   const unread = [...S.chats.values()].filter(c => c.unread > 0 && (!c.hidden || S.showHidden)).length, inc = S.contacts.incoming.length;
   $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${id === 'chats' && unread ? `<span class="badge" aria-label="${unread} non lues">${unread}</span>` : ''}${id === 'contacts' && inc ? `<span class="badge" aria-label="${inc} demande${inc > 1 ? 's' : ''} d’ami">${inc}</span>` : ''}</button>`).join('');
@@ -247,13 +247,14 @@ function renderHead() {
       <label class="search">${I.search}<span class="sr">Rechercher</span><input id="q" type="search" placeholder="Rechercher une discussion" value="${esc(S.q)}" autocomplete="off"></label>
       <div class="chips filt" id="filts" role="group" aria-label="Filtrer les discussions">${filtChips()}</div>`;
     renderStories();
-  } else h.innerHTML = `<div class="title"><h1>${{contacts: 'Contacts', calls: 'Appels', settings: 'Réglages'}[S.tab]}</h1><span class="grow"></span>${S.tab === 'settings' ? availPicker() : ''}${S.tab !== 'settings' ? `<button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button>` : ''}</div>`;
+  } else h.innerHTML = `<div class="title"><h1>${{contacts: 'Contacts', calls: 'Appels', settings: 'Réglages', souvenirs: 'Souvenirs'}[S.tab]}</h1><span class="grow"></span>${S.tab === 'settings' ? availPicker() : ''}${S.tab === 'souvenirs' ? `<button class="btn sm" type="button" data-act="memAdd">${I.plus}Ajouter</button>` : ''}${S.tab !== 'settings' ? `<button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button>` : ''}</div>`;
 }
 function renderBody() {
   const b = $('#body'); if (!b) return;
   if (S.tab === 'chats') b.innerHTML = Device.banner() + gcallBanner() + chatRows();
   else if (S.tab === 'contacts') { b.innerHTML = Book.body(); Book.after(); }
   else if (S.tab === 'calls') { b.innerHTML = Calls.body(); Calls.after(); }
+  else if (S.tab === 'souvenirs') { b.innerHTML = Mem.body(); Mem.hydrate(b); }
   else { b.innerHTML = settingsBody(); fillFp(); }
 }
 const chatTitle = c => c.type === 'group' ? c.name : uOf(c.peer).name;
@@ -363,11 +364,13 @@ async function profSheet(id, back) {
     ${u.limTheirs ? `<p class="hint">${I.lock} Ajouté par code QR : vous voyez seulement son profil public.</p>` : ''}
     ${u.limMine ? `<div class="qrnote"><span>${I.lock} Contact ajouté avec votre code QR : ${esc(first(u.name))} ne voit pas votre profil privé (téléphone, adresse…).</span><button class="btn sm ghost" type="button" data-act="sharePriv" data-id="${u.id}">Lui montrer mon profil privé</button></div>` : ''}
     ${picsView(u.pics, 'Photos publiques')}
+    ${u.rel !== 'me' ? '<div id="profMem"></div>' : ''}
     ${u.priv ? `<div class="nocopy"><span class="lbl">${I.lock} Profil privé</span>${dl(PRIV_L.map(([k, l]) => [l, u.priv[k]])) || '<p class="hint">Rien de renseigné.</p>'}${picsView(u.privPics, 'Photos privées')}${u.id !== S.me.id ? watermark() : ''}</div>` : ''}
     ${u.rel === 'contact' ? `<div class="qrnote"><span>${I.phone || ''} ${u.telMine ? `${esc(first(u.name))} voit votre numéro de téléphone.` : `${esc(first(u.name))} ne voit pas votre numéro de téléphone.`}</span><button class="btn sm ghost" type="button" data-act="shareTel" data-id="${u.id}" data-on="${u.telMine ? '' : '1'}">${u.telMine ? 'Ne plus montrer mon numéro' : 'Lui montrer mon numéro'}</button></div>` : ''}
     ${u.rel === 'sent' ? '<p class="hint">Demande envoyée : vous pourrez échanger quand elle sera acceptée.</p>' : u.rel === 'none' ? '<p class="hint">Après votre demande, cette personne doit l’accepter pour que vous puissiez échanger.</p>' : ''}
     ${u.rel === 'me' ? '<p class="hint" style="text-align:center">C’est ainsi que les autres membres voient votre profil.</p>' : `<div class="actions">${u.rel === 'received' ? `<button class="btn ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button>` : ''}${u.blocked ? '' : relBtn(u).replace(/btn sm/g, 'btn')}</div>
     <div class="actions" style="justify-content:flex-start">${u.rel === 'contact' ? `<button class="btn sm ghost" type="button" data-act="cRemoveAsk" data-id="${u.id}">Retirer des contacts</button>` : ''}<button class="btn sm ghost" type="button" data-act="${u.blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${u.blocked ? 'Débloquer' : 'Bloquer'}</button><button class="btn sm ghost" type="button" data-act="reportAsk" data-id="${u.id}">Signaler</button></div>`}</div>`, 'Profil');
+  if (u.rel !== 'me' && typeof Mem !== 'undefined') Mem.profBlock(u.id);
   const pf = $('#peerFp'); if (pf) pf.textContent = await E2E.fingerprint(u.pubkey);
 }
 
@@ -1140,7 +1143,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.34</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.35</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {

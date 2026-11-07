@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS status_views(status_id INTEGER NOT NULL REFERENCES st
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, target_user INTEGER, chat_id INTEGER, reason TEXT NOT NULL, note TEXT,
   created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0);
 `);
-for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `ALTER TABLE users ADD COLUMN avail TEXT NOT NULL DEFAULT 'on'`, `ALTER TABLE users ADD COLUMN tr_consent INTEGER`, `ALTER TABLE users ADD COLUMN priv_env TEXT`, `ALTER TABLE users ADD COLUMN tel_env TEXT`, `ALTER TABLE users ADD COLUMN tel_hash TEXT`, `ALTER TABLE statuses ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE chats ADD COLUMN expires INTEGER`, `ALTER TABLE statuses ADD COLUMN music TEXT`, `CREATE TABLE IF NOT EXISTS corpus(id INTEGER PRIMARY KEY, src TEXT NOT NULL, sl TEXT, tgt TEXT NOT NULL, tl TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL)`, `CREATE UNIQUE INDEX IF NOT EXISTS corpus_u ON corpus(src, tl, tgt, kind)`, `CREATE TABLE IF NOT EXISTS tr_mine(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, id TEXT NOT NULL, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(user_id, id))`, `CREATE TABLE IF NOT EXISTS tr_votes(id TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cid TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(id, user_id))`, `CREATE TABLE IF NOT EXISTS tr_cache(id TEXT PRIMARY KEY, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL)`, `ALTER TABLE tr_cache ADD COLUMN promoted INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
+for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `ALTER TABLE users ADD COLUMN avail TEXT NOT NULL DEFAULT 'on'`, `ALTER TABLE users ADD COLUMN tr_consent INTEGER`, `ALTER TABLE users ADD COLUMN priv_env TEXT`, `ALTER TABLE users ADD COLUMN tel_env TEXT`, `ALTER TABLE users ADD COLUMN tel_hash TEXT`, `ALTER TABLE statuses ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE chats ADD COLUMN expires INTEGER`, `ALTER TABLE statuses ADD COLUMN music TEXT`, `CREATE TABLE IF NOT EXISTS memories(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL, media TEXT NOT NULL, thumb TEXT, env TEXT NOT NULL, aud TEXT NOT NULL, taken_at INTEGER NOT NULL, created_at INTEGER NOT NULL)`, `CREATE INDEX IF NOT EXISTS mem_user ON memories(user_id, taken_at)`, `CREATE TABLE IF NOT EXISTS mem_access(mem_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(mem_id, user_id))`, `CREATE TABLE IF NOT EXISTS corpus(id INTEGER PRIMARY KEY, src TEXT NOT NULL, sl TEXT, tgt TEXT NOT NULL, tl TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL)`, `CREATE UNIQUE INDEX IF NOT EXISTS corpus_u ON corpus(src, tl, tgt, kind)`, `CREATE TABLE IF NOT EXISTS tr_mine(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, id TEXT NOT NULL, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(user_id, id))`, `CREATE TABLE IF NOT EXISTS tr_votes(id TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cid TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(id, user_id))`, `CREATE TABLE IF NOT EXISTS tr_cache(id TEXT PRIMARY KEY, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL)`, `ALTER TABLE tr_cache ADD COLUMN promoted INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
 db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, call_id TEXT NOT NULL, kind TEXT NOT NULL, chat_id INTEGER NOT NULL, caller INTEGER NOT NULL, callee INTEGER, video INTEGER NOT NULL, status TEXT NOT NULL, joined TEXT NOT NULL DEFAULT '[]', started INTEGER NOT NULL, answered INTEGER, ended INTEGER);
@@ -883,11 +883,45 @@ R('GET', /^\/api\/media\/([A-Za-z0-9_-]{10,40})$/, async ({ me, m, res }) => {
     ok = isMember(md.ref, me.id);
     const om = ok && q1(`SELECT id FROM messages WHERE media=? AND once=1`, md.id); if (om && q1(`SELECT 1 FROM once_views WHERE msg_id=? AND user_id=?`, om.id, me.id)) ok = false;
   }
+  if (!ok && md.scope === 'mem') { const mm = q1(`SELECT * FROM memories WHERE id=?`, md.ref); ok = !!mm && memVisible(mm, me.id); }
   if (!ok && md.scope === 'status') { const s = q1(`SELECT * FROM statuses WHERE id=?`, md.ref); ok = !!s && statusVisible(s, me.id); }
   if (!ok) E(404, 'Introuvable');
   res.writeHead(200, { 'Content-Type': md.mime, 'Cache-Control': 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' });
   fs.createReadStream(path.join(MEDIA, md.id)).on('error', () => res.end()).pipe(res);
   return null;
+});
+
+/* souvenirs : photos et vidéos gardées dans le temps (publiques, privées ou restreintes) */
+function memVisible(m, viewer) {
+  if (m.user_id === viewer) return true;
+  if (blockedEither(m.user_id, viewer)) return false;
+  if (m.aud === 'public') return true;
+  if (m.aud === 'restricted') return !!q1(`SELECT 1 FROM mem_access WHERE mem_id=? AND user_id=?`, m.id, viewer);
+  return false;
+}
+const memOut = m => ({ id: m.id, kind: m.kind, media: mediaUrl(m.media), thumb: mediaUrl(m.thumb), env: J(m.env, null), aud: m.aud, takenAt: m.taken_at, at: m.created_at });
+R('GET', /^\/api\/memories$/, async ({ me, url }) => {
+  const uid = +url.searchParams.get('user') || me.id, u = getUser(uid); if (!u) E(404, 'Personne introuvable.');
+  const rows = qa(`SELECT * FROM memories WHERE user_id=? ORDER BY taken_at DESC LIMIT 600`, uid).filter(m => memVisible(m, me.id));
+  return { items: rows.map(m => uid === me.id ? { ...memOut(m), to: m.aud === 'restricted' ? qa(`SELECT user_id FROM mem_access WHERE mem_id=?`, m.id).map(r => r.user_id) : undefined } : memOut(m)) };
+});
+R('POST', /^\/api\/memories$/, async ({ me, body }) => {
+  if (tooMany('mem:' + me.id, 120, DAY)) E(429, 'Beaucoup de souvenirs ajoutés aujourd’hui. Réessayez demain.');
+  if (q1(`SELECT COUNT(*) n FROM memories WHERE user_id=?`, me.id).n >= 2000) E(400, 'Vous avez atteint 2 000 souvenirs. Supprimez-en quelques-uns.');
+  const aud = ['public', 'private', 'restricted'].includes(body.aud) ? body.aud : 'private', kind = body.kind === 'video' ? 'video' : 'image';
+  const env = body.env; if (!env || typeof env !== 'object' || typeof env.ct !== 'string' || typeof env.iv !== 'string' || JSON.stringify(env).length > 200_000) E(400, 'Souvenir invalide.');
+  if (aud === 'public' ? typeof env.k !== 'string' : (!env.keys || env.k)) E(400, 'Souvenir invalide.');
+  const md = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.media), me.id); if (!md) E(400, 'Photo introuvable.');
+  const th = body.thumb ? q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.thumb), me.id) : null;
+  const taken = Math.min(now() + DAY, Math.max(0, +body.taken || now()));
+  const id = Number(run(`INSERT INTO memories(user_id,kind,media,thumb,env,aud,taken_at,created_at) VALUES(?,?,?,?,?,?,?,?)`, me.id, kind, md.id, th ? th.id : null, JSON.stringify(env), aud, taken, now()).lastInsertRowid);
+  for (const x of [md, th]) if (x) run(`UPDATE media SET scope='mem', ref=? WHERE id=?`, id, x.id);
+  if (aud === 'restricted') { const ok = new Set(contactIds(me.id)); for (const uid of (Array.isArray(body.to) ? body.to : []).map(Number)) if (ok.has(uid)) run(`INSERT OR IGNORE INTO mem_access(mem_id,user_id) VALUES(?,?)`, id, uid); }
+  return { item: memOut(q1(`SELECT * FROM memories WHERE id=?`, id)) };
+});
+R('POST', /^\/api\/memories\/(\d+)\/delete$/, async ({ me, m }) => {
+  const mm = q1(`SELECT * FROM memories WHERE id=? AND user_id=?`, +m[1], me.id); if (!mm) E(404, 'Souvenir introuvable.');
+  dropMedia(mm.media); if (mm.thumb) dropMedia(mm.thumb); run(`DELETE FROM memories WHERE id=?`, mm.id); return { ok: true };
 });
 
 /* statuts */
