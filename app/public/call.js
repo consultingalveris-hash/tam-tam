@@ -119,13 +119,29 @@ const Call = {
     this.render(); this.sig('media', {data: {cam: c.cam, mic: c.mic}});
   },
   async flip() {
-    const c = this.c, v = c && c.local && c.local.getVideoTracks()[0]; if (!v) return;
-    c.front = c.front === false ? true : false;
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({video: {facingMode: c.front === false ? 'environment' : 'user'}}), nv = s.getVideoTracks()[0];
-      const snd = c.pc && c.pc.getSenders().find(x => x.track && x.track.kind === 'video'); if (snd) await snd.replaceTrack(nv);
-      c.local.removeTrack(v); v.stop(); c.local.addTrack(nv); this.attach();
-    } catch { toast('Impossible de changer de caméra.'); }
+    const c = this.c, v = c && c.local && c.local.getVideoTracks()[0]; if (!v || c.flipping) return;
+    c.flipping = true; const back = c.front !== false; // on passe à l'arrière si on était devant
+    // Sur la plupart des téléphones, il faut d'abord libérer la caméra en cours avant d'ouvrir l'autre.
+    const oldId = v.getSettings ? v.getSettings().deviceId : null;
+    c.local.removeTrack(v); v.stop();
+    const tries = [{facingMode: {exact: back ? 'environment' : 'user'}}];
+    try { const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+      const want = cams.find(d => d.deviceId !== oldId && (back ? /back|rear|arri|environment/i : /front|avant|user|face/i).test(d.label)) || cams.find(d => d.deviceId && d.deviceId !== oldId);
+      if (want) tries.push({deviceId: {exact: want.deviceId}}); } catch {}
+    tries.push({facingMode: back ? 'environment' : 'user'});
+    let nv = null;
+    for (const t of tries) { try { nv = (await navigator.mediaDevices.getUserMedia({video: {...t, width: {ideal: 1280}, height: {ideal: 720}}})).getVideoTracks()[0]; if (nv) break; } catch {} }
+    let ok = !!nv;
+    if (!nv) { try { nv = (await navigator.mediaDevices.getUserMedia({video: oldId ? {deviceId: {exact: oldId}} : {facingMode: 'user'}})).getVideoTracks()[0]; } catch {} }
+    if (nv) {
+      const snd = c.pc && (c.pc.getSenders().find(x => x.track && x.track.kind === 'video') || c.pc.getSenders().find(x => !x.track));
+      if (snd) await snd.replaceTrack(nv).catch(() => {});
+      c.local.addTrack(nv);
+      if (ok) c.front = !back;
+      const l = document.getElementById('callLocal'); if (l) { l.srcObject = null; l.srcObject = c.local; l.play && l.play().catch(() => {}); l.classList.toggle('rear', c.front === false); }
+    }
+    c.flipping = false; this.render();
+    if (!ok) toast('Ce téléphone ne permet pas de changer de caméra pendant l’appel.');
   },
 
   /* ---------- affichage ---------- */
@@ -147,7 +163,7 @@ const Call = {
       ${showRemote ? '' : `<div class="call-who"><div class="call-av${c.state === 'ringing' || c.state === 'incoming' ? ' pulse' : ''}">${avatar(u, 'xl')}</div><h2>${esc(u.name)}</h2>
         <p id="callTime">${esc(this.label())}</p>${c.state === 'live' && c.peerMic === false ? '<p class="call-note">Micro coupé de son côté</p>' : ''}</div>`}
       ${showRemote ? `<div class="call-top"><b>${esc(u.name)}</b><span id="callTime"></span></div>` : ''}
-      <video id="callLocal" class="call-local" autoplay playsinline muted${showLocal ? '' : ' hidden'}></video>
+      <video id="callLocal" class="call-local${c.front === false ? ' rear' : ''}" autoplay playsinline muted${showLocal ? '' : ' hidden'}></video>
       <div class="call-bar">${c.state === 'incoming'
         ? `${btn('callDecline', I.phone, 'Refuser', 'red down')}${btn('callAccept', c.video ? I.video : I.phone, 'Décrocher', 'green')}`
         : `${btn('callMic', I.mic, c.mic ? 'Micro' : 'Micro coupé', c.mic ? '' : 'off')}${btn('callCam', I.video, c.cam ? 'Caméra' : 'Caméra coupée', c.cam ? '' : 'off')}${showLocal ? btn('callFlip', I.camera, 'Retourner') : ''}${btn('callEnd', I.phone, 'Raccrocher', 'red down')}`}</div></div>`;

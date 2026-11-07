@@ -605,3 +605,7 @@ mark{background:#ffe08a;color:inherit;border-radius:3px;padding:0 1px}
 .brand-logo.empty{height:120px;opacity:.9;margin-bottom:6px}
 .cg-tools{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .cg-all{background:var(--surface);border-radius:10px;padding:6px 10px}
+.call-local.rear{transform:none}
+/* Logo centré dans l'en-tête de la liste des discussions */
+.title{position:relative}
+.title .brand-h{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
