@@ -21,8 +21,8 @@ const Calls = {
     const miss = c.status === 'missed', lab = miss ? (c.dir === 'in' ? 'Manqué' : 'Sans réponse') : c.status === 'declined' ? 'Refusé' : c.status === 'busy' ? 'Occupé' : c.dir === 'in' ? 'Entrant' : 'Sortant';
     return `<div class="cl${miss ? ' miss' : ''}">${grp ? (chat ? grpAv(chat, 'sm') : '') : avatar(u, 'sm')}
       <div class="cl-t"><b>${esc(grp ? (chat ? chat.name : 'Groupe') : u.name)}</b>
-      <span>${c.dir === 'in' ? I.arrowIn : I.arrowOut}${lab}${grp ? ' · groupe' : ''} · ${this.when(c.at)}${c.dur ? ' · ' + this.dur(c.dur) : ''}</span></div>
-      <button class="ib" type="button" data-act="clCall" data-chat="${c.chatId}" data-video="${c.video ? 1 : ''}" data-grp="${grp ? 1 : ''}" aria-label="Rappeler en ${c.video ? 'vidéo' : 'vocal'}">${c.video ? I.video : I.phone}</button></div>`;
+      <span>${c.dir === 'in' ? I.arrowIn : I.arrowOut}${lab}${grp ? ' · groupe' : ''}${c.num ? ' · par numéro' : ''} · ${this.when(c.at)}${c.dur ? ' · ' + this.dur(c.dur) : ''}</span></div>
+      <button class="ib" type="button" data-act="clCall" data-chat="${c.chatId}" data-num="${c.num ? 1 : ''}" data-video="${c.video ? 1 : ''}" data-grp="${grp ? 1 : ''}" aria-label="Rappeler en ${c.video ? 'vidéo' : 'vocal'}">${c.video ? I.video : I.phone}</button></div>`;
   },
   suggest() {
     const n = this.num.replace(/\D/g, ''); if (n.length < 2) return '';
@@ -54,6 +54,12 @@ const Calls = {
   },
   after() {},
   setNum(v) { this.num = String(v).replace(/[^\d+*#]/g, '').slice(0, 20); const i = $('#dialIn'); if (i) i.value = this.num; const s = $('#dialSug'); if (s) s.innerHTML = this.suggest(); },
+  // Appel par numéro sans être amis : on appelle sans ouvrir de discussion (pas de messages possibles).
+  callLine(chat, video) {
+    keepUsers(Object.values(chat.users)); S.chats.set(chat.id, chat);
+    const prev = S.chatId; S.chatId = chat.id; Call.start(!!video); S.chatId = prev;
+    S.chats.delete(chat.id); this.log = null;
+  },
   async openDirect(userId) {
     const r = await api('/api/chats/direct', {userId}); keepUsers(Object.values(r.chat.users)); S.chats.set(r.chat.id, r.chat);
     S.tab = 'chats'; renderAll(); await openChat(r.chat.id); return r.chat;
@@ -61,10 +67,11 @@ const Calls = {
   async dial(video) {
     const n = this.num.replace(/\D/g, '');
     if (n.length < 6) return toast('Tapez ou collez un numéro complet.');
-    let r; try { r = await api('/api/calls/lookup?num=' + encodeURIComponent(this.num)); } catch (e) { return toast(e.message); }
-    if (r.user) { try { await this.openDirect(r.user.id); Call.start(!!video); } catch (e) { toast(e.message); } return; }
+    let r; try { r = await api('/api/calls/bynum', {num: this.num}); } catch (e) { return toast(e.message); }
+    if (r.user && r.contact) { try { await this.openDirect(r.user.id); Call.start(!!video); } catch (e) { toast(e.message); } return; }
+    if (r.user && r.chat) return this.callLine(r.chat, video);
     const tel = this.num.replace(/[^\d+]/g, '');
-    sheet(`${head('Ce numéro n’a pas tam-tam')}<div class="sheet-body"><p class="hint">Aucun de vos contacts tam-tam n’a ce numéro (<b>${esc(this.num)}</b>). Les appels tam-tam se font entre membres de tam-tam.</p>
+    sheet(`${head('Ce numéro n’a pas tam-tam')}<div class="sheet-body"><p class="hint">Aucun membre de Tam-Tam n’a ce numéro (<b>${esc(this.num)}</b>). Les appels tam-tam se font entre membres de tam-tam.</p>
       <div class="actions" style="flex-direction:column;align-items:stretch"><a class="btn" href="tel:${esc(tel)}">${I.phone}Appeler avec mon téléphone</a>
       <button class="btn ghost" type="button" data-act="dialInvite" data-tel="${esc(tel)}">${I.userplus}L’inviter sur tam-tam par SMS</button></div></div>`, 'Numéro inconnu');
   },
@@ -83,6 +90,7 @@ Object.assign(ACT, {
   },
   async clContact(d) { try { Calls.q = ''; await Calls.openDirect(+d.id); Call.start(!!d.video); } catch (e) { toast(e.message); } },
   async clCall(d) {
+    if (d.num) { try { const r = await api('/api/calls/again', {chatId: +d.chat}); Calls.callLine(r.chat, !!d.video); } catch (e) { toast(e.message); } return; }
     const id = +d.chat; if (!S.chats.has(id)) return toast('Cette discussion n’existe plus.');
     S.tab = 'chats'; renderAll(); await openChat(id);
     if (d.grp) GCall.start(!!d.video); else Call.start(!!d.video);
@@ -289,7 +297,20 @@ const Book = {
     return `<div class="bk">${av}<div class="cl-t"><b>${esc(c.name)}</b><span>${esc(c.tel)}${u ? ' · sur Tam-Tam' : ''}</span></div>
       ${u ? `<button class="btn sm" type="button" data-act="bookChat" data-id="${u.id}">Discuter</button>` : `<button class="btn sm ghost" type="button" data-act="bookInvite" data-tel="${esc(c.tel)}">Inviter</button>`}</div>`;
   },
-  body() {
+  // Amis Tam-Tam (acceptés), demandes reçues et envoyées : toujours en haut de l'onglet Contacts.
+  friends() {
+    const C = S.contacts, q = this.q.trim().toLowerCase(), f = u => !q || u.name.toLowerCase().includes(q);
+    const inc = C.incoming.filter(f), fr = C.contacts.filter(f), out = C.outgoing.filter(f);
+    const row = u => `<div class="row">${avOn(u)}<button class="row-name linkless" type="button" data-act="prof" data-id="${u.id}" style="border:0;background:none;padding:0;text-align:left;min-width:0;flex:1"><b>${esc(u.name)}</b></button><span class="row-end" style="display:flex;gap:4px;align-items:center">
+      <button class="ib" type="button" data-act="clContact" data-id="${u.id}" aria-label="Appel vocal avec ${esc(u.name)}" title="Appel vocal">${I.phone}</button><button class="ib" type="button" data-act="clContact" data-id="${u.id}" data-video="1" aria-label="Appel vidéo avec ${esc(u.name)}" title="Appel vidéo">${I.video}</button><button class="btn sm" type="button" data-act="write" data-id="${u.id}">Discuter</button></span></div>`;
+    return `${inc.length ? `<div class="sec">Demandes reçues · ${inc.length}</div>${inc.map(u => userRow(u, `<button class="btn sm ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button><button class="btn sm" type="button" data-act="cAccept" data-id="${u.id}">Accepter</button>`)).join('')}` : ''}
+      ${fr.length ? `<div class="sec">Mes amis sur Tam-Tam · ${fr.length}</div><div id="frList">${fr.map(row).join('')}</div>` : ''}
+      ${out.length ? `<div class="sec">Demandes envoyées · en attente</div>${out.map(u => userRow(u, '<span class="hint">En attente</span>')).join('')}` : ''}
+      ${!C.contacts.length && !inc.length && !out.length ? `<p class="hint" style="padding:8px 16px">Vos amis Tam-Tam apparaîtront ici dès qu’ils auront accepté votre demande. Pour en ajouter, touchez <b>+</b> en haut.</p>` : ''}
+      <div class="sec">Répertoire du téléphone</div>`;
+  },
+  body() { return this.friends() + this.book(); },
+  book() {
     if (!this.loaded) { this.load(); return '<p class="empty">Chargement…</p>'; }
     const q = this.q.trim().toLowerCase(), qd = q.replace(/\D/g, '');
     let list = this.list.filter(c => !q || c.name.toLowerCase().includes(q) || (qd && c.tel.replace(/\D/g, '').includes(qd)));

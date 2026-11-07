@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS status_views(status_id INTEGER NOT NULL REFERENCES st
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, target_user INTEGER, chat_id INTEGER, reason TEXT NOT NULL, note TEXT,
   created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0);
 `);
-for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `ALTER TABLE users ADD COLUMN avail TEXT NOT NULL DEFAULT 'on'`, `ALTER TABLE users ADD COLUMN tr_consent INTEGER`, `ALTER TABLE users ADD COLUMN priv_env TEXT`, `ALTER TABLE users ADD COLUMN tel_env TEXT`, `ALTER TABLE users ADD COLUMN tel_hash TEXT`, `ALTER TABLE statuses ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS corpus(id INTEGER PRIMARY KEY, src TEXT NOT NULL, sl TEXT, tgt TEXT NOT NULL, tl TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL)`, `CREATE UNIQUE INDEX IF NOT EXISTS corpus_u ON corpus(src, tl, tgt, kind)`, `CREATE TABLE IF NOT EXISTS tr_mine(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, id TEXT NOT NULL, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(user_id, id))`, `CREATE TABLE IF NOT EXISTS tr_votes(id TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cid TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(id, user_id))`, `CREATE TABLE IF NOT EXISTS tr_cache(id TEXT PRIMARY KEY, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL)`, `ALTER TABLE tr_cache ADD COLUMN promoted INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
+for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `ALTER TABLE users ADD COLUMN avail TEXT NOT NULL DEFAULT 'on'`, `ALTER TABLE users ADD COLUMN tr_consent INTEGER`, `ALTER TABLE users ADD COLUMN priv_env TEXT`, `ALTER TABLE users ADD COLUMN tel_env TEXT`, `ALTER TABLE users ADD COLUMN tel_hash TEXT`, `ALTER TABLE statuses ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE chats ADD COLUMN expires INTEGER`, `CREATE TABLE IF NOT EXISTS corpus(id INTEGER PRIMARY KEY, src TEXT NOT NULL, sl TEXT, tgt TEXT NOT NULL, tl TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL)`, `CREATE UNIQUE INDEX IF NOT EXISTS corpus_u ON corpus(src, tl, tgt, kind)`, `CREATE TABLE IF NOT EXISTS tr_mine(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, id TEXT NOT NULL, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(user_id, id))`, `CREATE TABLE IF NOT EXISTS tr_votes(id TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cid TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(id, user_id))`, `CREATE TABLE IF NOT EXISTS tr_cache(id TEXT PRIMARY KEY, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL)`, `ALTER TABLE tr_cache ADD COLUMN promoted INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
 db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, call_id TEXT NOT NULL, kind TEXT NOT NULL, chat_id INTEGER NOT NULL, caller INTEGER NOT NULL, callee INTEGER, video INTEGER NOT NULL, status TEXT NOT NULL, joined TEXT NOT NULL DEFAULT '[]', started INTEGER NOT NULL, answered INTEGER, ended INTEGER);
@@ -199,12 +199,13 @@ function statusVisible(s, viewer) {
 
 /* ---------- entretien et sauvegardes ---------- */
 function sweep() {
+  for (const c of qa(`SELECT id FROM chats WHERE expires IS NOT NULL AND expires<?`, now())) { run(`DELETE FROM calls WHERE chat_id=?`, c.id); run(`DELETE FROM chats WHERE id=?`, c.id); }
   run(`DELETE FROM sessions WHERE expires<?`, now()); run(`DELETE FROM tr_cache WHERE at<?`, now() - 180 * DAY); run(`DELETE FROM resets WHERE expires<?`, now());
   for (const s of qa(`SELECT id, media FROM statuses WHERE expires<?`, now())) { if (s.media) dropMedia(s.media); run(`DELETE FROM statuses WHERE id=?`, s.id); }
   for (const m of qa(`SELECT id FROM media WHERE scope IS NULL AND created_at<?`, now() - DAY)) dropMedia(m.id);
 }
 function dropMedia(id) { try { fs.rmSync(path.join(MEDIA, id)); } catch {} run(`DELETE FROM media WHERE id=?`, id); }
-setInterval(sweep, 10 * 60_000); sweep();
+setInterval(sweep, 5 * 60_000); sweep();
 function backup() {
   const day = new Date().toISOString().slice(0, 10), f = path.join(DATA_DIR, 'backups', `tamtam-${day}.db`);
   if (!fs.existsSync(f)) { try { db.exec(`VACUUM INTO '${f.replace(/'/g, "''")}'`); } catch (e) { console.error('sauvegarde', e.message); } }
@@ -403,7 +404,7 @@ R('POST', /^\/api\/contacts\/share-tel$/, async ({ me, body }) => {
 R('GET', /^\/api\/people$/, async ({ me, url }) => {
   const off = Math.max(0, +url.searchParams.get('off') || 0);
   if (tooMany('people:' + me.id, 40, 60 * 60_000)) E(429, 'Vous avez parcouru beaucoup de profils. Faites une pause et réessayez plus tard.');
-  const rows = qa(`SELECT * FROM users WHERE id<>? AND listed=1 AND id NOT IN (SELECT CASE WHEN a=? THEN b ELSE a END FROM contacts WHERE (a=? OR b=?) AND status='accepted') ORDER BY id DESC LIMIT 31 OFFSET ?`, me.id, me.id, me.id, me.id, off);
+  const rows = qa(`SELECT * FROM users WHERE id<>? AND listed=1 ORDER BY id DESC LIMIT 31 OFFSET ?`, me.id, off);
   return { users: rows.slice(0, 30).filter(u => !blockedEither(me.id, u.id)).map(u => userCard(u, me.id)), more: rows.length > 30 };
 });
 // Message à vue unique : ouvert une fois, puis effacé du serveur quand tous les destinataires l'ont vu.
@@ -505,7 +506,7 @@ R('POST', /^\/api\/report$/, async ({ me, body }) => {
 
 /* discussions */
 R('GET', /^\/api\/chats$/, async ({ me }) => {
-  const rows = qa(`SELECT c.* FROM chats c JOIN members m ON m.chat_id=c.id WHERE m.user_id=?`, me.id);
+  const rows = qa(`SELECT c.* FROM chats c JOIN members m ON m.chat_id=c.id WHERE m.user_id=? AND c.expires IS NULL`, me.id);
   return { chats: rows.map(c => chatOut(c, me.id)).sort((a, b) => (b.last?.at || b.createdAt) - (a.last?.at || a.createdAt)) };
 });
 R('POST', /^\/api\/chats\/direct$/, async ({ me, body }) => {
@@ -553,6 +554,7 @@ R('POST', /^\/api\/call\/signal$/, async ({ me, body }) => {
   if (type === 'ring' && tooMany('call:' + me.id, 20, 10 * 60_000)) E(429, 'Trop d’appels. Patientez quelques minutes.');
   const data = body.data == null ? null : JSON.parse(JSON.stringify(body.data).slice(0, 60_000));
   const ev = { t: 'call', type, callId, chatId: cid, from: me.id, video: !!body.video, data };
+  if (type === 'ring') { ev.fromUser = userCard(me, to); if (c.expires) run(`UPDATE chats SET expires=? WHERE id=?`, now() + NUM_TTL, c.id); }
   const wasOffline = type === 'ring' && !online(to);
   // journal des appels (onglet « Appels »)
   if (type === 'ring' && !q1(`SELECT 1 FROM calls WHERE call_id=?`, callId)) run(`INSERT INTO calls(call_id,kind,chat_id,caller,callee,video,status,started) VALUES(?,?,?,?,?,?,?,?)`, callId, 'direct', cid, me.id, to, body.video ? 1 : 0, 'ringing', now());
@@ -666,7 +668,7 @@ R('GET', /^\/api\/gcall\/active$/, async ({ me }) => {
 R('GET', /^\/api\/calls$/, async ({ me }) => {
   const mine = qa(`SELECT chat_id FROM members WHERE user_id=?`, me.id).map(r => r.chat_id);
   const rows = qa(`SELECT * FROM calls WHERE caller=? OR callee=? OR (kind='group' AND chat_id IN (${mine.map(() => '?').join(',') || 'NULL'})) ORDER BY started DESC LIMIT 150`, me.id, me.id, ...mine);
-  const users = {};
+  const users = {}, numIds = new Set(qa(`SELECT id FROM chats WHERE expires IS NOT NULL`).map(x => x.id));
   const list = rows.map(r => {
     const out = r.caller === me.id, peer = r.kind === 'direct' ? (out ? r.callee : r.caller) : null;
     if (peer && !users[peer]) { const u = getUser(peer); if (u) users[peer] = userCard(u, me.id); }
@@ -676,7 +678,7 @@ R('GET', /^\/api\/calls$/, async ({ me }) => {
     else if (!out && status !== 'answered') status = 'missed';
     else if (out && status === 'ringing') status = r.ended ? 'missed' : 'ringing';
     const from = r.answered || (r.kind === 'group' ? r.started : null), dur = from && r.ended ? Math.round((r.ended - from) / 1000) : 0;
-    return { id: r.id, kind: r.kind, chatId: r.chat_id, peer, dir: out ? 'out' : 'in', video: !!r.video, status, at: r.started, dur };
+    return { id: r.id, kind: r.kind, chatId: r.chat_id, num: !!numIds.has(r.chat_id), peer, dir: out ? 'out' : 'in', video: !!r.video, status, at: r.started, dur };
   });
   return { calls: list, users };
 });
@@ -689,6 +691,38 @@ R('GET', /^\/api\/calls\/lookup$/, async ({ me, url }) => {
     if (u.tel_hash ? u.tel_hash === sha(key) : digits(J(u.priv, {}).tel).slice(-9) === key) return { user: userCard(u, me.id) };
   }
   return { user: null };
+});
+
+// Appel par numéro (chauffeur, livreur…) : on peut appeler un membre de Tam-Tam sans être amis.
+// Seuls les appels sont possibles (pas de messages), et la ligne disparaît 2 h après le dernier appel.
+const NUM_TTL = 2 * 3600_000;
+function numLine(me, other) {
+  const [a, b] = pair(me, other), key = `n:${a}-${b}`; let c = q1(`SELECT * FROM chats WHERE direct_key=?`, key);
+  if (c && c.expires && c.expires < now()) { run(`DELETE FROM calls WHERE chat_id=?`, c.id); run(`DELETE FROM chats WHERE id=?`, c.id); c = null; }
+  if (!c) {
+    const cid = run(`INSERT INTO chats(type,direct_key,created_by,created_at,expires) VALUES('direct',?,?,?,?)`, key, me, now(), now() + NUM_TTL).lastInsertRowid;
+    for (const u of [me, other]) run(`INSERT INTO members(chat_id,user_id,joined_at) VALUES(?,?,?)`, cid, u, now());
+    c = q1(`SELECT * FROM chats WHERE id=?`, cid);
+  } else run(`UPDATE chats SET expires=? WHERE id=?`, now() + NUM_TTL, c.id);
+  return q1(`SELECT * FROM chats WHERE id=?`, c.id);
+}
+R('POST', /^\/api\/calls\/bynum$/, async ({ me, body }) => {
+  const n = digits(body.num); if (n.length < 8) E(400, 'Tapez le numéro complet.');
+  if (tooMany('bynum:' + me.id, 15, 60 * 60_000)) E(429, 'Vous avez composé beaucoup de numéros. Réessayez dans une heure.');
+  let u = q1(`SELECT * FROM users WHERE tel_hash=? AND id<>?`, sha(n.slice(-9)), me.id);
+  // Anciens profils dont le numéro n'a pas encore d'empreinte : seulement parmi mes amis qui me le montrent.
+  if (!u) for (const id of contactIds(me.id)) { const c = getUser(id); if (c && !c.tel_hash && canSeePriv(c, me.id) && digits(J(c.priv, {}).tel).slice(-9) === n.slice(-9)) { u = c; break; } }
+  if (!u || blockedEither(me.id, u.id)) return { user: null };
+  if (relation(me.id, u.id) === 'contact') return { user: userCard(u, me.id), contact: true };
+  return { user: userCard(u, me.id), chat: chatOut(numLine(me.id, u.id), me.id) };
+});
+// Rappeler depuis l'historique une personne jointe par numéro (dans les 2 h).
+R('POST', /^\/api\/calls\/again$/, async ({ me, body }) => {
+  const c = q1(`SELECT * FROM chats WHERE id=? AND expires IS NOT NULL AND expires>?`, +body.chatId, now());
+  if (!c || !isMember(c.id, me.id)) E(404, 'Ce numéro n’est plus dans votre historique (effacé au bout de 2 h).');
+  const o = memberIds(c.id).find(x => x !== me.id); if (!o || blockedEither(me.id, o)) E(403, 'Appel impossible avec cette personne.');
+  run(`UPDATE chats SET expires=? WHERE id=?`, now() + NUM_TTL, c.id);
+  return { chat: chatOut(q1(`SELECT * FROM chats WHERE id=?`, c.id), me.id) };
 });
 
 /* ---------- discussions privées : cachées du fil, révélées par un code tapé dans la recherche ---------- */

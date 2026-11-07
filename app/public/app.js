@@ -191,7 +191,7 @@ function onEvent(ev) {
   else if (ev.t === 'presence') { const u = S.users.get(ev.id); if (u) { u.online = ev.online; u.busy = ev.busy; u.lastSeen = ev.lastSeen; } if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }
   else if (ev.t === 'read' && ev.user === S.me.id) Device.badge();
   else if (ev.t === 'gcall') GCall.onEvent(ev).catch(e => { console.error(e); toast('Problème pendant l’appel de groupe.'); });
-  else if (ev.t === 'call') Call.onSignal(ev).catch(e => { console.error(e); toast('Problème pendant l’appel.'); Call.hangup(); });
+  else if (ev.t === 'call') (ev.fromUser && keepUsers([ev.fromUser]), Call.onSignal(ev)).catch(e => { console.error(e); toast('Problème pendant l’appel.'); Call.hangup(); });
   else if (ev.t === 'report' && S.me.admin) toast('Nouveau signalement reçu (Réglages, Administration)');
 }
 function refreshTyping(chatId) { if (S.tab === 'chats') renderBody(); if (S.chatId === chatId) { renderChatHead(); } }
@@ -229,7 +229,7 @@ function renderAll() { renderTabs(); renderHead(); renderBody(); }
 const TABS = [['chats', 'Discussions', I.chats], ['contacts', 'Contacts', I.users], ['calls', 'Appels', I.dialpad]];
 function renderTabs() {
   const unread = [...S.chats.values()].filter(c => c.unread > 0 && (!c.hidden || S.showHidden)).length, inc = S.contacts.incoming.length;
-  $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${id === 'chats' && unread ? `<span class="badge" aria-label="${unread} non lues">${unread}</span>` : ''}</button>`).join('');
+  $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${id === 'chats' && unread ? `<span class="badge" aria-label="${unread} non lues">${unread}</span>` : ''}${id === 'contacts' && inc ? `<span class="badge" aria-label="${inc} demande${inc > 1 ? 's' : ''} d’ami">${inc}</span>` : ''}</button>`).join('');
   $('#fab').hidden = S.tab !== 'chats'; Device.badge(); const fc = $('#filts'); if (fc) fc.innerHTML = filtChips();
   const n = [...S.chats.values()].reduce((a, c) => a + (c.unread || 0), 0); document.title = n ? `(${n}) tam-tam` : 'tam-tam';
 }
@@ -805,7 +805,10 @@ function picsEdit(set) {
 function closePicker() {
   const cs = S.contacts.contacts, close = new Set(S.me.close || []);
   return `<div class="grp-box"><b>${I.users} Mon groupe privé</b><p class="hint" style="margin:0">Ces amis voient vos statuts privés${S.me.privTo === 'grp' ? ' et votre profil privé verrouillé' : ''}.</p>
-    ${cs.length ? `<div class="picks">${cs.map(u => `<label class="pick"><input type="checkbox" name="close" value="${u.id}"${close.has(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint" style="margin:0">Ajoutez d’abord des amis.</p>'}</div>`;
+    ${cs.length ? `<div class="cg-tools"><label class="pick cg-all"><input type="checkbox" name="closeAll"${cs.every(u => close.has(u.id)) ? ' checked' : ''}><span><b>Tout cocher</b></span></label><span class="hint" id="cgCount">${cs.filter(u => close.has(u.id)).length} sur ${cs.length}</span></div>
+    ${cs.length > 8 ? `<label class="search" style="margin:0">${I.search}<span class="sr">Chercher un ami</span><input id="cgq" type="search" placeholder="Chercher un ami" autocomplete="off"></label>` : ''}
+    <p class="hint" style="margin:0">Astuce : cochez tout, puis décochez seulement les personnes qui ne doivent pas voir.</p>` : ''}
+    ${cs.length ? `<div class="picks">${cs.slice().sort((a, b) => a.name.localeCompare(b.name, 'fr')).map(u => `<label class="pick"><input type="checkbox" name="close" value="${u.id}"${close.has(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint" style="margin:0">Ajoutez d’abord des amis.</p>'}</div>`;
 }
 function profileEditor() {
   const me = S.me, p = me.pub || {}, pv = me.priv || {}, t = S.profTab || 'pub';
@@ -1095,7 +1098,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.25</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.26</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1368,6 +1371,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('submit', e => { const f = e.target.closest('form[data-form]'); if (!f) return; e.preventDefault(); const fn = FORMS[f.dataset.form]; if (fn) fn(f); });
 document.addEventListener('input', e => {
+  if (e.target.id === 'cgq') { const q = e.target.value.trim().toLowerCase(), box = e.target.closest('.grp-box'); box && box.querySelectorAll('.picks .pick').forEach(l => { l.hidden = !!q && !l.textContent.toLowerCase().includes(q); }); }
   const t = e.target;
   if (t.id === 'q') { S.q = t.value; renderBody(); }
   else if (t.id === 'fq') searchPeople(t.value);
@@ -1386,7 +1390,8 @@ document.addEventListener('change', async e => {
       const up = await upload(b); const r = await api('/api/me/pics', {set: sl.set, slot: sl.i, media: up.id}); S.me = r.me; renderBody(); toast('Photo ajoutée à votre profil'); } catch (e) { toast(e.message); } })(); }
   else if (t.id === 'meIn') { const f = t.files[0]; t.value = ''; if (!f) return; cropPhoto(f); }
   else if (t.id === 'cropZoom') { S.crop.z = +t.value; drawCrop(); }
-  else if (t.name === 'close') { const ids = [...(t.closest('.grp-box') || document).querySelectorAll('input[name="close"]:checked')].map(i => +i.value); saveNow({close: ids}, 'Groupe privé mis à jour').then(() => PP.check()); }
+  else if (t.name === 'closeAll') { const box = t.closest('.grp-box') || document; box.querySelectorAll('input[name="close"]').forEach(i => { i.checked = t.checked; }); const ids = [...box.querySelectorAll('input[name="close"]:checked')].map(i => +i.value); const c = box.querySelector('#cgCount'); if (c) c.textContent = `${ids.length} sur ${box.querySelectorAll('input[name="close"]').length}`; saveNow({close: ids}, t.checked ? 'Tous vos amis sont dans le groupe privé' : 'Groupe privé vidé').then(() => PP.check()); }
+  else if (t.name === 'close') { { const box = t.closest('.grp-box') || document, all = box.querySelectorAll('input[name="close"]'), on = box.querySelectorAll('input[name="close"]:checked').length, a = box.querySelector('input[name="closeAll"]'), c = box.querySelector('#cgCount'); if (a) a.checked = on === all.length; if (c) c.textContent = `${on} sur ${all.length}`; } const ids = [...(t.closest('.grp-box') || document).querySelectorAll('input[name="close"]:checked')].map(i => +i.value); saveNow({close: ids}, 'Groupe privé mis à jour').then(() => PP.check()); }
   else if (t.dataset.set === 'name' || t.dataset.set === 'handle') saveNow({[t.dataset.set]: t.value}, 'Enregistré');
   else if (t.tagName === 'SELECT' && t.dataset.set) queueSave({[t.dataset.set]: {[t.dataset.k]: t.value}});
 });
