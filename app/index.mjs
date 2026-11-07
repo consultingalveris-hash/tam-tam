@@ -290,9 +290,13 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   if (tooMany('reg:' + ipOf(req), 8, 60 * 60_000)) E(429, 'Trop de tentatives. Réessayez plus tard.');
   const gp = body.gtok ? q1(`SELECT * FROM gpending WHERE token=? AND expires>?`, sha(String(body.gtok)), now()) : null;
   if (body.gtok && !gp) E(400, 'La connexion Google a expiré. Recommencez avec « Continuer avec Google ».');
-  const email = gp ? gp.email : clean(body.email, 120).toLowerCase(), name = clean(body.name, 40), pass = gp ? rnd(24) : String(body.pass || '');
+  const email = gp ? gp.email : clean(body.email, 120).toLowerCase(), fname = clean(body.first || body.name, 30), lname = clean(body.last, 30), name = (lname ? `${fname} ${lname}` : fname).slice(0, 40), pass = gp ? rnd(24) : String(body.pass || '');
   if (gp && !body.invite && gp.invite) body.invite = gp.invite;
-  if (!name) E(400, 'Indiquez votre nom.');
+  if (!fname) E(400, 'Indiquez votre prénom.');
+  let handle = null;
+  if (body.handle) { handle = String(body.handle).trim().replace(/^@/, '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!/^[a-z0-9._]{3,20}$/.test(handle)) E(400, 'Pseudo : 3 à 20 caractères, lettres, chiffres, point ou tiret bas.');
+    if (q1(`SELECT 1 FROM users WHERE handle=?`, handle)) E(409, 'Ce pseudo est déjà pris. Choisissez-en un autre.'); }
   if (!isEmail(email)) E(400, 'Adresse e-mail invalide.');
   if (!gp) passOk(pass, email);
   if (!body.cgu) E(400, 'Acceptez les Conditions générales pour créer votre compte.');
@@ -305,7 +309,7 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   if (q1(`SELECT 1 FROM users WHERE email=?`, email)) E(409, 'Un compte existe déjà avec cette adresse. Connectez-vous.');
   const av = avatarJson(body.avatar) || JSON.stringify({ v: 2, st: 'court', sk: 'c', sh: '#14b8c9' });
   const id = run(`INSERT INTO users(email,pass,name,handle,avatar,admin,invited_by,cgu_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
-    email, hashPass(pass), name, slugHandle(name), av, first ? 1 : 0, inv ? inv.by_user : null, now(), now()).lastInsertRowid;
+    email, hashPass(pass), name, handle || slugHandle(name), av, first ? 1 : 0, inv ? inv.by_user : null, now(), now()).lastInsertRowid;
   run(`UPDATE users SET tr_consent=? WHERE id=?`, body.trc ? 1 : 0, Number(id));
   if (gp) { run(`UPDATE users SET google_sub=? WHERE id=?`, gp.sub, Number(id)); run(`DELETE FROM gpending WHERE token=?`, gp.token); }
   if (inv) {

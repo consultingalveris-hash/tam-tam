@@ -377,7 +377,7 @@ Object.assign(ACT, {
     await contactAct('request', id);
   },
   async bookInvite(d) { try { if (!S.lastInvite) S.lastInvite = await api('/api/invites', {}); location.href = `sms:${d.tel.replace(/[^\d+]/g, '')}?body=${encodeURIComponent(inviteText())}`; } catch (e) { toast(e.message); } },
-  filt(d) { S.filt = d.f; renderHead(); renderBody(); },
+  filt(d) { if (d.f === 'me' && isDesk()) return pmOpen('me'); S.filt = d.f; renderHead(); renderBody(); },
   async favToggle() { const c = S.chats.get(S.chatId); if (!c) return; try { await api(`/api/chats/${c.id}/fav`, {fav: !c.fav}); c.fav = !c.fav; closeLayer(); renderBody(); toast(c.fav ? 'Ajoutée aux favoris.' : 'Retirée des favoris.'); } catch (e) { toast(e.message); } },
 });
 

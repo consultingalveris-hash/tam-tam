@@ -119,7 +119,9 @@ function renderAuth(msg) {
   else if (A.mode === 'register') h = `<h2>${m.ownerSetup ? 'Créer le compte du propriétaire' : 'Créer mon compte'}</h2>
     <p class="hint">${A.g && !m.ownerSetup ? (A.g.by ? `${esc(A.g.by)} vous invite sur tam-tam.` : 'Bienvenue sur tam-tam.') : m.ownerSetup ? `Premier compte de tam-tam${m.ownerEmail ? ` : utilisez l’adresse ${esc(m.ownerEmail)}` : ''}.` : m.invite ? `${esc(m.invite.by)} vous invite sur tam-tam.` : 'L’inscription se fait uniquement avec un lien d’invitation envoyé par un membre.'}</p>
     ${m.ownerSetup || m.invite || A.g ? `${A.g ? `<p class="g-ok">${gIcon()}<span>Compte Google confirmé : <b>${esc(A.g.email)}</b>. Il reste à choisir votre avatar et à accepter les conditions.</span></p>` : gBtn()}
-    <div class="field"><label for="aName">Votre nom</label><input id="aName" autocomplete="name" maxlength="40" required placeholder="Prénom et nom" value="${esc(A.g ? A.g.name : '')}"></div>
+    <div class="field-row"><div class="field"><label for="aName">Prénom</label><input id="aName" autocomplete="given-name" maxlength="30" required value="${esc(A.g ? (A.g.name || '').split(' ')[0] : '')}"></div>
+    <div class="field"><label for="aLast">Nom</label><input id="aLast" autocomplete="family-name" maxlength="30" required value="${esc(A.g ? (A.g.name || '').split(' ').slice(1).join(' ') : '')}"></div></div>
+    <div class="field"><label for="aHandle">Pseudo <small>(facultatif)</small></label><div class="at-in"><span>@</span><input id="aHandle" autocomplete="off" maxlength="20" placeholder="ex. lion.du.sahel" pattern="[A-Za-z0-9._]{3,20}"></div><small class="hint">C’est ce nom que voient les membres qui ne vous connaissent pas encore. Laissé vide, il sera créé à partir de votre nom.</small></div>
     ${A.g ? '' : `<div class="field"><label for="aMail">Adresse e-mail</label><input id="aMail" type="email" autocomplete="email" required></div>
     <div class="field"><label for="aPass">Mot de passe (8 caractères minimum)</label><div class="pw"><input id="aPass" type="password" autocomplete="new-password" minlength="8" required><button type="button" data-act="pwShow">Voir</button></div></div>`}
     <span class="lbl">Votre avatar</span>${avGallery(A.avatar, 'auth')}
@@ -146,7 +148,7 @@ async function submitAuth() {
     if (A.mode === 'forgot' && A.step === 1) { A.fmail = v('fMail').trim(); await api('/api/forgot', {email: A.fmail}); A.step = 2; return renderAuth(); }
     if (A.mode === 'forgot') r = await api('/api/forgot/verify', {email: A.fmail, code: v('fCode'), pass: v('aPass')});
     else if (A.mode === 'reset') r = await api('/api/reset', {token: A.token, pass: v('aPass')});
-    else if (A.mode === 'register') r = await api('/api/register', {name: v('aName'), email: v('aMail'), pass: v('aPass'), gtok: A.g ? A.g.tok : undefined, avatar: A.avatar, age: $('#aAge').checked, cgu: $('#aCgu').checked,  invite: S.invite});
+    else if (A.mode === 'register') r = await api('/api/register', {first: v('aName'), last: v('aLast'), handle: v('aHandle'), name: v('aName'), email: v('aMail'), pass: v('aPass'), gtok: A.g ? A.g.tok : undefined, avatar: A.avatar, age: $('#aAge').checked, cgu: $('#aCgu').checked,  invite: S.invite});
     else r = await api('/api/login', {email: v('aMail'), pass: v('aPass')});
     S.me = r.me; keepUsers([r.me]); history.replaceState(null, '', '/'); start();
   } catch (e) { err(e.message); if (btn) btn.disabled = false; }
@@ -256,6 +258,21 @@ function renderBody() {
   else if (S.tab === 'calls') { b.innerHTML = Calls.body(); Calls.after(); }
   else if (S.tab === 'souvenirs') { b.innerHTML = Mem.body(); Mem.hydrate(b); }
   else { b.innerHTML = settingsBody(); fillFp(); }
+  if (S.modal) pmRefresh();
+}
+/* Sur ordinateur, « Réglages » et « Mon profil » s'ouvrent dans une fenêtre, comme « Ajouter des amis ». */
+const isDesk = () => matchMedia('(min-width:821px)').matches;
+function pmOpen(kind) { S.modal = kind; renderModal(true); }
+function pmRefresh() { const a = document.activeElement, body = $('#pmBody'); if (body && a && body.contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return; renderModal(); }
+function renderModal(first) {
+  let el = $('#pmodal'); if (!S.modal) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'pmodal'; document.body.appendChild(el); }
+  const y = first ? 0 : (($('#pmBody') || {}).scrollTop || 0), set = S.modal === 'settings';
+  el.innerHTML = `<div class="pm-scrim" data-act="pmScrim"><div class="pm-card" role="dialog" aria-modal="true" aria-label="${set ? 'Réglages' : 'Mon profil'}">
+    <div class="pm-head"><h2>${set ? 'Réglages' : 'Mon profil'}</h2><span class="grow"></span>${set ? availPicker() : ''}<button class="ib" type="button" data-act="pmClose" aria-label="Fermer">${I.close}</button></div>
+    <div class="pm-body" id="pmBody">${set ? settingsBody() : profileEditor()}</div></div></div>`;
+  if (set) fillFp();
+  const b = $('#pmBody'); if (b) b.scrollTop = y;
 }
 const chatTitle = c => c.type === 'group' ? c.name : uOf(c.peer).name;
 function snippet(m) {
@@ -1074,8 +1091,8 @@ const Tr = {
   label(cid) { const a = this.inL(cid), b = this.outL(cid); if (!S.me.trConsent) return ''; return a || b ? `<span>${a ? a.toUpperCase() : '—'}</span><i aria-hidden="true">⇄</i><span>${b ? b.toUpperCase() : '—'}</span>` : ''; },
   settingsHtml() {
     if (!this.st || !this.st.on) return '';
-    return `<div class="set-block"><h2>${I.translate} Traduction</h2><p class="hint">Dans une discussion, touchez le bouton 文A à gauche de la zone d’écriture : choisissez la langue dans laquelle <b>vous</b> recevez les messages, et celle dans laquelle <b>votre contact</b> reçoit les vôtres. Le texte traduit passe par le service de traduction : il n’est plus protégé de bout en bout.</p>
-      <label class="pick chk"><input type="checkbox" data-act="trConsentTog"${S.me.trConsent ? ' checked' : ''}><span><b>Utiliser la traduction.</b> J’accepte que mes messages traduits et mes corrections servent, sans mon nom, à enrichir la base de traduction de Tam-Tam (article 13 des Conditions générales). Décoché : aucune traduction, les messages s’affichent tels qu’ils ont été écrits.</span></label>
+    return `<div class="set-block"><h2>${I.translate} Traduction</h2><p class="hint">Dans une discussion, touchez le bouton 文A à gauche de la zone d’écriture pour choisir les langues.</p>
+      <label class="pick chk"><input type="checkbox" data-act="trConsentTog"${S.me.trConsent ? ' checked' : ''}><span><b>Utiliser la traduction</b></span></label>
       <div class="field"><label for="trLang">Langue pour « Traduire » sur un message</label><select id="trLang">${this.st.langs.map(l => `<option value="${l}"${l === this.lang() ? ' selected' : ''}>${LANG_FR[l] || l}</option>`).join('')}</select></div></div>`;
   },
 };
@@ -1125,8 +1142,7 @@ function settingsBody() {
   const f = (set, k, l, ph = '', type = 'text', max = 80) => `<div class="field"><label for="p-${k}">${l}</label>${k === 'bio' ? `<textarea id="p-${k}" data-set="${set}" data-k="${k}" rows="2" maxlength="200" placeholder="${ph}">${esc((set === 'pub' ? p : pv)[k] || '')}</textarea>` : `<input id="p-${k}" data-set="${set}" data-k="${k}" type="${type}" maxlength="${max}" placeholder="${ph}" value="${esc((set === 'pub' ? p : pv)[k] || '')}">`}</div>`;
   const cs = S.contacts.contacts, close = new Set(me.close || []);
   return `<div class="set">
-    <div class="set-top">${avatar(me, 'lg')}<div><b>${esc(me.name)}</b><span>@${esc(me.handle)} · ${esc(me.email)}</span></div></div>
-    <div class="set-block" id="phBlock"><h2>Photo de profil</h2>
+    <div class="set-block" id="phBlock"><h2 class="ph-h"><span>Photo de profil</span><b class="me-first">${esc(me.name.split(' ')[0])}</b></h2>
       <div class="ph-pick"><span class="pp-prev">${pendAvatar()}</span><p class="hint" style="margin:0">${S.pp ? 'Aperçu de votre nouveau choix. Il ne remplace votre photo actuelle qu’après « Valider ».' : 'Choisissez une photo ou un avatar dessiné. Rien ne change tant que vous n’avez pas validé.'}</p></div>
       <div class="actions" style="justify-content:flex-start"><button class="btn sm" type="button" data-act="mePhoto">${I.camera}Prendre ou choisir une photo</button><button class="btn sm ghost" type="button" data-act="avShow" aria-pressed="${!!S.showAv}">Utiliser un avatar</button><input type="file" id="meIn" accept="image/*" hidden></div>
       ${S.showAv ? `${avGallery(S.pp && S.pp.kind === 'av' ? S.pp.av : me.avatar, 'me')}` : ''}
@@ -1143,11 +1159,12 @@ function settingsBody() {
     <div class="set-block"><h2>Compte</h2><div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="pwSheet">${I.key}Changer le mot de passe</button><a class="btn sm ghost" href="/conditions" target="_blank" rel="noopener">Conditions et confidentialité</a><a class="btn sm ghost" href="/demo/" target="_blank" rel="noopener">Voir la maquette</a></div>
       <div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="logout">Se déconnecter</button><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte</button></div></div>
     ${Tr.settingsHtml()}
+    <p class="hint set-mail">Connecté avec ${esc(me.email)} · @${esc(me.handle)}</p>
     ${me.admin ? mailBox() : ''}
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.38</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.39</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1197,7 +1214,7 @@ const ACT = {
     if (d.who === 'auth') { A.avatar = a; $('#avg-auth').outerHTML = avGallery(a, 'auth'); }
     else { if (S.pp && S.pp.url) URL.revokeObjectURL(S.pp.url); S.pp = {kind: 'av', av: a}; renderBody(); }
   },
-  tab(d) { if (d.t === 'calls') Calls.log = null; S.tab = d.t; closeLayer(); renderAll(); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
+  tab(d) { if (d.t === 'settings' && isDesk()) { closeLayer(); return pmOpen('settings'); } if (d.t === 'calls') Calls.log = null; S.tab = d.t; closeLayer(); renderAll(); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
   fab() { newChatSheet(); },
   open(d) { openChat(+d.id); },
   back() { S.chatId = null; $('.app').dataset.view = 'list'; renderMain(); renderBody(); },
@@ -1259,7 +1276,7 @@ const ACT = {
   async trLoad() { try { S.trset = await api('/api/admin/translate'); const el = $('#trBox'); if (el) el.outerHTML = trBox(); } catch (e) { toast(e.message); } },
   async trOff() { try { await api('/api/admin/translate', {off: true}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction désactivée'); } catch (e) { toast(e.message); } },
   recStart() { Rec.start(); }, recCancel() { Rec.cancel(); }, recSend() { Rec.send(); },
-  availSet(d) { if (S.me.avail === d.v) return; saveNow({avail: d.v}, {on: 'Vous apparaissez en ligne', busy: 'Vous apparaissez occupé', off: 'Vous apparaissez hors ligne'}[d.v]).then(() => renderHead()); },
+  availSet(d) { if (S.me.avail === d.v) return; saveNow({avail: d.v}, {on: 'Vous apparaissez en ligne', busy: 'Vous apparaissez occupé', off: 'Vous apparaissez hors ligne'}[d.v]).then(() => { renderHead(); if (S.modal) renderModal(); }); },
   onceTog(d, el) { S.once = !S.once; document.querySelectorAll('.once-tog').forEach(b => b.setAttribute('aria-pressed', S.once)); const i = $('#msgIn'); if (i) i.placeholder = S.once ? 'Message à vue unique' : 'Message'; toast(S.once ? 'Vue unique activée : le prochain message ne pourra être ouvert qu’une fois.' : 'Vue unique désactivée'); },
   async onceOpen(d) {
     const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +d.id); if (!m) return;
@@ -1302,7 +1319,7 @@ const ACT = {
   stGrpOk() { keepSt(); S.sc.grp = false; stComposer(); }, stGrpBg() { ACT.stGrpOk(); },
   stNoPhoto() { keepSt(); if (S.sc.url) URL.revokeObjectURL(S.sc.url); Object.assign(S.sc, {kind: 'text', blob: null, url: null}); stComposer(); },
   stPublish() { stPublish(); },
-  closeEdit() { keepSt(); S.sc = S.sc; closeLayer(); S.tab = 'settings'; renderAll(); setTimeout(() => { const el = document.querySelector('input[name="close"]'); if (el) el.scrollIntoView({block: 'center'}); }, 50); toast('Cochez les personnes de votre groupe privé, puis revenez publier votre statut.'); },
+  closeEdit() { keepSt(); S.sc = S.sc; closeLayer(); if (isDesk()) pmOpen('settings'); else { S.tab = 'settings'; renderAll(); } setTimeout(() => { const el = document.querySelector('input[name="close"]'); if (el) el.scrollIntoView({block: 'center'}); }, 50); toast('Cochez les personnes de votre groupe privé, puis revenez publier votre statut.'); },
   svNext() { svStep(1); }, svPrev() { svStep(-1); },
   svViews() {
     const it = S.statuses.mine.items[S.sv.i]; clearTimeout(svT);
@@ -1338,7 +1355,8 @@ const ACT = {
   picView(d) { const priv = /^blob:/.test(d.src); sheet(`${head('Photo')}<div class="sheet-body${priv ? ' nocopy' : ''}" style="align-items:center;position:relative"><img class="pic-big" src="${esc(d.src)}" alt="Photo du profil" draggable="false">${priv ? watermark() : ''}</div>`, 'Photo'); },
   avHide() { S.showAv = false; renderBody(); },
   profTab(d) { S.profTab = d.t; renderBody(); },
-  goProfile() { S.tab = 'chats'; S.filt = 'me'; renderAll(); },
+  goProfile() { if (isDesk()) return pmOpen('me'); S.tab = 'chats'; S.filt = 'me'; renderAll(); },
+  pmClose() { S.modal = null; renderModal(); }, pmScrim() { S.modal = null; renderModal(); },
   notif() { if (!('Notification' in window)) return toast('Votre navigateur ne permet pas les notifications.'); Notification.requestPermission().then(p => { renderBody(); toast(p === 'granted' ? 'Notifications activées' : 'Notifications refusées dans le navigateur'); }); },
   async devList() {
     let r; try { r = await api('/api/sessions'); } catch (e) { return toast(e.message); }
@@ -1427,7 +1445,7 @@ const FORMS = {
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
   const fn = ACT[el.dataset.act]; if (!fn) return;
-  if (el.dataset.act === 'stGrpBg' && e.target !== el) return;
+  if ((el.dataset.act === 'stGrpBg' || el.dataset.act === 'pmScrim') && e.target !== el) return;
   if (el.dataset.act !== 'scrim') e.preventDefault();
   if (el.dataset.act === 'scrim' && e.target !== el) return;
   fn(el.dataset, el, e);
