@@ -404,7 +404,7 @@ R('POST', /^\/api\/contacts\/share-tel$/, async ({ me, body }) => {
 R('GET', /^\/api\/people$/, async ({ me, url }) => {
   const off = Math.max(0, +url.searchParams.get('off') || 0);
   if (tooMany('people:' + me.id, 40, 60 * 60_000)) E(429, 'Vous avez parcouru beaucoup de profils. Faites une pause et réessayez plus tard.');
-  const rows = qa(`SELECT * FROM users WHERE id<>? AND listed=1 AND id NOT IN (SELECT CASE WHEN a=? THEN b ELSE a END FROM contacts WHERE (a=? OR b=?) AND status='accepted') ORDER BY id DESC LIMIT 31 OFFSET ?`, me.id, me.id, me.id, me.id, off);
+  const rows = qa(`SELECT * FROM users WHERE id<>? AND listed=1 AND id NOT IN (SELECT CASE WHEN a=? THEN b ELSE a END FROM contacts WHERE (a=? OR b=?)) ORDER BY id DESC LIMIT 31 OFFSET ?`, me.id, me.id, me.id, me.id, off);
   return { users: rows.slice(0, 30).filter(u => !blockedEither(me.id, u.id)).map(u => userCard(u, me.id)), more: rows.length > 30 };
 });
 // Message à vue unique : ouvert une fois, puis effacé du serveur quand tous les destinataires l'ont vu.
