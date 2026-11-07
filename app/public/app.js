@@ -717,7 +717,10 @@ function msgMenu(id) {
 }
 
 /* ---------- statuts : création et lecture ---------- */
-const BGS = [170, 200, 260, 300, 340, 20, 45, 130];
+const BGS = [170, 200, 260, 300, 340, 20, 45, 130, 360, 361];
+// 360 = noir, 361 = gris foncé ; les autres nombres sont des teintes.
+const stBgc = h => +h === 360 ? '#000' : +h === 361 ? '#2b3034' : '';
+const stBgStyle = h => `--h:${h}${stBgc(h) ? `;--bgc:${stBgc(h)}` : ''}`;
 // Polices des statuts (chargées à la demande depuis Google Fonts).
 const ST_FONTS = [['Classique', 'inherit', ''], ['Élégante', "'Playfair Display', Georgia, serif", 'Playfair+Display:wght@700'], ['Manuscrite', "Pacifico, 'Brush Script MT', cursive", 'Pacifico'],
   ['Écriture', "Caveat, 'Segoe Print', cursive", 'Caveat:wght@700'], ['Affiche', "'Bebas Neue', Impact, sans-serif", 'Bebas+Neue'], ['Machine', "'Courier Prime', 'Courier New', monospace", 'Courier+Prime:wght@700']];
@@ -745,15 +748,15 @@ function stComposer() {
     <div class="st-head"><button class="ib" type="button" data-act="stCancel" aria-label="Annuler">${I.close}</button>
       <div class="seg st-aud" role="group" aria-label="Qui voit ce statut"><button type="button" data-act="stAud" data-a="public" aria-pressed="${s.aud === 'public'}">${I.globe}Public</button><button type="button" data-act="stAud" data-a="private" aria-pressed="${s.aud === 'private'}">${I.lock}Privé</button></div>
       <button class="btn sm" type="button" data-act="stPublish" id="stPub">Publier</button></div>
-    ${s.aud === 'private' ? `<button class="st-grp-row" type="button" data-act="stGrp">${I.users}<span><b>Mon groupe privé</b><small>${closeN ? `${closeN} personne${closeN > 1 ? 's' : ''} verront ce statut` : 'Touchez ici pour choisir qui verra ce statut'}</small></span>${I.chev || '›'}</button>`
+    ${s.aud === 'private' ? `<button class="st-grp-row" type="button" data-act="stGrp">${closeN ? '' : '<span class="need" aria-hidden="true"></span>'}${I.users}<span><b>Mon groupe privé</b><small>${closeN ? `${closeN} personne${closeN > 1 ? 's' : ''} verront ce statut` : 'Touchez ici pour choisir qui verra ce statut'}</small></span>${I.chev || '›'}</button>`
       : '<p class="st-note">Visible par tous vos contacts pendant 24 heures.</p>'}
-    <div class="stage"><div class="st-box${media ? ' media' : ''}" style="--h:${s.bg};--stf:${stFont(s.font)}">
+    <div class="stage"><div class="st-box${media ? ' media' : ''}" style="${stBgStyle(s.bg)};--stf:${stFont(s.font)}">
       ${s.kind === 'photo' ? `<img src="${s.url}" alt="Aperçu">` : s.kind === 'video' ? `<video src="${s.url}" class="${s.mirror ? 'mirror' : ''}" autoplay loop muted playsinline></video>` : `<textarea id="stText" maxlength="700" placeholder="Touchez pour écrire…">${esc(s.text)}</textarea>`}
       ${media ? `<button class="st-rm" type="button" data-act="stNoPhoto" aria-label="Retirer ${s.kind === 'video' ? 'la vidéo' : 'la photo'}">${I.close}</button><input id="stCap" class="st-cap" maxlength="700" placeholder="Ajouter une légende…" value="${esc(s.text)}" autocomplete="off">` : ''}
       ${s.music ? `<div class="st-mus">🎵 <span>${esc(s.music.name)}</span><button type="button" data-act="stMusOff" aria-label="Retirer la musique">${I.close}</button></div><audio src="${s.music.url}" id="stMusPrev"></audio>` : ''}
     </div></div>
     ${s.tab === 'font' ? `<div class="st-fonts">${ST_FONTS.map(([n, f], i) => `<button type="button" data-act="stFont" data-i="${i}" aria-pressed="${s.font === i}" style="font-family:${f}">Aa<small>${n}</small></button>`).join('')}</div>` : ''}
-    ${!media ? `<div class="bgs st-bgs">${BGS.map(h => `<button class="sw" type="button" style="--c:hsl(${h} 55% 35%)" data-act="stBg" data-h="${h}" aria-pressed="${s.bg === h}" aria-label="Couleur de fond"></button>`).join('')}</div>` : ''}
+    ${!media ? `<div class="bgs st-bgs">${BGS.map(h => `<button class="sw" type="button" style="--c:${stBgc(h) || `hsl(${h} 55% 35%)`}" data-act="stBg" data-h="${h}" aria-pressed="${s.bg === h}" aria-label="${h === 360 ? 'Fond noir' : h === 361 ? 'Fond gris foncé' : 'Couleur de fond'}"></button>`).join('')}</div>` : ''}
     <div class="st-tools">${tool('stText', '<b class="aa">Aa</b>', 'Texte', !media)}${tool('stPhoto', I.image, 'Photo', s.kind === 'photo')}${tool('stCam', CI.photo, 'Caméra', false)}${tool('stVid', CI.video, 'Vidéo', s.kind === 'video')}${tool('stFontTab', '<b class="aa serif">F</b>', 'Police', s.tab === 'font')}${tool('stMus', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>', 'Musique', !!s.music)}${Emoji.btn(capSel, 'st-tool emo')}</div>
     <input type="file" id="stIn" accept="image/*,video/*" hidden><input type="file" id="stCamIn" accept="image/*" capture="environment" hidden><input type="file" id="stMusIn" accept="audio/*" hidden>
     ${s.grp ? `<div class="st-grp-panel" data-act="stGrpBg"><div class="st-grp-card">${closePicker(true)}</div></div>` : ''}
@@ -788,7 +791,7 @@ function renderSV() {
   const it = g && g.items[v.i]; if (!it) return svNextUser();
   if (!mine && !it.seen) { it.seen = true; api(`/api/statuses/${it.id}/view`, {}).catch(() => {}); }
   const vid = it.kind === 'video', dur = vid ? (Math.min(62, Math.max(3, it.dur || 15)) + 2) * 1000 : it.music ? 15000 : 6000; stFontsLoad();
-  layer.innerHTML = `<div class="sv" style="--h:${it.bg || 170}" role="dialog" aria-modal="true" aria-label="Statut"><div class="sv-bars">${g.items.map((_, k) => `<i class="${k < v.i ? 'done' : k === v.i ? 'run' : ''}"><b${k === v.i ? ` style="animation-duration:${dur / 1000}s"` : ''}></b></i>`).join('')}</div>
+  layer.innerHTML = `<div class="sv${it.media ? ' media' : ''}" style="${stBgStyle(it.bg || 170)}${stBgc(it.bg) ? `;--bgd:${stBgc(it.bg)}` : ''}" role="dialog" aria-modal="true" aria-label="Statut"><div class="sv-bars">${g.items.map((_, k) => `<i class="${k < v.i ? 'done' : k === v.i ? 'run' : ''}"><b${k === v.i ? ` style="animation-duration:${dur / 1000}s"` : ''}></b></i>`).join('')}</div>
     <div class="sv-head">${avatar(g.user, 'sm')}<div class="grow"><b>${esc(mine ? 'Mon statut' : g.user.name)}</b><small>${dayLabel(it.at)}, ${hm(it.at)} · ${it.aud === 'private' ? 'Privé' : 'Public'}</small></div><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>
     <div class="sv-stage"><div class="sv-box${it.aud === 'private' ? ' nocopy' : ''}">${it.media ? (vid ? `<video data-stvid="${it.id}" class="${it.mir ? 'mirror' : ''}" playsinline autoplay controlslist="nodownload" disablepictureinpicture></video>` : it.enc ? `<img data-stenc="${it.id}" alt="" draggable="false">` : `<img src="${esc(it.media)}" alt="" draggable="false">`) : `<div class="sv-text" style="font-family:${stFont(it.font)}">${esc(it.text)}</div>`}${it.media && it.text ? `<div class="sv-cap" style="font-family:${stFont(it.font)}">${esc(it.text)}</div>` : ''}${it.music ? `<div class="sv-mus">🎵 ${esc(it.mname || 'Musique')}</div><audio data-stmus="${it.id}" loop></audio>` : ''}
       ${it.aud === 'private' && !mine ? watermark() : ''}<button class="sv-nav prev" type="button" data-act="svPrev" aria-label="Précédent"></button><button class="sv-nav next" type="button" data-act="svNext" aria-label="Suivant"></button></div></div>
@@ -1143,7 +1146,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.35</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.36</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1283,9 +1286,9 @@ const ACT = {
   stNew(d, el, e) { e.stopPropagation(); stComposer(); },
   stOpen(d) { stOpen(+d.u); },
   stCancel() { if (S.sc && S.sc.url) URL.revokeObjectURL(S.sc.url); if (S.sc && S.sc.music) URL.revokeObjectURL(S.sc.music.url); S.sc = null; Emoji.close(); closeLayer(); },
-  stAud(d) { keepSt(); S.sc.aud = d.a; if (d.a === 'private' && !(S.me.close || []).length) S.sc.grp = true; stComposer(); },
+  stAud(d) { keepSt(); S.sc.aud = d.a; if (d.a === 'private' && !(S.me.close || []).length && !matchMedia('(min-width:821px)').matches) S.sc.grp = true; stComposer(); },
   // Changer la couleur ne fait pas apparaître le clavier : on change seulement le fond.
-  stBg(d) { S.sc.bg = +d.h; const b = document.querySelector('.st-box'); if (b) b.style.setProperty('--h', d.h); document.querySelectorAll('.st-bgs .sw').forEach(x => x.setAttribute('aria-pressed', x.dataset.h === d.h)); },
+  stBg(d) { S.sc.bg = +d.h; const b = document.querySelector('.st-box'); if (b) { b.style.setProperty('--h', d.h); if (stBgc(d.h)) b.style.setProperty('--bgc', stBgc(d.h)); else b.style.removeProperty('--bgc'); } document.querySelectorAll('.st-bgs .sw').forEach(x => x.setAttribute('aria-pressed', x.dataset.h === d.h)); },
   stPhoto() { keepSt(); $('#stIn').click(); },
   stCam() { keepSt(); Cam.open({...stOpts(), mode: 'photo'}); },
   stVid() { keepSt(); Cam.open({...stOpts(), mode: 'video'}); },

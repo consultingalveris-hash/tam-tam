@@ -948,7 +948,7 @@ R('POST', /^\/api\/statuses$/, async ({ me, body }) => {
   if (body.media) { const md = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.media), me.id); if (!md) E(400, 'Photo introuvable.'); media = md.id; }
   let music = null; if (body.music && e2e) { const md = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.music), me.id); if (!md) E(400, 'Musique introuvable.'); music = md.id; }
   if (!media && !text) E(400, 'Écrivez un texte ou ajoutez une photo.');
-  const bg = Math.max(0, Math.min(359, +body.bg || 170)), kind = media ? (body.kind === 'video' && e2e ? 'video' : 'image') : 'text';
+  const bg = Math.max(0, Math.min(361, +body.bg || 170)), kind = media ? (body.kind === 'video' && e2e ? 'video' : 'image') : 'text';
   const id = Number(run(`INSERT INTO statuses(user_id,kind,text,bg,media,aud,created_at,expires,e2e,music) VALUES(?,?,?,?,?,?,?,?,?,?)`, me.id, kind, text || null, bg, media, aud, now(), now() + DAY, e2e, music).lastInsertRowid);
   if (media) run(`UPDATE media SET scope='status', ref=? WHERE id=?`, id, media);
   if (music) run(`UPDATE media SET scope='status', ref=? WHERE id=?`, id, music);
