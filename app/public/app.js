@@ -259,7 +259,7 @@ function renderBody() {
 const chatTitle = c => c.type === 'group' ? c.name : uOf(c.peer).name;
 function snippet(m) {
   if (!m) return 'Aucun message';
-  if (m.deleted) return 'Message supprimé'; if (m.kind === 'sys') return m.text; if (m.once) return m.kind === 'audio' ? '① Vocal à vue unique' : m.media ? '① Photo à vue unique' : '① Message à vue unique'; if (m.kind === 'audio') return '🎤 Message vocal'; if (m.locked) return m.text;
+  if (m.deleted) return 'Message supprimé'; if (m.kind === 'sys') return m.text; if (m.once) return m.kind === 'audio' ? '① Vocal à vue unique' : m.kind === 'video' ? '① Vidéo à vue unique' : m.media ? '① Photo à vue unique' : '① Message à vue unique'; if (m.kind === 'audio') return '🎤 Message vocal'; if (m.kind === 'video') return '🎥 Vidéo' + (m.text ? ' · ' + m.text : ''); if (m.locked) return m.text;
   return (m.media ? '📷 Photo' + (m.text ? ' · ' : '') : '') + (m.text || '');
 }
 function readState(c, m) {
@@ -416,8 +416,8 @@ function renderComposer() {
   }
   const trOn = !!(Tr.inL(c.id) || Tr.outL(c.id));
   el.innerHTML = `<form class="composer" data-form="send" autocomplete="off">${Tr.st && Tr.st.on ? `<button class="ib tr-tog" type="button" data-act="trAuto" aria-pressed="${trOn}" aria-label="Langues de cette discussion" title="Langues de traduction de cette discussion">${I.translate}${Tr.label(c.id)}</button>` : ''}<div class="inwrap"><textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
-    <button class="ib" type="button" data-act="attach" aria-label="Joindre une photo">${I.clip}</button><button class="ib" type="button" data-act="camera" aria-label="Prendre une photo">${I.camera}</button><button class="ib once-tog" type="button" data-act="onceTog" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique : le message ne peut être ouvert qu’une fois"><span class="one" aria-hidden="true">1</span></button></div>
-    <input type="file" id="fileIn" accept="image/*" hidden><input type="file" id="camIn" accept="image/*" capture="environment" hidden>
+    <button class="ib" type="button" data-act="attach" aria-label="Joindre une photo ou une vidéo">${I.clip}</button><button class="ib" type="button" data-act="camera" aria-label="Prendre une photo ou une vidéo">${I.camera}</button><button class="ib once-tog" type="button" data-act="onceTog" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique : le message ne peut être ouvert qu’une fois"><span class="one" aria-hidden="true">1</span></button></div>
+    <input type="file" id="fileIn" accept="image/*,video/*" hidden><input type="file" id="camIn" accept="image/*" capture="environment" hidden>
     <button class="send" id="sendBtn" type="button" data-act="recStart" aria-label="Enregistrer un message vocal">${I.mic}</button></form>`;
 }
 // Le bouton rond est un micro tant que rien n'est écrit ; il devient « Envoyer » dès qu'on écrit.
@@ -468,10 +468,10 @@ function quoteHtml(c, id) {
   return `<span class="quote" data-act="jump" data-id="${q.id}"><b>${esc(q.from === S.me.id ? 'Vous' : uOf(q.from).name)}</b><span>${esc(snippet(q))}</span></span>`;
 }
 function onceBubble(m, out) {
-  const what = m.kind === 'audio' ? 'Vocal' : m.media ? 'Photo' : 'Message', mine = (m.opened || []).includes(S.me.id);
+  const what = m.kind === 'audio' ? 'Vocal' : m.kind === 'video' ? 'Vidéo' : m.media ? 'Photo' : 'Message', mine = (m.opened || []).includes(S.me.id);
   if (out) return `<span class="once-b"><span class="one" aria-hidden="true">1</span><span>${what} à vue unique<small>${(m.opened || []).length ? 'Ouvert' : 'Envoyé'}</small></span></span>`;
   if (mine) return `<span class="once-b done"><span class="one" aria-hidden="true">1</span><span>${what} à vue unique<small>Ouvert</small></span></span>`;
-  return `<button class="once-b go" type="button" data-act="onceOpen" data-id="${m.id}"><span class="one" aria-hidden="true">1</span><span>${what} à vue unique<small>Touchez pour ${m.kind === 'audio' ? 'écouter' : m.media ? 'voir' : 'lire'} · une seule fois</small></span></button>`;
+  return `<button class="once-b go" type="button" data-act="onceOpen" data-id="${m.id}"><span class="one" aria-hidden="true">1</span><span>${what} à vue unique<small>Touchez pour ${m.kind === 'audio' ? 'écouter' : m.kind === 'video' ? 'regarder' : m.media ? 'voir' : 'lire'} · une seule fois</small></span></button>`;
 }
 function renderMessages(keep) {
   const c = S.chats.get(S.chatId), box = $('#msgs'); if (!c || !box) return;
@@ -488,6 +488,7 @@ function renderMessages(keep) {
     let body;
     if (m.deleted) body = `<span class="txt gone">${out ? 'Vous avez supprimé ce message' : 'Ce message a été supprimé'}</span>`;
     else if (m.once) body = onceBubble(m, out);
+    else if (m.kind === 'video') body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + `<div class="vidb"><video class="photo vid" data-vid="${m.id}" playsinline controls preload="metadata" controlslist="nodownload"${E2E.vids.has(m.id) ? ` src="${E2E.vids.get(m.id)}"` : ''}></video>${m.dur ? `<small class="vid-d">${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>` + (m.text ? Tr.txt(m) : '');
     else if (m.kind === 'audio') body = `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
     else body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? Tr.txt(m) : '');
     h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble">
@@ -497,7 +498,7 @@ function renderMessages(keep) {
   const tu = typingIn(c.id); if (tu) h += `<div class="msg in first typing-b"><div class="bubble" aria-label="En train d’écrire"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
   box.innerHTML = h;
   if (!keep || atBottom) box.scrollTop = box.scrollHeight;
-  hydrateImgs(c.id); hydrateAuds(c.id); Tr.autoRun(c);
+  hydrateImgs(c.id); hydrateAuds(c.id); if (typeof hydrateVids === 'function') hydrateVids(c.id); Tr.autoRun(c);
 }
 function onMsg(m, update) { reveal(m).then(() => onMsgIn(m, update)); }
 async function hydrateImgs(chatId) {
@@ -1100,7 +1101,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.28</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.29</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1174,7 +1175,7 @@ const ACT = {
   leaveAsk() { confirmSheet('Quitter le groupe ?', 'Vous ne recevrez plus les messages de ce groupe.', 'Quitter', 'leaveYes'); },
   async leaveYes() { closeLayer(); try { await api(`/api/chats/${S.chatId}/leave`, {}); S.chats.delete(S.chatId); S.chatId = null; $('.app').dataset.view = 'list'; renderMain(); renderAll(); } catch (e) { toast(e.message); } },
   attach() { $('#fileIn').click(); },
-  camera() { $('#camIn').click(); },
+  camera() { Cam.open(); },
   phCancel() { S.once = false; closeLayer(); renderComposer(); },
   trProv(d) { S.trProv = d.v; const el = $('#trBox'); if (el) el.outerHTML = trBox(); },
   trMsg(d) { closeLayer(); Tr.off.delete(+d.id); Tr.run(+d.id); },
@@ -1217,8 +1218,8 @@ const ACT = {
     let inner = '';
     if (m.locked) return toast('Ce message ne peut pas être lu sur cet appareil.');
     if (m.media) {
-      try { const r = await fetch(m.media, {credentials: 'same-origin'}); if (!r.ok) throw 0; const aud = m.kind === 'audio'; const url = URL.createObjectURL(new Blob([await E2E.decBytes(m._key, m.miv, await r.arrayBuffer())], {type: aud ? (m.amime || 'audio/webm') : 'image/jpeg'})); S.onceUrl = url;
-        inner = aud ? `<div class="once-aud">${I.mic}<audio src="${url}" controls autoplay controlslist="nodownload"></audio></div>` : `<img src="${url}" alt="Photo à vue unique" draggable="false">`; }
+      try { const r = await fetch(m.media, {credentials: 'same-origin'}); if (!r.ok) throw 0; const aud = m.kind === 'audio', vid = m.kind === 'video'; const url = URL.createObjectURL(new Blob([await E2E.decBytes(m._key, m.miv, await r.arrayBuffer())], {type: aud ? (m.amime || 'audio/webm') : vid ? (m.amime || 'video/mp4') : 'image/jpeg'})); S.onceUrl = url;
+        inner = vid ? `<video src="${url}" playsinline autoplay controls controlslist="nodownload" disablepictureinpicture></video>` : aud ? `<div class="once-aud">${I.mic}<audio src="${url}" controls autoplay controlslist="nodownload"></audio></div>` : `<img src="${url}" alt="Photo à vue unique" draggable="false">`; }
       catch { return toast('Cette photo n’est plus disponible.'); }
     }
     S.onceMsg = m.id;
@@ -1383,7 +1384,7 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', async e => {
   const t = e.target;
-  if (t.id === 'fileIn' || t.id === 'camIn') { const f = t.files[0]; t.value = ''; if (f) photoPreview(f); }
+  if (t.id === 'fileIn' || t.id === 'camIn') { const f = t.files[0]; t.value = ''; if (f) { if (/^video\//.test(f.type)) Edit.videoFile(f); else Edit.photoFile(f); } }
   else if (t.id === 'stIn') { const f = t.files[0]; t.value = ''; if (!f) return; try { const b = await shrink(f); S.sc.blob = b; S.sc.url = URL.createObjectURL(b); stComposer(); } catch (er) { toast(er.message); } }
   else if (t.id === 'trLang') { Tr.setLang(t.value); Tr.shown.clear(); toast('Les prochaines traductions seront en ' + (LANG_FR[t.value] || t.value)); }
   else if (t.id === 'picIn') { const f = t.files[0]; t.value = ''; const sl = S.picSlot; if (!f || !sl) return;

@@ -825,7 +825,7 @@ R('POST', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, body }) => {
   if (body.media) { const md = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.media), me.id); if (!md) E(400, 'Photo introuvable.'); media = md.id; }
   if (!text && !media) E(400, 'Message vide.');
   const reply = body.replyTo && q1(`SELECT id FROM messages WHERE id=? AND chat_id=?`, +body.replyTo, c.id) ? +body.replyTo : null;
-  const id = Number(run(`INSERT INTO messages(chat_id,sender,kind,text,media,reply_to,e2e,once,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, c.id, me.id, media ? (body.kind === 'audio' && e2e ? 'audio' : 'image') : 'text', text || null, media, body.once ? null : reply, e2e, body.once ? 1 : 0, now()).lastInsertRowid);
+  const id = Number(run(`INSERT INTO messages(chat_id,sender,kind,text,media,reply_to,e2e,once,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, c.id, me.id, media ? (e2e && ['audio', 'video'].includes(body.kind) ? body.kind : 'image') : 'text', text || null, media, body.once ? null : reply, e2e, body.once ? 1 : 0, now()).lastInsertRowid);
   if (media) run(`UPDATE media SET scope='chat', ref=? WHERE id=?`, c.id, media);
   run(`UPDATE members SET last_read=? WHERE chat_id=? AND user_id=?`, id, c.id, me.id);
   const msg = msgOut(q1(`SELECT * FROM messages WHERE id=?`, id));
@@ -833,8 +833,8 @@ R('POST', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, body }) => {
   const fn = me.name.split(' ')[0];
   const hiddenFor = new Set(qa(`SELECT user_id FROM members WHERE chat_id=? AND hidden=1`, c.id).map(r => r.user_id));
   for (const uid of memberIds(c.id)) if (uid !== me.id) webPush(uid, hiddenFor.has(uid) ? { title: 'tam-tam', body: 'Nouveau message', tag: 'chat-p', url: '/' } : c.type === 'group'
-    ? { title: c.name || 'Groupe', body: `${fn} : ${media ? '📷 Photo' : 'nouveau message'}`, tag: 'chat-' + c.id, url: '/?chat=' + c.id }
-    : { title: me.name, body: media ? '📷 Photo' : 'Nouveau message', tag: 'chat-' + c.id, url: '/?chat=' + c.id });
+    ? { title: c.name || 'Groupe', body: `${fn} : ${media ? (body.kind === 'video' ? '🎥 Vidéo' : body.kind === 'audio' ? '🎤 Vocal' : '📷 Photo') : 'nouveau message'}`, tag: 'chat-' + c.id, url: '/?chat=' + c.id }
+    : { title: me.name, body: media ? (body.kind === 'video' ? '🎥 Vidéo' : body.kind === 'audio' ? '🎤 Vocal' : '📷 Photo') : 'Nouveau message', tag: 'chat-' + c.id, url: '/?chat=' + c.id });
   return { msg };
 });
 R('POST', /^\/api\/chats\/(\d+)\/read$/, async ({ me, m, body }) => {
@@ -860,7 +860,7 @@ R('POST', /^\/api\/media$/, async ({ me, req }) => {
   const ct = String(req.headers['content-type'] || ''), enc = ct === 'application/octet-stream';
   if (!enc && !/^image\/(jpeg|png|webp)$/.test(ct)) E(415, 'Seules les photos (JPEG, PNG, WebP) sont acceptées.');
   if (tooMany('up:' + me.id, 60, 10 * 60_000)) E(429, 'Trop de photos envoyées. Patientez un peu.');
-  const buf = await readBody(req, 6_000_000); if (buf.length < 100) E(400, 'Fichier vide.');
+  const buf = await readBody(req, enc ? 42_000_000 : 6_000_000); if (buf.length < 100) E(400, 'Fichier vide.');
   const sig = buf.subarray(0, 12).toString('hex');
   if (!enc && !(sig.startsWith('ffd8ff') || sig.startsWith('89504e47') || (sig.startsWith('52494646') && buf.subarray(8, 12).toString() === 'WEBP'))) E(415, 'Ce fichier n’est pas une photo valide.');
   const id = rnd(18); fs.writeFileSync(path.join(MEDIA, id), buf);

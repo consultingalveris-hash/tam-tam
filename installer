@@ -65,6 +65,15 @@ docker exec "$APP" node -e "fetch('http://localhost:3000/api/meta').then(r=>proc
   || { echo "ERREUR : tam-tam ne démarre pas. Journal :"; docker logs --tail 30 "$APP"; exit 1; }
 echo "tam-tam lancé."
 
+# Vidéos : envois jusqu'à 45 Mo (bloc tam-tam déjà présent : on relève la limite, seulement dans ce bloc).
+if grep -q "^$DOMAINE" "$CF" && sed -n "/^$DOMAINE {/,/^}/p" "$CF" | grep -q "max_size 8MB"; then
+  SAUVE="$CF.avant-video-$(date +%Y%m%d-%H%M%S)"; cp -p "$CF" "$SAUVE"
+  sed -i "/^$DOMAINE {/,/^}/ s/max_size 8MB/max_size 45MB/" "$CF"
+  if docker exec "$C" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+    docker exec "$C" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; echo "Limite d'envoi relevée à 45 Mo (vidéos)."
+  else cat "$SAUVE" > "$CF"; echo "ATTENTION : limite d'envoi inchangée."; fi
+fi
+
 if ! grep -q "^$DOMAINE" "$CF"; then
   SAUVE="$CF.avant-tamtam-$(date +%Y%m%d-%H%M%S)"
   cp -p "$CF" "$SAUVE"
@@ -78,7 +87,7 @@ $DOMAINE {
 		-Server
 	}
 	request_body {
-		max_size 8MB
+		max_size 45MB
 	}
 	reverse_proxy $APP:3000 {
 		flush_interval -1
