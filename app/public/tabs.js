@@ -345,7 +345,10 @@ const Add = {
       <label class="search">${I.search}<span class="sr">Chercher un membre</span><input id="fq" type="search" placeholder="Nom ou pseudo (@…)" autocomplete="off" value="${esc(S.fq || '')}"></label>
       <div id="fres">${S.fres ? (S.fres.length ? S.fres.map(u => this.row(u)).join('') : '<p class="empty">Personne ne correspond.</p>') : ''}</div>
       ${C.incoming.length ? `<div class="sec">Demandes reçues · ${C.incoming.length}</div>${C.incoming.map(u => userRow(u, `<button class="btn sm ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button><button class="btn sm" type="button" data-act="cAccept" data-id="${u.id}">Accepter</button>`)).join('')}` : ''}
-      ${C.suggestions.length ? `<div class="sec">Sur Tam-Tam · pas dans vos contacts</div><p class="hint" style="margin:0 0 4px">Touchez une personne pour voir son profil public. Elle devra accepter votre demande avant que vous puissiez échanger.</p>${C.suggestions.map(u => this.row(u)).join('')}` : ''}
+      <div class="sec">Membres de Tam-Tam</div>
+      <p class="hint" style="margin:0 0 4px">Les personnes de Tam-Tam qui ne sont pas encore vos amis. Touchez une personne pour voir son profil public, puis demandez-la en ami. Une fois acceptée, elle passe dans l’onglet <b>Contacts</b>. Même devenu ami, personne ne voit votre numéro de téléphone sans votre accord.</p>
+      <div id="peopleList">${Add.people ? (Add.people.length ? Add.people.map(u => this.row(u)).join('') : '<p class="empty">Pas encore d’autres membres.</p>') : '<p class="hint">Chargement…</p>'}</div>
+      ${Add.more ? '<div><button class="btn sm ghost" type="button" data-act="peopleMore">Voir plus de membres</button></div>' : ''}
       ${C.outgoing.length ? `<div class="sec">Demandes envoyées</div>${C.outgoing.map(u => this.row(u)).join('')}` : ''}
       <div class="sec">Inviter vos proches</div>
       <div class="invite-box" style="margin:0">
@@ -353,11 +356,7 @@ const Add = {
         : `<span class="hint">Seules les personnes qui ont un lien d’invitation ou votre code QR peuvent s’inscrire.</span><div><button class="btn sm" type="button" data-act="invNew">${I.userplus}Créer un lien d’invitation</button></div>`}
       </div>
       <div class="sec">Code QR</div>
-      <div class="actions" style="justify-content:flex-start;margin-bottom:8px"><button class="btn sm ghost" type="button" data-act="qrShow">${I.qr}Mon code QR</button><button class="btn sm ghost" type="button" data-act="qrScan">${I.camera}Scanner un code</button></div>
-      <div class="sec">Membres de Tam-Tam</div>
-      <p class="hint" style="margin:0 0 4px">Faites défiler et touchez une personne pour voir son profil public et ses photos, puis demandez-la en ami si vous le souhaitez. Même devenu ami, personne ne voit votre numéro de téléphone sans votre accord.</p>
-      <div id="peopleList">${Add.people ? (Add.people.length ? Add.people.map(u => this.row(u)).join('') : '<p class="empty">Pas encore d’autres membres.</p>') : '<p class="hint">Chargement…</p>'}</div>
-      ${Add.more ? '<div><button class="btn sm ghost" type="button" data-act="peopleMore">Voir plus de membres</button></div>' : ''}</div>`;
+      <div class="actions" style="justify-content:flex-start;margin-bottom:8px"><button class="btn sm ghost" type="button" data-act="qrShow">${I.qr}Mon code QR</button><button class="btn sm ghost" type="button" data-act="qrScan">${I.camera}Scanner un code</button></div></div>`;
   },
   open() { S.fq = ''; S.fres = null; Add.people = null; Add.more = false; sheet(this.html(), 'Ajouter des amis'); this.loadPeople(); },
   async loadPeople(more) {

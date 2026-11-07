@@ -404,7 +404,7 @@ R('POST', /^\/api\/contacts\/share-tel$/, async ({ me, body }) => {
 R('GET', /^\/api\/people$/, async ({ me, url }) => {
   const off = Math.max(0, +url.searchParams.get('off') || 0);
   if (tooMany('people:' + me.id, 40, 60 * 60_000)) E(429, 'Vous avez parcouru beaucoup de profils. Faites une pause et réessayez plus tard.');
-  const rows = qa(`SELECT * FROM users WHERE id<>? AND listed=1 ORDER BY id DESC LIMIT 31 OFFSET ?`, me.id, off);
+  const rows = qa(`SELECT * FROM users WHERE id<>? AND listed=1 AND id NOT IN (SELECT CASE WHEN a=? THEN b ELSE a END FROM contacts WHERE (a=? OR b=?) AND status='accepted') ORDER BY id DESC LIMIT 31 OFFSET ?`, me.id, me.id, me.id, me.id, off);
   return { users: rows.slice(0, 30).filter(u => !blockedEither(me.id, u.id)).map(u => userCard(u, me.id)), more: rows.length > 30 };
 });
 // Message à vue unique : ouvert une fois, puis effacé du serveur quand tous les destinataires l'ont vu.
@@ -1183,9 +1183,11 @@ R('POST', /^\/api\/admin\/mail$/, async ({ me, body }) => {
 R('POST', /^\/api\/admin\/report-done$/, async ({ me, body }) => { adminOnly(me); run(`UPDATE reports SET done=1 WHERE id=?`, +body.id); return { ok: true }; });
 
 /* flux temps réel */
+// Empreinte de la version de l'application : quand elle change (mise à jour), les écrans ouverts se rechargent.
+const APP_VER = sha(['app.js', 'tabs.js', 'call.js', 'gcall.js', 'kit.js', 'device.js', 'secure.js', 'style.css', 'app.html'].map(f => { try { return fs.readFileSync(path.join(PUB, f), 'utf8'); } catch { return ''; } }).join('|')).slice(0, 12);
 R('GET', /^\/api\/stream$/, async ({ me, req, res }) => {
   res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-  res.write(`retry: 3000\ndata: ${JSON.stringify({ t: 'hello' })}\n\n`);
+  res.write(`retry: 3000\ndata: ${JSON.stringify({ t: 'hello', v: APP_VER })}\n\n`);
   if (!streams.has(me.id)) streams.set(me.id, new Set());
   const set = streams.get(me.id), first = set.size === 0; set.add(res);
   if (first) presence(me.id);
