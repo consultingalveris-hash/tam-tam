@@ -24,6 +24,8 @@ function seenLabel(t) {
 /* ---------- état ---------- */
 const S = {me: null, chats: new Map(), msgs: new Map(), more: new Map(), contacts: {contacts: [], incoming: [], outgoing: [], suggestions: []},
   statuses: {mine: {items: []}, others: []}, users: new Map(), tab: 'chats', chatId: null, q: '', typing: new Map(), lastFrom: new Map(), replyTo: null, invite: null};
+const URL_RE = /\b(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+\.[a-z]{2,}[^\s<>"']*)/gi;
+const escL = t => esc(t).replace(URL_RE, u => { const href = /^https?:/i.test(u) ? u : 'https://' + u; return `<a href="${href.replace(/"/g, '&quot;')}" target="_blank" rel="noopener nofollow">${u}</a>`; });
 const subH = u => u && u.name && !String(u.name).startsWith('@') ? '@' + u.handle : '';
 const uOf = id => S.users.get(id) || {id, name: 'Membre', handle: '', avatar: {d: 'm2', c: 'turq'}};
 function keepUsers(list) { for (const u of list || []) if (u) S.users.set(u.id, Object.assign(S.users.get(u.id) || {}, u)); }
@@ -76,7 +78,7 @@ function avatar(u, cls = '') {
 }
 const avOn = (u, cls) => `<span class="avw">${avatar(u, cls)}${u && u.busy ? '<span class="dot-on busy" aria-label="occupé"></span>' : u && u.online ? '<span class="dot-on" aria-label="en ligne"></span>' : ''}</span>`;
 const presLabel = u => u.busy ? 'occupé' : u.online ? 'en ligne' : seenLabel(u.lastSeen);
-const grpAv = (c, cls = '') => `<span class="av grp ${cls}" style="--h:${(c.id * 47) % 360}" aria-hidden="true">${I.users}</span>`;
+const grpAv = (c, cls = '') => c.photo ? `<span class="av grp ph ${cls}" aria-hidden="true"><img src="${esc(c.photo)}" alt=""></span>` : `<span class="av grp ${cls}" style="--h:${(c.id * 47) % 360}" aria-hidden="true">${I.users}</span>`;
 function avGallery(sel, who) {
   const a = avNorm(sel), mini = st => avFace(Object.assign({}, a, {st, f: FEM.includes(st) ? true : a.f}));
   return `<div class="avb" id="avg-${who}"><div class="avb-top"><span class="av">${avFace(a)}</span><span class="hint">Composez votre avatar : coiffure, teint, couleur de la tenue et détails.</span></div>
@@ -90,6 +92,7 @@ function avGallery(sel, who) {
 const A = {mode: 'login', avatar: {v: 2, st: 'court', sk: 'c', sh: '#14b8c9', f: false, b: false, g: false, e: false}};
 async function boot() {
   S.pendingChat = +((/[?&]chat=(\d+)/.exec(location.search) || [])[1] || 0);
+  const gj = (/[?&]g=([A-Za-z0-9_-]{6,40})/.exec(location.search) || [])[1]; if (gj) S.pendingJoin = gj;
   const p = location.pathname, inv = (p.match(/^\/invite\/([A-Za-z0-9_-]+)$/) || [])[1], rst = (p.match(/^\/reset\/([A-Za-z0-9_-]+)$/) || [])[1];
   if (inv) S.invite = inv;
   const qr = (p.match(/^\/add\/([A-Za-z0-9_-]+)$/) || [])[1]; if (qr) { S.qrAdd = qr; S.invite = qr; }
@@ -175,6 +178,7 @@ async function startApp() {
   GCall.loadActive(); Call.checkPending(); Device.badge();
   if (S.lock.type === 'off') return requireLock();
   if (S.pendingChat && S.chats.has(S.pendingChat)) openChat(S.pendingChat); S.pendingChat = 0;
+  if (S.pendingJoin) { const g = S.pendingJoin; S.pendingJoin = null; history.replaceState(null, '', '/'); joinPreview(g); }
   if (S.qrAdd) { const t = S.qrAdd; S.qrAdd = null; Qr.connect(t); }
 }
 /* Comptes créés avant le pseudo obligatoire : on demande d'en choisir un (une seule fois). */
@@ -232,7 +236,7 @@ async function reveal(m) {
   const r = await E2E.open(m.enc, S.me.id);
   if (r.err === 'absent') { m.text = '🔒 Message chiffré avant votre arrivée, ou pour une ancienne clé'; m.locked = true; }
   else if (r.err) { m.text = '🔒 Message illisible sur cet appareil'; m.locked = true; }
-  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; if (r.payload.loc) m.loc = r.payload.loc; }
+  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; if (r.payload.loc) m.loc = r.payload.loc; if (r.payload.name) { m.fname = r.payload.name; m.fsize = r.payload.size || 0; m.fmime = r.payload.mime || 'application/octet-stream'; } }
   return m;
 }
 async function loadChats() { const r = await api('/api/chats'); const map = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); await reveal(c.last); if (c.pinMsg) await reveal(c.pinMsg); map.set(c.id, c); } S.chats = map; }
@@ -306,7 +310,7 @@ function renderModal(first) {
 const chatTitle = c => c.type === 'group' ? c.name : uOf(c.peer).name;
 function snippet(m) {
   if (!m) return 'Aucun message';
-  if (m.deleted) return 'Message supprimé'; if (m.kind === 'sys') return m.text; if (m.once) return m.kind === 'audio' ? '① Vocal à vue unique' : m.kind === 'video' ? '① Vidéo à vue unique' : m.media ? '① Photo à vue unique' : '① Message à vue unique'; if (m.kind === 'audio') return '🎤 Message vocal'; if (m.kind === 'loc') return '📍 Position'; if (m.kind === 'video') return '🎥 Vidéo' + (m.text ? ' · ' + m.text : ''); if (m.locked) return m.text;
+  if (m.deleted) return 'Message supprimé'; if (m.kind === 'sys') return m.text; if (m.once) return m.kind === 'audio' ? '① Vocal à vue unique' : m.kind === 'video' ? '① Vidéo à vue unique' : m.media ? '① Photo à vue unique' : '① Message à vue unique'; if (m.kind === 'audio') return '🎤 Message vocal'; if (m.kind === 'loc') return '📍 Position'; if (m.kind === 'doc') return '📄 ' + (m.fname || 'Document'); if (m.kind === 'video') return '🎥 Vidéo' + (m.text ? ' · ' + m.text : ''); if (m.locked) return m.text;
   return (m.media ? '📷 Photo' + (m.text ? ' · ' : '') : '') + (m.text || '');
 }
 function readState(c, m) {
@@ -546,10 +550,11 @@ function renderMessages(keep) {
     const out = m.from === S.me.id, isFirst = m.from !== pf; pf = m.from;
     const u = uOf(m.from);
     let body;
-    if (m.deleted) body = `<span class="txt gone">${out ? 'Vous avez supprimé ce message' : 'Ce message a été supprimé'}</span>`;
+    if (m.deleted) body = `<span class="txt gone">${m.delBy ? (m.delBy === S.me.id ? 'Vous avez supprimé ce message (administrateur)' : 'Supprimé par un administrateur') : out ? 'Vous avez supprimé ce message' : 'Ce message a été supprimé'}</span>`;
     else if (m.once) body = onceBubble(m, out);
     else if (m.kind === 'video') body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + `<div class="vidb"><video class="photo vid" data-vid="${m.id}" playsinline controls preload="metadata" controlslist="nodownload"${E2E.vids.has(m.id) ? ` src="${E2E.vids.get(m.id)}"` : ''}></video>${m.dur ? `<small class="vid-d">${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>` + (m.text ? Tr.txt(m) : '');
     else if (m.kind === 'loc') body = locHtml(m);
+    else if (m.kind === 'doc') body = docHtml(m) + (m.text ? Tr.txt(m) : '');
     else if (m.kind === 'audio') body = `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
     else body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? Tr.txt(m) : '');
     h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble">
@@ -747,8 +752,10 @@ function chatMenu() {
   const c = S.chats.get(S.chatId); if (!c) return;
   const u = c.type === 'direct' ? uOf(c.peer) : null, blocked = u && (S.me.blocked || []).some(b => b.id === u.id);
   sheet(`${head(esc(chatTitle(c)))}<div class="menu">
-    ${c.type === 'group' ? `<button type="button" data-act="chatInfo">${I.info}Infos du groupe</button><button type="button" data-act="groupAddOpen">${I.userplus}Ajouter des membres</button><button type="button" class="danger" data-act="leaveAsk">${I.back}Quitter le groupe</button>`
+    ${c.type === 'group' ? `<button type="button" data-act="chatInfo">${I.info}Infos et réglages du groupe</button>${can(c, 'add') ? `<button type="button" data-act="groupAddOpen">${I.userplus}Ajouter des membres</button>` : ''}`
     : `<button type="button" data-act="prof" data-id="${u.id}">${I.info}Voir le profil</button>`}
+    <button type="button" data-act="mediaOpen">${I.image || I.clip}Médias, liens et documents</button>
+    ${c.type === 'group' ? `<button type="button" class="danger" data-act="leaveAsk">${I.back}Quitter le groupe</button>` : ''}
     <button type="button" data-act="privToggle">${I.lock}${c.hidden ? 'Ne plus rendre privée' : 'Rendre la discussion privée'}</button>
     <button type="button" class="danger" data-act="reportAsk" data-id="${u ? u.id : ''}" data-chat="${c.id}">${I.flag}Signaler</button>
     ${u ? `<button type="button" class="danger" data-act="${blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${I.block}${blocked ? 'Débloquer ' : 'Bloquer '}${esc(first(u.name))}</button>` : ''}</div>`, 'Options');
@@ -765,11 +772,33 @@ function chatListMenu(id) {
     ${u ? `<button type="button" class="danger" data-act="${blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${I.block}${blocked ? 'Débloquer ' : 'Bloquer '}${esc(first(u.name))}</button>` : ''}
     <button type="button" class="danger" data-act="chatClearAsk" data-id="${id}">${I.trash}Supprimer la discussion</button></div>`, 'Options');
 }
+async function grpUpd(body, quiet) {
+  const r = await api(`/api/chats/${S.chatId}/group`, body); S.chats.set(r.chat.id, Object.assign(S.chats.get(r.chat.id), r.chat)); renderChatHead(); if (!quiet) groupInfo(); if (S.tab === 'chats') renderBody();
+}
 async function chatMine(id, body, quiet) {
   const r = await api(`/api/chats/${id}/mine`, body); const c = S.chats.get(id); if (c) { await reveal(r.chat.last); if (r.chat.pinMsg) await reveal(r.chat.pinMsg); S.chats.set(id, Object.assign(c, r.chat)); }
   if (!quiet) { renderTabs(); if (S.tab === 'chats') renderBody(); }
 }
+const can = (c, what) => c.admin || ((c.gset || {})[what] === 'all');
 function groupInfo() {
+  const c = S.chats.get(S.chatId); if (!c) return; const g = c.gset || {}, ed = can(c, 'edit');
+  const role = m => m.id === c.createdBy ? 'Créateur' : m.admin ? 'Admin' : '';
+  const mem = c.members.slice().sort((a, b) => (b.id === c.createdBy) - (a.id === c.createdBy) || (b.admin - a.admin) || (a.id === S.me.id ? -1 : b.id === S.me.id ? 1 : 0));
+  sheet(`${head('Infos du groupe')}<div class="sheet-scroll"><div class="sheet-body">
+    <div class="prof"><span class="grp-ph">${grpAv(c, 'xl')}${ed ? `<button class="ib grp-ph-b" type="button" data-act="grpPhoto" aria-label="Changer la photo du groupe">${I.camera}</button>` : ''}</span>
+      <b>${esc(c.name)}${ed ? ` <button class="linkless grp-ren" type="button" data-act="grpRename" aria-label="Renommer le groupe">✎</button>` : ''}</b><span>Groupe · ${c.members.length} membre${c.members.length > 1 ? 's' : ''}</span></div>
+    <div class="grp-acts">
+      <button type="button" class="ga" data-act="gcallVideo">${I.video}<span>Appel vidéo</span></button><button type="button" class="ga" data-act="gcallAudio">${I.phone}<span>Appel vocal</span></button>
+      ${can(c, 'add') ? `<button type="button" class="ga" data-act="grpLink">${I.copy}<span>Lien d’invitation</span></button><button type="button" class="ga" data-act="groupAddOpen">${I.userplus}<span>Ajouter</span></button>` : ''}
+      <button type="button" class="ga" data-act="mediaOpen">${I.image || I.clip}<span>Médias</span></button></div>
+    ${c.admin ? `<details class="grp-set"><summary>${I.settings}Réglages du groupe (administrateurs)</summary>
+      ${[['add', 'Qui peut ajouter des membres et partager le lien ?', [['all', 'Tous les membres'], ['admins', 'Les administrateurs']]], ['edit', 'Qui peut changer le nom et la photo ?', [['all', 'Tous les membres'], ['admins', 'Les administrateurs']]], ['del', 'Supprimer les messages des autres membres', [['admins', 'Les administrateurs peuvent'], ['none', 'Personne']]]].map(([k, q, opts]) => `<span class="lbl">${q}</span><div class="seg">${opts.map(([v, l]) => `<button type="button" data-act="grpSet" data-k="${k}" data-v="${v}" aria-pressed="${g[k] === v}">${l}</button>`).join('')}</div>`).join('')}
+      <p class="hint">4 administrateurs au maximum, créateur compris. Touchez un membre pour le nommer administrateur ou le retirer du groupe.</p></details>` : ''}
+    <span class="lbl">${c.members.length} membre${c.members.length > 1 ? 's' : ''}</span></div>
+    ${mem.map(m => { const u = m.id === S.me.id ? S.me : uOf(m.id), r = role(m); return `<button class="row" type="button" data-act="grpMember" data-id="${m.id}">${avOn(u)}<span class="row-name">${esc(m.id === S.me.id ? 'Vous' : u.name)}</span>${r ? `<span class="row-end"><span class="role-b${r === 'Créateur' ? ' own' : ''}">${r}</span></span>` : ''}<span class="row-prev"><span>${esc(subH(u) || '@' + u.handle)}</span></span></button>`; }).join('')}
+    <div class="sheet-body"><button class="btn ghost danger" type="button" data-act="leaveAsk">${I.back}Quitter le groupe</button></div></div>`, 'Infos du groupe');
+}
+function groupInfoOld() {
   const c = S.chats.get(S.chatId); if (!c) return;
   sheet(`${head(esc(c.name))}<div class="sheet-body"><div class="prof">${grpAv(c, 'lg')}<b>${esc(c.name)}</b><span>Groupe · ${c.members.length} membres</span></div></div>
     <div class="sheet-scroll">${c.members.map(m => { const u = m.id === S.me.id ? S.me : uOf(m.id); return `<button class="row" type="button" data-act="${m.id === S.me.id ? 'close' : 'prof'}" data-id="${m.id}">${avOn(u)}<span class="row-name">${esc(m.id === S.me.id ? 'Vous' : u.name)}</span><span class="row-prev"><span>${m.admin ? 'Créateur du groupe' : esc(subH(u))}</span></span></button>`; }).join('')}</div>`, 'Infos du groupe');
@@ -792,6 +821,80 @@ function reactsHtml(m) {
   const g = {}; for (const r of m.reacts) (g[r.e] = g[r.e] || []).push(r.u);
   const mine = m.reacts.some(r => r.u === S.me.id);
   return `<button type="button" class="reacts${mine ? ' mine' : ''}" data-act="reactWho" data-id="${m.id}" aria-label="Réactions">${Object.entries(g).map(([e, us]) => `<span>${e}${us.length > 1 ? `<small>${us.length}</small>` : ''}</span>`).join('')}</button>`;
+}
+const fsz = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.', ',') + ' Mo' : Math.max(1, Math.round(n / 1e3)) + ' Ko';
+function docHtml(m) {
+  const ext = ((m.fname || '').split('.').pop() || '').slice(0, 4).toUpperCase();
+  return `<button type="button" class="docb" data-act="docOpen" data-id="${m.id}"><span class="doc-ic" aria-hidden="true">${esc(ext || 'DOC')}</span><span class="doc-t"><b>${esc(m.fname || 'Document')}</b><small>${m.fsize ? fsz(m.fsize) + ' · ' : ''}Touchez pour ouvrir</small></span></button>`;
+}
+async function docOpen(m) {
+  try {
+    toast('Ouverture du document…'); const b = await msgBytes(m), url = URL.createObjectURL(new Blob([b], {type: m.fmime || 'application/octet-stream'}));
+    const a = document.createElement('a'); a.href = url; a.download = m.fname || 'document'; a.rel = 'noopener'; if (/pdf|image|text/.test(m.fmime || '')) a.target = '_blank';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (e) { toast(e.message || 'Document illisible sur cet appareil.'); }
+}
+async function sendDoc(f) {
+  const c = S.chats.get(S.chatId); if (!c || !f) return;
+  if (f.size > 40_000_000) return toast(`Document trop lourd (${fsz(f.size)}). Maximum : 40 Mo.`);
+  toast('Envoi du document…');
+  try {
+    const mime = f.type || 'application/octet-stream', sealed = await E2E.seal({t: '', name: f.name.slice(0, 120), size: f.size, mime}, recipients(c), await f.arrayBuffer());
+    const up = await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'});
+    const r = await api(`/api/chats/${c.id}/messages`, {media: up.id, enc: sealed.env, kind: 'doc'}); onMsg(r.msg); toast('Document envoyé');
+  } catch (e) { toast(e.message); }
+}
+/* Médias, liens et documents d'une discussion : tout est déchiffré et trié sur l'appareil. */
+const MG_TABS = [['photo', 'Photos'], ['video', 'Vidéos'], ['link', 'Liens'], ['doc', 'Documents'], ['audio', 'Vocaux'], ['loc', 'Positions']];
+async function mediaGallery(tab) {
+  const c = S.chats.get(S.chatId); if (!c) return;
+  if (!S.mg || S.mg.chat !== c.id) S.mg = {chat: c.id, tab: 'photo', items: null};
+  if (tab) S.mg.tab = tab;
+  const g = S.mg, render = () => {
+    const it = g.items, by = k => it ? it.filter(x => x.cat === k) : [];
+    const list = by(g.tab), when = m => `${dayLabel(m.at)} · ${m.from === S.me.id ? 'Vous' : esc(first(uOf(m.from).name))}`;
+    let body;
+    if (!it) body = '<p class="empty">Chargement et déchiffrement…</p>';
+    else if (!list.length) body = `<p class="empty">Aucun élément dans « ${MG_TABS.find(t => t[0] === g.tab)[1]} ».</p>`;
+    else if (g.tab === 'photo') body = `<div class="mg-grid">${list.map(m => `<button type="button" class="mg-ph" data-act="mgZoom" data-id="${m.id}"><img data-mg="${m.id}" alt="Photo du ${esc(dayLabel(m.at))}"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''}></button>`).join('')}</div>`;
+    else body = `<div class="mg-list">${list.map(m => {
+      if (g.tab === 'video') return `<button type="button" class="row" data-act="mgPlay" data-id="${m.id}"><span class="mg-ic">🎥</span><span class="row-name">Vidéo${m.dur ? ' · ' + Math.floor(m.dur / 60) + ':' + String(m.dur % 60).padStart(2, '0') : ''}</span><span class="row-prev"><span>${when(m)}</span></span></button>`;
+      if (g.tab === 'audio') return `<div class="row"><span class="mg-ic">🎤</span><span class="row-name">Vocal${m.dur ? ' · ' + Math.floor(m.dur / 60) + ':' + String(m.dur % 60).padStart(2, '0') : ''}</span><span class="row-end"><button class="btn sm ghost" type="button" data-act="mgPlay" data-id="${m.id}">Écouter</button></span><span class="row-prev"><span>${when(m)}</span></span></div>`;
+      if (g.tab === 'doc') return `<button type="button" class="row" data-act="mgDoc" data-id="${m.id}"><span class="mg-ic">📄</span><span class="row-name">${esc(m.fname || 'Document')}</span><span class="row-prev"><span>${m.fsize ? fsz(m.fsize) + ' · ' : ''}${when(m)}</span></span></button>`;
+      if (g.tab === 'loc') return `<div class="mg-loc">${locHtml(m)}<small class="hint">${when(m)}</small></div>`;
+      return (m.links || []).map(u => `<a class="row mg-link" href="${(/^https?:/i.test(u) ? u : 'https://' + u).replace(/"/g, '&quot;')}" target="_blank" rel="noopener nofollow"><span class="mg-ic">🔗</span><span class="row-name">${esc(u.replace(/^https?:\/\//, '').slice(0, 70))}</span><span class="row-prev"><span>${when(m)}</span></span></a>`).join('');
+    }).join('')}</div>`;
+    sheet(`${head('Médias, liens et documents')}<div class="chips mg-tabs" role="tablist">${MG_TABS.map(([k, l]) => `<button class="chip" type="button" role="tab" data-act="mgTab" data-t="${k}" aria-pressed="${g.tab === k}">${l}${it ? ` <small>${by(k).length}</small>` : ''}</button>`).join('')}</div><div class="sheet-scroll mg-body">${body}</div>`, 'Médias');
+    if (it && g.tab === 'photo') mgThumbs(list);
+  };
+  render(); g.render = render;
+  if (!g.items) {
+    try {
+      const r = await api(`/api/chats/${c.id}/media`), out = [];
+      for (const m of r.messages) {
+        await reveal(m); if (m.locked) continue;
+        if (m.kind === 'image' && m.media) m.cat = 'photo'; else if (m.kind === 'video') m.cat = 'video'; else if (m.kind === 'audio') m.cat = 'audio'; else if (m.kind === 'doc') m.cat = 'doc'; else if (m.kind === 'loc') m.cat = 'loc';
+        else if (m.text && (m.links = m.text.match(URL_RE))) m.cat = 'link'; else continue;
+        out.push(m);
+      }
+      g.items = out; g.map = new Map(out.map(m => [m.id, m])); if (S.mg === g && $('.mg-tabs')) render();
+    } catch (e) { toast(e.message); }
+  }
+}
+async function mgThumbs(list) {
+  for (const m of list.slice(0, 90)) {
+    const el = document.querySelector(`img[data-mg="${m.id}"]`); if (!el || el.src) continue;
+    try { const u = URL.createObjectURL(new Blob([await msgBytes(m)], {type: 'image/jpeg'})); E2E.imgs.set(m.id, u); el.src = u; } catch {}
+  }
+}
+async function joinPreview(code) {
+  try {
+    const r = await api('/api/groups/join/' + encodeURIComponent(code));
+    if (r.member) { await loadChats(); renderAll(); return openChat(r.id); }
+    S.joinCode = code;
+    sheet(`${head('Rejoindre un groupe')}<div class="sheet-body"><div class="prof"><span class="av grp xl" style="--h:${(r.id * 47) % 360}">${I.users}</span><b>${esc(r.name)}</b><span>Groupe · ${r.count} membre${r.count > 1 ? 's' : ''}</span></div>
+      <p class="hint">Les membres du groupe verront votre pseudo. Vous pourrez quitter le groupe quand vous voulez.</p><div class="actions"><button class="btn ghost" type="button" data-act="close">Plus tard</button><button class="btn" type="button" data-act="joinGo">Rejoindre le groupe</button></div></div>`, 'Rejoindre');
+  } catch (e) { toast(e.message); }
 }
 function locHtml(m) {
   const l = m.loc || {}; if (l.la == null) return '<span class="txt gone">📍 Position illisible</span>';
@@ -845,12 +948,12 @@ function msgHide(chatId, id) { const l = S.msgs.get(chatId); if (l) { const i = 
 function msgMenu(id) {
   const list = S.msgs.get(S.chatId) || [], m = list.find(x => x.id === id); if (!m) return;
   if (m.deleted) return sheet(`<div class="menu" style="padding-top:12px"><button type="button" class="danger" data-act="hideAsk" data-id="${id}">${I.trash}Supprimer pour moi</button></div>`, 'Message');
-  const canAll = m.from === S.me.id && Date.now() - m.at < DEL_ALL_MAX, c = S.chats.get(S.chatId) || {}, myR = (m.reacts || []).find(r => r.u === S.me.id);
+  const c = S.chats.get(S.chatId) || {}, modo = c.type === 'group' && c.admin && m.from !== S.me.id && (c.gset || {}).del === 'admins', canAll = (m.from === S.me.id && Date.now() - m.at < DEL_ALL_MAX) || modo, myR = (m.reacts || []).find(r => r.u === S.me.id);
   const canFwd = !m.once && !m.locked && !c.hidden && m.kind !== 'sys', pinned = c.pinMsg && c.pinMsg.id === m.id;
   sheet(`<div class="react-bar" role="group" aria-label="Réagir">${QUICK.map(e => `<button type="button" data-act="react" data-id="${id}" data-e="${e}" aria-pressed="${!!myR && myR.e === e}">${e}</button>`).join('')}<button type="button" class="more" data-act="reactMore" data-id="${id}" aria-label="Plus d’émoticônes">${I.plus}</button></div><div class="menu" style="padding-top:4px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once && !m.locked && m.from !== S.me.id && Tr.st && Tr.st.on && S.me.trConsent ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}${Tr.shown.has(id) ? 'Voir la traduction' : 'Traduire'}</button>` : ''}${m.text && !m.once && !(S.chats.get(S.chatId) || {}).hidden ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
     ${canFwd ? `<button type="button" data-act="fwd" data-id="${id}">${FWD_IC}Transférer</button>` : ''}${!m.once ? `<button type="button" data-act="${pinned ? 'pinMsgOff' : 'pinMsg'}" data-id="${id}"><span class="pin-ic" aria-hidden="true">📌</span>${pinned ? 'Retirer l’épingle' : 'Épingler en haut de la discussion'}</button>` : ''}
     <button type="button" class="danger" data-act="hideAsk" data-id="${id}">${I.trash}Supprimer pour moi</button>
-    ${canAll ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde</button>` : m.from === S.me.id ? '<p class="hint" style="padding:4px 16px 10px">Plus d’une heure après l’envoi, un message ne peut plus être supprimé pour tout le monde.</p>' : ''}</div>`, 'Message');
+    ${canAll ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde${modo ? ' (administrateur)' : ''}</button>` : m.from === S.me.id ? '<p class="hint" style="padding:4px 16px 10px">Plus d’une heure après l’envoi, un message ne peut plus être supprimé pour tout le monde.</p>' : ''}</div>`, 'Message');
 }
 
 /* ---------- statuts : création et lecture ---------- */
@@ -1210,28 +1313,28 @@ const Tr = {
     if (m.from === S.me.id) {
       if (m.orig != null && m.tlang) {
         const c = S.chats.get(m.chatId), who = c && c.type === 'direct' ? first(chatTitle(c)) : 'Vos contacts';
-        return `<span class="trl-txt">${esc(m.orig)}</span>${box(`${esc(who)} a reçu (${esc(L(m.tlang))})${m.fx ? ' · corrigé' : ''} :`, m.text)}`;
+        return `<span class="trl-txt">${escL(m.orig)}</span>${box(`${esc(who)} a reçu (${esc(L(m.tlang))})${m.fx ? ' · corrigé' : ''} :`, m.text)}`;
       }
-      return `<span class="txt">${esc(m.text)}</span>`;
+      return `<span class="txt">${escL(m.text)}</span>`;
     }
     // Sans traduction (refusée ou non activée) : le message tel qu'il a été écrit.
-    const plain = `<span class="txt">${esc(m.orig != null ? m.orig : m.text)}</span>`;
+    const plain = `<span class="txt">${escL(m.orig != null ? m.orig : m.text)}</span>`;
     if (!S.me.trConsent) return plain;
     const inL = this.inL(cid), fx = this.fix(m.id);
     if (this.learn(cid) && inL) {
       // Je m'exerce : je lis le message reçu ; la traduction dans ma langue n'apparaît que si je la demande.
       const t = m.orig != null && m.olang === inL ? {text: m.orig, from: m.olang} : this.get(m.id, inL);
       const shown = this.open.has(m.id) && t;
-      return `<span class="txt">${esc(m.text)}</span>` + (shown ? box(`Traduction (${esc(L(inL))})${fx ? ' · corrigée par vous' : ''} :`, fx ? fx.text : t.text)
+      return `<span class="txt">${escL(m.text)}</span>` + (shown ? box(`Traduction (${esc(L(inL))})${fx ? ' · corrigée par vous' : ''} :`, fx ? fx.text : t.text)
         : `<span class="tr-recv tr-hide"><button class="linkb" type="button" data-act="trReveal" data-id="${m.id}">${I.eye}Voir la traduction en ${esc(L(inL))}</button></span>`);
     }
     if (m.orig != null && m.tlang && (!inL || inL === m.tlang)) {
       // Traduit par l'expéditeur : l'original en haut, la traduction reçue en dessous.
-      return `<span class="trl-txt">${esc(m.orig)}</span>${box(`Traduction (${esc(L(m.tlang))})${fx ? ' · corrigée par vous' : m.fx ? ' · corrigée par l’expéditeur' : ''} :`, fx ? fx.text : m.text)}`;
+      return `<span class="trl-txt">${escL(m.orig)}</span>${box(`Traduction (${esc(L(m.tlang))})${fx ? ' · corrigée par vous' : m.fx ? ' · corrigée par l’expéditeur' : ''} :`, fx ? fx.text : m.text)}`;
     }
     const src = m.orig != null ? m.orig : m.text, tl = inL || (this.shown.has(m.id) ? this.lang() : ''), t = tl && this.get(m.id, tl);
     if (!t || t.from === tl || t.text.trim() === src.trim()) return plain;
-    return `<span class="trl-txt">${esc(src)}</span>${box(`Traduction (${esc(L(tl))})${fx ? ' · corrigée par vous' : ''} :`, fx ? fx.text : t.text)}`;
+    return `<span class="trl-txt">${escL(src)}</span>${box(`Traduction (${esc(L(tl))})${fx ? ' · corrigée par vous' : ''} :`, fx ? fx.text : t.text)}`;
   },
   label(cid) { const a = this.inL(cid), b = this.outL(cid); if (!S.me.trConsent) return ''; return a || b ? `<span>${a ? a.toUpperCase() : '—'}</span><i aria-hidden="true">⇄</i><span>${b ? b.toUpperCase() : '—'}</span>` : ''; },
   settingsHtml() {
@@ -1309,7 +1412,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.47</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.48</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1390,7 +1493,45 @@ const ACT = {
   async pinMsg(d) { closeLayer(); try { await api(`/api/chats/${S.chatId}/pinmsg`, {msgId: +d.id}); } catch (e) { toast(e.message); } },
   async pinMsgOff() { closeLayer(); try { await api(`/api/chats/${S.chatId}/pinmsg`, {msgId: null}); } catch (e) { toast(e.message); } },
   pinJump(d) { const el = document.querySelector(`.msg[data-mid="${d.id}"]`); if (el) { el.scrollIntoView({block: 'center', behavior: 'smooth'}); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); } else toast('Ce message est plus ancien : faites défiler la discussion vers le haut.'); },
-  attachMenu() { sheet(`<div class="menu" style="padding-top:12px"><button type="button" data-act="attachPick">${I.image || I.clip}Photo ou vidéo</button><button type="button" data-act="locSend"><span class="pin-ic" aria-hidden="true">📍</span>Ma position actuelle</button></div>`, 'Joindre'); },
+  attachMenu() { sheet(`<div class="menu" style="padding-top:12px"><button type="button" data-act="attachPick">${I.image || I.clip}Photo ou vidéo</button><button type="button" data-act="docPick"><span class="pin-ic" aria-hidden="true">📄</span>Document (PDF, Word, Excel…)</button><button type="button" data-act="locSend"><span class="pin-ic" aria-hidden="true">📍</span>Ma position actuelle</button></div>`, 'Joindre'); },
+  docPick() { closeLayer(); let i = $('#docIn'); if (!i) { i = document.createElement('input'); i.type = 'file'; i.id = 'docIn'; i.hidden = true; document.body.appendChild(i); i.addEventListener('change', () => { const f = i.files[0]; i.value = ''; if (f) sendDoc(f); }); } i.click(); },
+  docOpen(d) { const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +d.id); if (m) docOpen(m); },
+  mediaOpen() { S.mg = null; mediaGallery(); },
+  mgTab(d) { mediaGallery(d.t); },
+  mgBack() { if (S.mg && S.mg.render) S.mg.render(); },
+  mgZoom(d) { const u = E2E.imgs.get(+d.id); if (!u) return; layer.innerHTML = `<div class="zoom${(S.chats.get(S.chatId) || {}).hidden ? ' nocopy' : ''}" data-act="mgBack"><img src="${u}" alt="Photo"><button class="ib" type="button" data-act="mgBack" aria-label="Retour à la galerie">${I.close}</button></div>`; },
+  async mgPlay(d) {
+    const m = S.mg && S.mg.map.get(+d.id); if (!m) return;
+    try { const u = URL.createObjectURL(new Blob([await msgBytes(m)], {type: m.kind === 'video' ? (m.amime || 'video/mp4') : (m.amime || 'audio/webm')}));
+      layer.innerHTML = `<div class="zoom mg-play"><${m.kind === 'video' ? 'video' : 'audio'} src="${u}" controls autoplay playsinline controlslist="nodownload"></${m.kind === 'video' ? 'video' : 'audio'}><button class="ib" type="button" data-act="mgBack" aria-label="Retour à la galerie">${I.close}</button></div>`;
+    } catch (e) { toast(e.message); }
+  },
+  mgDoc(d) { const m = S.mg && S.mg.map.get(+d.id); if (m) docOpen(m); },
+  async joinGo() { try { const r = await api('/api/groups/join', {code: S.joinCode}); keepUsers(Object.values(r.chat.users)); S.chats.set(r.chat.id, r.chat); closeLayer(); S.tab = 'chats'; renderAll(); openChat(r.chat.id); toast('Bienvenue dans le groupe'); } catch (e) { toast(e.message); } },
+  grpPhoto() { let i = $('#grpIn'); if (!i) { i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.id = 'grpIn'; i.hidden = true; document.body.appendChild(i); i.addEventListener('change', async () => { const f = i.files[0]; i.value = ''; if (!f) return; try { toast('Envoi de la photo…'); const up = await upload(await shrink(f, 800)); await grpUpd({photo: up.id}); toast('Photo du groupe changée'); } catch (e) { toast(e.message); } }); } i.click(); },
+  grpRename() { const c = S.chats.get(S.chatId); sheet(`${head('Renommer le groupe')}<form data-form="grpName"><div class="sheet-body"><div class="field"><label for="grpN">Nom du groupe</label><input id="grpN" maxlength="50" required value="${esc(c.name)}"></div><div class="actions"><button class="btn ghost" type="button" data-act="chatInfo">Annuler</button><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Renommer', '#grpN'); },
+  async grpSet(d) { try { await grpUpd({gset: {[d.k]: d.v}}, true); groupInfo(); const det = $('.grp-set'); if (det) det.open = true; } catch (e) { toast(e.message); } },
+  async grpLink(d) {
+    try { const r = await api(`/api/chats/${S.chatId}/link`, {reset: !!(d && d.reset)}); S.grpLink = r.url;
+      sheet(`${head('Lien d’invitation du groupe')}<div class="sheet-body"><p class="hint">Toute personne inscrite sur Tam-Tam qui ouvre ce lien peut rejoindre le groupe. Partagez-le seulement avec des personnes de confiance.</p><div class="invite-url">${esc(r.url)}</div>
+        <div class="actions" style="justify-content:flex-start"><button class="btn sm" type="button" data-act="grpLinkCopy">${I.copy}Copier le lien</button><a class="btn sm ghost" href="https://wa.me/?text=${encodeURIComponent('Rejoignez mon groupe sur Tam-Tam : ' + r.url)}" target="_blank" rel="noopener">WhatsApp</a>${navigator.share ? '<button class="btn sm ghost" type="button" data-act="grpLinkShare">Partager…</button>' : ''}</div>
+        ${(S.chats.get(S.chatId) || {}).admin ? '<button class="linkless" type="button" data-act="grpLinkReset">Créer un nouveau lien (l’ancien ne marchera plus)</button>' : ''}<div class="actions"><button class="btn ghost" type="button" data-act="chatInfo">Retour</button></div></div>`, 'Lien du groupe');
+    } catch (e) { toast(e.message); }
+  },
+  async grpLinkCopy() { try { await navigator.clipboard.writeText(S.grpLink); toast('Lien copié'); } catch { toast(S.grpLink); } },
+  grpLinkShare() { navigator.share({title: 'Groupe Tam-Tam', text: 'Rejoignez mon groupe sur Tam-Tam', url: S.grpLink}).catch(() => {}); },
+  grpLinkReset() { ACT.grpLink({reset: 1}); },
+  grpMember(d) {
+    const c = S.chats.get(S.chatId), id = +d.id; if (id === S.me.id) return;
+    const m = c.members.find(x => x.id === id), u = uOf(id), own = id === c.createdBy;
+    if (!c.admin || own) return profSheet(id);
+    sheet(`${head(esc(u.name))}<div class="menu"><button type="button" data-act="prof" data-id="${id}">${I.info}Voir le profil</button>
+      <button type="button" data-act="grpRole" data-id="${id}" data-v="${m.admin ? '' : '1'}">${I.shield}${m.admin ? 'Retirer le rôle d’administrateur' : 'Nommer administrateur'}</button>
+      <button type="button" class="danger" data-act="grpKickAsk" data-id="${id}">${I.trash}Retirer du groupe</button></div>`, 'Membre');
+  },
+  async grpRole(d) { try { const r = await api(`/api/chats/${S.chatId}/role`, {userId: +d.id, admin: !!d.v}); S.chats.set(r.chat.id, Object.assign(S.chats.get(r.chat.id), r.chat)); groupInfo(); toast(d.v ? 'Nommé administrateur' : 'Rôle d’administrateur retiré'); } catch (e) { toast(e.message); } },
+  grpKickAsk(d) { confirmSheet('Retirer cette personne du groupe ?', 'Elle ne recevra plus les messages du groupe. Un message l’indiquera aux membres.', 'Retirer', 'grpKickYes', d.id); },
+  async grpKickYes(d) { try { const r = await api(`/api/chats/${S.chatId}/role`, {userId: +d.id, kick: true}); S.chats.set(r.chat.id, Object.assign(S.chats.get(r.chat.id), r.chat)); groupInfo(); toast('Retiré du groupe'); } catch (e) { toast(e.message); } },
   attachPick() { closeLayer(); $('#fileIn').click(); },
   locSend() { sendLoc(); },
   async locGo(d) {
@@ -1605,6 +1746,7 @@ const FORMS = {
     if (!ids.length) { err.textContent = 'Choisissez au moins un membre.'; err.hidden = false; return; }
     try { const r = await api('/api/chats/group', {name, members: ids}); keepUsers(Object.values(r.chat.users)); S.chats.set(r.chat.id, r.chat); closeLayer(); S.tab = 'chats'; renderAll(); openChat(r.chat.id); } catch (e) { err.textContent = e.message; err.hidden = false; }
   },
+  async grpName() { try { await grpUpd({name: $('#grpN').value}); toast('Groupe renommé'); } catch (e) { toast(e.message); } },
   async groupAdd(f) {
     const ids = [...f.querySelectorAll('input[name="gm"]:checked')].map(i => +i.value); if (!ids.length) return closeLayer();
     try { const r = await api(`/api/chats/${S.chatId}/members`, {add: ids}); S.chats.set(r.chat.id, r.chat); keepUsers(Object.values(r.chat.users)); closeLayer(); renderChatHead(); } catch (e) { toast(e.message); }
