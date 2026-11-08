@@ -1,7 +1,7 @@
 /* tam-tam — Souvenirs : les photos et vidéos qu'on garde dans le temps.
    Public : visible par tous sur votre profil. Privé : vous seul, chiffré pour vous seul et ouvert avec votre code à 4 chiffres.
-   Amis Tam-Tam : envoyé aux amis choisis (chiffré pour eux seulement), privé ou non, à vue unique ou non. */
-const MEM_AUD = {public: ['Public', I.globe], private: ['Privé', I.lock], friends: ['Amis Tam-Tam', I.users]};
+   Mon Tam-Tam : envoyé aux amis choisis (chiffré pour eux seulement), privé ou non, à vue unique ou non. */
+const MEM_AUD = {public: ['Public', I.globe], private: ['Privé', I.lock], friends: ['Mon Tam-Tam', I.users]};
 const Mem = {
   items: null, recv: null, unseen: 0, filt: 'all', unlocked: false, thumbs: new Map(), others: new Map(),
   /* ---- code à 4 chiffres ---- */
@@ -95,21 +95,21 @@ const Mem = {
       <div class="mem-today-a">${first ? `<button class="btn sm" type="button" data-act="memRepost" data-id="${first.id}">Reposter en statut</button>` : ''}${t.bdays.length ? `<button class="btn sm${first ? ' ghost' : ''}" type="button" data-act="write" data-id="${t.bdays[0].id}">Lui souhaiter</button>` : ''}<button class="btn sm ghost" type="button" data-act="memLater">Plus tard</button></div></div></div>` : '';
     const byYear = list => { const yrs = new Map(); for (const it of list) { const y = new Date(it.takenAt).getFullYear(); if (!yrs.has(y)) yrs.set(y, []); yrs.get(y).push(it); } return [...yrs.entries()].map(([y, its]) => `<div class="sec">${y}</div><div class="mem-grid">${its.map(it => this.tile(it)).join('')}</div>`).join(''); };
     // le dossier privé : turquoise, logo Tam-Tam en noir, « Privé » et un cadenas
-    const vault = `<button class="mem-vault" type="button" data-act="memVault"><span class="mv-logo">${BRAND()}</span><span class="mv-lbl">${I.lock}Privé</span><small>${priv.length} souvenir${priv.length > 1 ? 's' : ''}</small></button>`;
+    const vault = `<button class="mem-vault" type="button" data-act="memVault"><span class="mv-logo">${BRAND()}</span><span class="mv-lbl">${I.lock}Privé</span><small>${priv.length} souvenir${priv.length > 1 ? 's' : ''}</small><span class="mem-more" role="button" tabindex="0" data-act="memVaultMenu" aria-label="Options du dossier Privé" title="Options">${I.more}</span></button>`;
     const empty = (title, txt) => `<div class="empty"><p><b>${title}</b></p>${txt ? `<p>${txt}</p>` : ''}<button class="btn" type="button" data-act="memAdd">${I.plus}Ajouter des souvenirs</button></div>`;
     let main;
     if (f === 'private') main = this.unlocked ? (priv.length ? `<div class="mem-unl">${I.lock}Souvenirs privés ouverts · <button class="linkless" type="button" data-act="memRelock">Refermer</button></div>` + byYear(priv) : empty('Aucun souvenir privé', 'Choisissez « Privé » en ajoutant un souvenir : il sera chiffré pour vous seul et protégé par votre code.'))
-      : `<div class="mem-grid vault-only">${vault}</div><p class="hint" style="padding:0 16px">Touchez le dossier et tapez votre code à 4 chiffres.</p>`;
+      : `<div class="mem-grid">${vault}</div><p class="hint" style="padding:0 16px">Touchez le dossier et tapez votre code à 4 chiffres.</p>`;
     else if (f === 'public') main = pub.length ? byYear(pub) : empty('Aucun souvenir public', 'Un souvenir public est visible par tous les membres sur votre profil.');
     else if (f === 'friends') main = (recv.length ? `<div class="sec">Reçus de mes amis</div><div class="mem-grid">${recv.map(it => this.tile(it)).join('')}</div>` : '<p class="hint" style="padding:0 16px">Les souvenirs que vos amis vous envoient arriveront ici.</p>')
       + (sent.length ? `<div class="sec">Envoyés à mes amis</div><div class="mem-grid">${sent.map(it => this.tile(it)).join('')}</div>` : '')
-      + `<div style="padding:8px 16px"><button class="btn" type="button" data-act="memAdd">${I.plus}Envoyer un souvenir à des amis</button></div>`;
+      + `<div style="padding:8px 16px"><button class="btn" type="button" data-act="memAdd">${I.plus}Envoyer un souvenir à mon Tam-Tam</button></div>`;
     else { const all = [...pub, ...sent, ...recv.filter(x => !x.once || !x.opened)].sort((a, b) => b.takenAt - a.takenAt);
       main = `<div class="mem-grid">${vault}</div>` + (all.length ? byYear(all) : priv.length ? '' : empty('Gardez vos plus beaux moments', 'Ajoutez des photos et des vidéos : chaque année, Tam-Tam vous les rappellera le jour même.')); }
     const un = this.unseen, nSel = this.sel ? this.sel.size : 0;
     const selBar = this.sel ? `<div class="selbar mem-selbar"><button class="ib" type="button" data-act="memSelOff" aria-label="Annuler la sélection">${I.close}</button><b>${nSel} sélectionné${nSel > 1 ? 's' : ''}</b><span class="grow"></span><button class="btn sm ghost" type="button" data-act="memSelAll">Tout</button><button class="ib sel-del" type="button" data-act="memSelDel" aria-label="Supprimer la sélection" title="Supprimer"${nSel ? '' : ' disabled'}>${I.trash}</button></div>` : '';
     return `<div class="mem">${selBar}
-      <div class="mem-top"><div class="chips mem-filts">${[['all', 'Tous'], ['public', 'Publics'], ['friends', 'Amis Tam-Tam'], ['private', 'Privés']].map(([k, l]) => `<button class="chip" type="button" data-act="memFilt" data-f="${k}" aria-pressed="${f === k}">${k === 'private' ? I.lock : ''}${l}${k === 'friends' && un ? ` <span class="cnt">${un}</span>` : ''}</button>`).join('')}</div>${this.sel ? '' : `<button class="mem-selb" type="button" data-act="memSelOn" title="Sélectionner pour supprimer" aria-label="Sélectionner pour supprimer"><span class="box" aria-hidden="true"></span><span>Sélectionner</span></button>`}</div>
+      <div class="mem-top"><div class="chips mem-filts">${[['all', 'Tous'], ['public', 'Publics'], ['friends', 'Mon Tam-Tam'], ['private', 'Privés']].map(([k, l]) => `<button class="chip" type="button" data-act="memFilt" data-f="${k}" aria-pressed="${f === k}">${k === 'private' ? I.lock : ''}${l}${k === 'friends' && un ? ` <span class="cnt">${un}</span>` : ''}</button>`).join('')}</div></div>
       ${card}${main}
     </div>`;
   },
@@ -119,7 +119,7 @@ const Mem = {
     const veil = it.locked ? '🔒' : this.hidden(it) ? `<span class="mem-veil vlt"><span class="mv-logo">${BRAND()}</span><b>${I.lock}Privé</b>${it.once ? '<small>① Vue unique</small>' : ''}</span>` : it.once && recv ? `<span class="mem-veil once">${it.opened ? 'Ouvert' : '① Vue unique'}</span>` : '';
     const noTh = !!veil;
     const badge = recv ? `<span class="mem-b from">${!it.seen ? '<i class="new-dot"></i>' : ''}${esc(first(fu.name))}</span>` : other ? '' : `<span class="mem-b">${ic}${it.aud === 'friends' ? `${(it.to || []).length || ''}` : l}${it.lock ? ' · ' + I.lock : ''}${it.once ? ' · ①' : ''}</span>`;
-    return `<button class="mem-tile${noTh ? ' veiled' : ''}" type="button" data-act="memView" data-id="${it.id}"${other ? ` data-u="${other}"` : ''} aria-label="${it.kind === 'video' ? 'Vidéo' : 'Photo'} ${recv ? 'reçue de ' + esc(fu.name) : l.toLowerCase()} du ${new Date(it.takenAt).toLocaleDateString('fr-FR')}"><span class="mem-th"${noTh ? '' : ` data-memth="${it.id}"`}${other ? ` data-u="${other}"` : ''}>${veil}</span>${it.kind === 'video' && !noTh ? `<span class="mem-play">▶</span>` : ''}${badge}${this.sel && !other ? `<span class="mem-chk${sel ? ' on' : ''}" aria-hidden="true">${sel ? '✓' : ''}</span>` : ''}</button>`;
+    return `<button class="mem-tile${noTh ? ' veiled' : ''}" type="button" data-act="memView" data-id="${it.id}"${other ? ` data-u="${other}"` : ''} aria-label="${it.kind === 'video' ? 'Vidéo' : 'Photo'} ${recv ? 'reçue de ' + esc(fu.name) : l.toLowerCase()} du ${new Date(it.takenAt).toLocaleDateString('fr-FR')}"><span class="mem-th"${noTh ? '' : ` data-memth="${it.id}"`}${other ? ` data-u="${other}"` : ''}>${veil}</span>${it.kind === 'video' && !noTh ? `<span class="mem-play">▶</span>` : ''}${badge}${!this.sel && !other ? `<span class="mem-more" role="button" tabindex="0" data-act="memMenu" data-id="${it.id}" aria-label="Options : supprimer, sélectionner" title="Options">${I.more}</span>` : ''}${this.sel && !other ? `<span class="mem-chk${sel ? ' on' : ''}" aria-hidden="true">${sel ? '✓' : ''}</span>` : ''}</button>`;
   },
   // Remplit les vignettes déchiffrées après l'affichage.
   async hydrate(root = document) {
@@ -166,7 +166,7 @@ const Mem = {
       ${many ? '' : `<div class="field"><label for="memDate">Date du souvenir</label><input id="memDate" type="date" value="${p.date}" max="${new Date().toISOString().slice(0, 10)}"><small class="hint">Pour une ancienne photo, mettez sa vraie date : Tam-Tam vous la rappellera chaque année ce jour-là.</small></div>`}
       ${p.fixed ? `<div class="mem-fixed"><span>${MEM_AUD[p.aud][1]}<b>${MEM_AUD[p.aud][0]}</b></span><button class="linkless" type="button" data-act="memAudChange">Changer</button></div>` : `<span class="lbl">Qui peut ${many ? 'les' : 'le'} voir ? <small>(à choisir)</small></span>
       <div class="seg mem-aud">${Object.entries(MEM_AUD).map(([k, [l, ic]]) => `<button type="button" data-act="memAud" data-a="${k}" aria-pressed="${p.aud === k}">${ic}${l}</button>`).join('')}</div>`}
-      <p class="hint">${{public: 'Visible par tous les membres sur votre profil.', private: 'Vous seul. Chiffré pour vous seul, et rangé dans le dossier Privé ouvert avec votre code à 4 chiffres.', friends: 'Envoyé aux amis cochés, chiffré pour eux seulement. Ils sont prévenus.'}[p.aud] || 'Touchez Public, Privé ou Amis Tam-Tam.'}</p>
+      <p class="hint">${{public: 'Visible par tous les membres sur votre profil.', private: 'Vous seul. Chiffré pour vous seul, et rangé dans le dossier Privé ouvert avec votre code à 4 chiffres.', friends: 'Envoyé aux amis cochés, chiffré pour eux seulement. Ils sont prévenus.'}[p.aud] || 'Touchez Public, Privé ou Mon Tam-Tam.'}</p>
       ${p.aud === 'friends' ? `<div class="mem-opts"><label class="pick chk"><input type="checkbox" id="memLock"${p.lock ? ' checked' : ''}><span><b>${I.lock} Privé</b> · chaque ami l’ouvre avec son propre code à 4 chiffres</span></label><label class="pick chk"><input type="checkbox" id="memOnce"${p.once ? ' checked' : ''}><span><b>① Vue unique</b> · il ne pourra l’ouvrir qu’une seule fois</span></label></div>` : ''}
       ${p.aud === 'friends' ? `<div class="grp-box"><div class="cg-tools"><label class="pick cg-all"><input type="checkbox" id="memAll"${cs.length && p.to.length === cs.length ? ' checked' : ''}><span><b>Tout cocher</b></span></label><span class="hint">${p.to.length} sur ${cs.length}</span></div>
         <div class="picks">${cs.slice().sort((a, b) => a.name.localeCompare(b.name, 'fr')).map(u => `<label class="pick"><input type="checkbox" name="memTo" value="${u.id}"${p.to.includes(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('') || '<p class="hint">Ajoutez d’abord des amis.</p>'}</div></div>` : ''}
@@ -201,7 +201,7 @@ const Mem = {
   },
   async save() {
     this.keepForm(); const p = this.pend, er = $('#memErr'), btn = $('#memSaveBtn');
-    if (!p.aud) { er.textContent = 'Choisissez qui peut voir : Public, Privé ou Amis Tam-Tam.'; er.hidden = false; return; }
+    if (!p.aud) { er.textContent = 'Choisissez qui peut voir : Public, Privé ou Mon Tam-Tam.'; er.hidden = false; return; }
     if (p.aud === 'friends' && !p.to.length) { er.textContent = 'Cochez au moins un ami.'; er.hidden = false; return; }
     const list = p.many || [p]; btn.disabled = true;
     try {
@@ -213,11 +213,11 @@ const Mem = {
       toast(p.aud === 'friends' ? (list.length > 1 ? `${list.length} souvenirs envoyés` : 'Souvenir envoyé') : list.length > 1 ? `${list.length} souvenirs enregistrés` : 'Souvenir enregistré');
     } catch (e) { btn.disabled = false; btn.textContent = 'Réessayer'; er.textContent = e.message; er.hidden = false; renderBody(); }
   },
-  // Envoyer à des amis un souvenir déjà gardé : il est rechiffré pour eux.
+  // Envoyer à mon Tam-Tam un souvenir déjà gardé : il est rechiffré pour eux.
   shareSheet(id) {
     const it = this.find(id); if (!it) return; const cs = (S.contacts.contacts || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'fr'));
     this.shareId = id;
-    sheet(`${head('Envoyer à des amis Tam-Tam')}<form data-form="memShare"><div class="sheet-body">
+    sheet(`${head('Envoyer à mon Tam-Tam')}<form data-form="memShare"><div class="sheet-body">
       <div class="mem-opts"><label class="pick chk"><input type="checkbox" id="shLock"${it.aud === 'private' ? ' checked' : ''}><span><b>${I.lock} Privé</b> · chaque ami l’ouvre avec son propre code à 4 chiffres</span></label><label class="pick chk"><input type="checkbox" id="shOnce"><span><b>① Vue unique</b> · une seule ouverture</span></label></div>
       <div class="grp-box"><div class="picks">${cs.map(u => `<label class="pick"><input type="checkbox" name="shTo" value="${u.id}">${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('') || '<p class="hint">Ajoutez d’abord des amis.</p>'}</div></div>
       <p class="err" id="shErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="submit" id="shBtn">Envoyer</button></div></div></form>`, 'Envoyer');
@@ -235,7 +235,7 @@ const Mem = {
     const it = this.find(id); if (!it) return; const mine = this.mine(it);
     sheet(`${head(mine ? 'Souvenir' : `Souvenir de ${esc(first(uOf(it.from).name))}`)}<div class="menu">
       <button type="button" data-act="memView" data-id="${id}">${I.eye}Ouvrir</button>
-      ${mine && !it.once ? `<button type="button" data-act="memShare" data-id="${id}">${I.users}Envoyer à des amis</button>` : ''}
+      ${mine && !it.once ? `<button type="button" data-act="memShare" data-id="${id}">${I.users}Envoyer à mon Tam-Tam</button>` : ''}
       <button type="button" data-act="memSelStart" data-id="${id}">${I.check}Sélectionner plusieurs</button>
       <button type="button" class="danger" data-act="memDelAsk" data-id="${id}">${I.trash}${mine ? 'Supprimer' : 'Retirer de mes souvenirs'}</button></div>`, 'Souvenir');
   },
@@ -261,7 +261,7 @@ const Mem = {
     layer.innerHTML = `<div class="mem-view${prot ? ' nocopy' : ''}" role="dialog" aria-modal="true" aria-label="Souvenir"><div class="mv-top"><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button>
       <div class="grow"><b>${new Date(it.takenAt).toLocaleDateString('fr-FR', {day: 'numeric', month: 'long', year: 'numeric'})}</b><small>${recv ? `Envoyé par ${esc(uOf(it.from).name)}` : `${ic}${l}`}${it.lock ? ' · privé' : ''}${it.once ? ' · vue unique' : ''}</small></div></div>
       <div class="mv-stage"><div class="lk-spin"></div></div>${it.cap ? `<p class="mv-cap">${esc(it.cap)}</p>` : ''}
-      ${mine ? `<div class="mv-foot"><button class="btn sm" type="button" data-act="memShare" data-id="${it.id}">${I.users}Envoyer à des amis</button>${it.aud === 'public' ? `<button class="btn sm ghost" type="button" data-act="memRepost" data-id="${it.id}">Reposter en statut</button>` : ''}<button class="btn sm ghost danger" type="button" data-act="memDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}${prot && !mine ? watermark() : ''}</div>`;
+      ${mine ? `<div class="mv-foot"><button class="btn sm" type="button" data-act="memShare" data-id="${it.id}">${I.users}Envoyer à mon Tam-Tam</button>${it.aud === 'public' ? `<button class="btn sm ghost" type="button" data-act="memRepost" data-id="${it.id}">Reposter en statut</button>` : ''}<button class="btn sm ghost danger" type="button" data-act="memDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}${prot && !mine ? watermark() : ''}</div>`;
     try {
       const b = await this.full(it), u = URL.createObjectURL(b), st = layer.querySelector('.mv-stage'); if (!st) return URL.revokeObjectURL(u);
       st.innerHTML = it.kind === 'video' ? `<video src="${u}" playsinline autoplay controls controlslist="nodownload" disablepictureinpicture></video>` : `<img src="${u}" alt="" draggable="false">`;
@@ -304,6 +304,8 @@ Object.assign(ACT, {
   memRepost(d) { Mem.repost(+d.id); },
   memDelAsk(d) { const it = Mem.find(+d.id), mine = it && Mem.mine(it); confirmSheet(mine ? 'Supprimer ce souvenir ?' : 'Retirer ce souvenir ?', mine ? 'La photo ou la vidéo sera effacée définitivement de Tam-Tam, y compris chez les amis à qui vous l’avez envoyée.' : 'Il disparaîtra de vos souvenirs. Votre ami le garde de son côté.', mine ? 'Supprimer' : 'Retirer', 'memDelYes', d.id); },
   async memDelYes(d) { closeLayer(); await Mem.del([+d.id]); },
+  memMenu(d) { Mem.menu(+d.id); },
+  memVaultMenu() { Mem.vaultMenu(); },
   memSelOn() { Mem.sel = new Set(); renderBody(); },
   memSelStart(d) { closeLayer(); Mem.sel = new Set([+d.id]); renderBody(); },
   memSelOff() { Mem.sel = null; renderBody(); },
