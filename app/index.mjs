@@ -311,9 +311,6 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   if (body.gtok && !gp) E(400, 'La connexion Google a expiré. Recommencez avec « Continuer avec Google ».');
   const email = gp ? gp.email : clean(body.email, 120).toLowerCase(), fname = clean(body.first, 30), lname = clean(body.last, 30), name = (lname ? `${fname} ${lname}` : fname).slice(0, 40), pass = gp ? rnd(24) : String(body.pass || '');
   if (gp && !body.invite && gp.invite) body.invite = gp.invite;
-  if (!body.handle) E(400, 'Choisissez un pseudo : c’est lui que voient les membres.');
-  const handle = normHandle(body.handle);
-  if (q1(`SELECT 1 FROM users WHERE handle=?`, handle)) E(409, 'Ce pseudo est déjà pris. Choisissez-en un autre.');
   if (!isEmail(email)) E(400, 'Adresse e-mail invalide.');
   if (!gp) passOk(pass, email);
   if (!body.cgu) E(400, 'Acceptez les Conditions générales pour créer votre compte.');
@@ -324,6 +321,9 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   else { inv = inviteValid(clean(body.invite, 60)); if (!inv) E(403, 'Il faut un lien d’invitation valide pour s’inscrire.');
     if (inv.qr && q1(`SELECT COUNT(*) n FROM users WHERE invited_by=? AND created_at>?`, inv.by_user, now() - DAY).n >= 5) E(429, 'Ce code QR a déjà servi à beaucoup d’inscriptions aujourd’hui. Demandez plutôt un lien d’invitation.'); }
   if (q1(`SELECT 1 FROM users WHERE email=?`, email)) E(409, 'Un compte existe déjà avec cette adresse. Connectez-vous.');
+  if (!body.handle) E(400, 'Choisissez un pseudo : c’est lui que voient les membres.');
+  const handle = normHandle(body.handle);
+  if (q1(`SELECT 1 FROM users WHERE handle=?`, handle)) E(409, 'Ce pseudo est déjà pris. Choisissez-en un autre.');
   const av = avatarJson(body.avatar) || JSON.stringify({ v: 2, st: 'court', sk: 'c', sh: '#14b8c9' });
   const id = run(`INSERT INTO users(email,pass,name,handle,avatar,admin,invited_by,cgu_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
     email, hashPass(pass), name, handle, av, first ? 1 : 0, inv ? inv.by_user : null, now(), now()).lastInsertRowid;
