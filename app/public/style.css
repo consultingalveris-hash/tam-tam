@@ -978,3 +978,21 @@ body.in-cam{overflow:hidden}
   .zoom{background:#000}.zoom img{max-width:100%;max-height:100%;object-fit:contain}
   .mg-play video{max-height:100%}
 }
+/* écran de verrouillage : fond clair de l'accueil, logo turquoise */
+.lock-screen.dark{background:#eaf6f7;color:#0f2430}
+.lock-card.dark{color:#0f2430}
+.lock-card.dark .err{color:#c62828}
+.lock-card.dark .linkb{color:#08798a}
+.lock-card.dark .pd.on::after{background:#08798a;box-shadow:0 0 0 8px rgba(20,184,201,.3)}
+.lock-card.dark .field input,.lock-card.dark input{background:#fff;color:#0f2430;border-color:#cfe3e7}
+.lock-card.dark .btn.ghost{color:#0f2430;border-color:#cfe3e7}
+.lock-screen.dark .lk-hint{color:#4d6670}
+.lock-screen.dark .lk-spin{border-color:#cfe3e7;border-top-color:#14B8C9}
+/* souvenirs : sélection */
+.mem-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.mem-top .mem-filts{flex:1;min-width:0}
+.mem-selb{display:none;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);color:var(--fg-2);border-radius:99px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer;margin-right:12px}
+.mem-selb .box{width:15px;height:15px;border:2px solid var(--fg-2);border-radius:4px}
+@media (hover:hover) and (min-width:821px){ .mem-selb{display:inline-flex} }
+.mem-chk{position:absolute;top:6px;right:6px;width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:rgb(0 0 0/.35);display:grid;place-items:center;color:#fff;font-weight:800;font-size:13px;z-index:2}
+.mem-chk.on{background:var(--accent);border-color:var(--accent)}
+.mem-selbar{margin:0 0 6px}

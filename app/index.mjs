@@ -1086,6 +1086,8 @@ R('POST', /^\/api\/memories$/, async ({ me, body }) => {
   }
   return { item: memOut(q1(`SELECT * FROM memories WHERE id=?`, id)) };
 });
+// Retirer de ma liste un souvenir reçu d'un ami (il reste chez lui).
+R('POST', /^\/api\/memories\/(\d+)\/remove$/, async ({ me, m }) => { run(`DELETE FROM mem_access WHERE mem_id=? AND user_id=?`, +m[1], me.id); return { ok: true }; });
 R('POST', /^\/api\/memories\/(\d+)\/delete$/, async ({ me, m }) => {
   const mm = q1(`SELECT * FROM memories WHERE id=? AND user_id=?`, +m[1], me.id); if (!mm) E(404, 'Souvenir introuvable.');
   dropMedia(mm.media); if (mm.thumb) dropMedia(mm.thumb); run(`DELETE FROM memories WHERE id=?`, mm.id); return { ok: true };

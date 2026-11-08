@@ -843,6 +843,22 @@ async function docOpen(m) {
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60_000);
   } catch (e) { toast(e.message || 'Document illisible sur cet appareil.'); }
 }
+// Fabrique un fichier .zip (sans compression) à partir des fichiers d'un dossier, directement sur l'appareil.
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = b => { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+async function makeZip(files) {
+  const enc = new TextEncoder(), parts = [], central = []; let off = 0;
+  const d = new Date(), dt = ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)) & 0xFFFF, dd = (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()) & 0xFFFF;
+  for (const f of files) {
+    const name = enc.encode(f.webkitRelativePath || f.name), data = new Uint8Array(await f.arrayBuffer()), crc = crc32(data);
+    const h = new DataView(new ArrayBuffer(30)); h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true); h.setUint16(10, dt, true); h.setUint16(12, dd, true); h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, name.length, true); h.setUint16(28, 0, true);
+    parts.push(new Uint8Array(h.buffer), name, data);
+    const c = new DataView(new ArrayBuffer(46)); c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true); c.setUint16(12, dt, true); c.setUint16(14, dd, true); c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, name.length, true); c.setUint32(42, off, true);
+    central.push(new Uint8Array(c.buffer), name); off += 30 + name.length + data.length;
+  }
+  const cs = central.reduce((a, x) => a + x.length, 0), e = new DataView(new ArrayBuffer(22)); e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, cs, true); e.setUint32(16, off, true);
+  return new Blob([...parts, ...central, new Uint8Array(e.buffer)], {type: 'application/zip'});
+}
 async function sendDoc(f) {
   const c = S.chats.get(S.chatId); if (!c || !f) return;
   if (f.size > 40_000_000) return toast(`Document trop lourd (${fsz(f.size)}). Maximum : 40 Mo.`);
@@ -1421,7 +1437,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.50</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.51</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1502,8 +1518,12 @@ const ACT = {
   async pinMsg(d) { closeLayer(); try { await api(`/api/chats/${S.chatId}/pinmsg`, {msgId: +d.id}); } catch (e) { toast(e.message); } },
   async pinMsgOff() { closeLayer(); try { await api(`/api/chats/${S.chatId}/pinmsg`, {msgId: null}); } catch (e) { toast(e.message); } },
   pinJump(d) { const el = document.querySelector(`.msg[data-mid="${d.id}"]`); if (el) { el.scrollIntoView({block: 'center', behavior: 'smooth'}); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); } else toast('Ce message est plus ancien : faites défiler la discussion vers le haut.'); },
-  attachMenu() { sheet(`<div class="menu" style="padding-top:12px"><button type="button" data-act="attachPick">${I.image || I.clip}Photo ou vidéo</button><button type="button" data-act="docPick"><span class="pin-ic" aria-hidden="true">📄</span>Document (PDF, Word, Excel…)</button><button type="button" data-act="locSend"><span class="pin-ic" aria-hidden="true">📍</span>Ma position actuelle</button></div>`, 'Joindre'); },
-  docPick() { closeLayer(); let i = $('#docIn'); if (!i) { i = document.createElement('input'); i.type = 'file'; i.id = 'docIn'; i.hidden = true; document.body.appendChild(i); i.addEventListener('change', () => { const f = i.files[0]; i.value = ''; if (f) sendDoc(f); }); } i.click(); },
+  attachMenu() { sheet(`<div class="menu" style="padding-top:12px"><button type="button" data-act="attachPick">${I.image || I.clip}Photo ou vidéo</button><button type="button" data-act="docPick"><span class="pin-ic" aria-hidden="true">📄</span>Documents (PDF, Word, Excel, ZIP…)</button>${'webkitdirectory' in document.createElement('input') && isDesk() ? '<button type="button" data-act="dirPick"><span class="pin-ic" aria-hidden="true">🗂️</span>Un dossier entier (envoyé en .zip)</button>' : ''}<button type="button" data-act="locSend"><span class="pin-ic" aria-hidden="true">📍</span>Ma position actuelle</button></div>`, 'Joindre'); },
+  docPick() { closeLayer(); let i = $('#docIn'); if (!i) { i = document.createElement('input'); i.type = 'file'; i.multiple = true; i.id = 'docIn'; i.hidden = true; document.body.appendChild(i); i.addEventListener('change', async () => { const fs = [...i.files].slice(0, 20); i.value = ''; for (const f of fs) await sendDoc(f); }); } i.click(); },
+  dirPick() { closeLayer(); let i = $('#dirIn'); if (!i) { i = document.createElement('input'); i.type = 'file'; i.webkitdirectory = true; i.multiple = true; i.id = 'dirIn'; i.hidden = true; document.body.appendChild(i); i.addEventListener('change', async () => { const fs = [...i.files]; i.value = ''; if (!fs.length) return;
+    const total = fs.reduce((a, f) => a + f.size, 0); if (total > 40_000_000) return toast(`Dossier trop lourd (${fsz(total)}). Maximum : 40 Mo.`);
+    toast(`Préparation du dossier (${fs.length} fichier${fs.length > 1 ? 's' : ''})…`); const name = (fs[0].webkitRelativePath || 'dossier').split('/')[0] || 'dossier';
+    try { const zip = await makeZip(fs); await sendDoc(new File([zip], name + '.zip', {type: 'application/zip'})); } catch (e) { toast(e.message || 'Dossier impossible à préparer.'); } }); } i.click(); },
   docOpen(d) { const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +d.id); if (m) docOpen(m); },
   mediaOpen() { S.mg = null; mediaGallery(); },
   mgTab(d) { mediaGallery(d.t); },

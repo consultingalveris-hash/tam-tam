@@ -106,18 +106,20 @@ const Mem = {
       + `<div style="padding:8px 16px"><button class="btn" type="button" data-act="memAdd">${I.plus}Envoyer un souvenir à des amis</button></div>`;
     else { const all = [...pub, ...sent, ...recv.filter(x => !x.once || !x.opened)].sort((a, b) => b.takenAt - a.takenAt);
       main = `<div class="mem-grid">${vault}</div>` + (all.length ? byYear(all) : priv.length ? '' : empty('Gardez vos plus beaux moments', 'Ajoutez des photos et des vidéos : chaque année, Tam-Tam vous les rappellera le jour même.')); }
-    const un = this.unseen;
-    return `<div class="mem">
-      <div class="chips mem-filts">${[['all', 'Tous'], ['public', 'Publics'], ['friends', 'Amis Tam-Tam'], ['private', 'Privés']].map(([k, l]) => `<button class="chip" type="button" data-act="memFilt" data-f="${k}" aria-pressed="${f === k}">${k === 'private' ? I.lock : ''}${l}${k === 'friends' && un ? ` <span class="cnt">${un}</span>` : ''}</button>`).join('')}</div>
+    const un = this.unseen, nSel = this.sel ? this.sel.size : 0;
+    const selBar = this.sel ? `<div class="selbar mem-selbar"><button class="ib" type="button" data-act="memSelOff" aria-label="Annuler la sélection">${I.close}</button><b>${nSel} sélectionné${nSel > 1 ? 's' : ''}</b><span class="grow"></span><button class="btn sm ghost" type="button" data-act="memSelAll">Tout</button><button class="ib sel-del" type="button" data-act="memSelDel" aria-label="Supprimer la sélection" title="Supprimer"${nSel ? '' : ' disabled'}>${I.trash}</button></div>` : '';
+    return `<div class="mem">${selBar}
+      <div class="mem-top"><div class="chips mem-filts">${[['all', 'Tous'], ['public', 'Publics'], ['friends', 'Amis Tam-Tam'], ['private', 'Privés']].map(([k, l]) => `<button class="chip" type="button" data-act="memFilt" data-f="${k}" aria-pressed="${f === k}">${k === 'private' ? I.lock : ''}${l}${k === 'friends' && un ? ` <span class="cnt">${un}</span>` : ''}</button>`).join('')}</div>${this.sel ? '' : `<button class="mem-selb" type="button" data-act="memSelOn" title="Sélectionner pour supprimer" aria-label="Sélectionner pour supprimer"><span class="box" aria-hidden="true"></span><span>Sélectionner</span></button>`}</div>
       ${card}${main}
     </div>`;
   },
   tile(it, other) {
     const [l, ic] = MEM_AUD[it.aud] || MEM_AUD.private, recv = !this.mine(it) && !other, fu = recv ? uOf(it.from) : null;
+    const sel = this.sel ? this.sel.has(it.id) : false;
     const veil = it.locked ? '🔒' : this.hidden(it) ? `<span class="mem-veil vlt"><span class="mv-logo">${BRAND()}</span><b>${I.lock}Privé</b>${it.once ? '<small>① Vue unique</small>' : ''}</span>` : it.once && recv ? `<span class="mem-veil once">${it.opened ? 'Ouvert' : '① Vue unique'}</span>` : '';
     const noTh = !!veil;
     const badge = recv ? `<span class="mem-b from">${!it.seen ? '<i class="new-dot"></i>' : ''}${esc(first(fu.name))}</span>` : other ? '' : `<span class="mem-b">${ic}${it.aud === 'friends' ? `${(it.to || []).length || ''}` : l}${it.lock ? ' · ' + I.lock : ''}${it.once ? ' · ①' : ''}</span>`;
-    return `<button class="mem-tile${noTh ? ' veiled' : ''}" type="button" data-act="memView" data-id="${it.id}"${other ? ` data-u="${other}"` : ''} aria-label="${it.kind === 'video' ? 'Vidéo' : 'Photo'} ${recv ? 'reçue de ' + esc(fu.name) : l.toLowerCase()} du ${new Date(it.takenAt).toLocaleDateString('fr-FR')}"><span class="mem-th"${noTh ? '' : ` data-memth="${it.id}"`}${other ? ` data-u="${other}"` : ''}>${veil}</span>${it.kind === 'video' && !noTh ? `<span class="mem-play">▶</span>` : ''}${badge}</button>`;
+    return `<button class="mem-tile${noTh ? ' veiled' : ''}" type="button" data-act="memView" data-id="${it.id}"${other ? ` data-u="${other}"` : ''} aria-label="${it.kind === 'video' ? 'Vidéo' : 'Photo'} ${recv ? 'reçue de ' + esc(fu.name) : l.toLowerCase()} du ${new Date(it.takenAt).toLocaleDateString('fr-FR')}"><span class="mem-th"${noTh ? '' : ` data-memth="${it.id}"`}${other ? ` data-u="${other}"` : ''}>${veil}</span>${it.kind === 'video' && !noTh ? `<span class="mem-play">▶</span>` : ''}${badge}${this.sel && !other ? `<span class="mem-chk${sel ? ' on' : ''}" aria-hidden="true">${sel ? '✓' : ''}</span>` : ''}</button>`;
   },
   // Remplit les vignettes déchiffrées après l'affichage.
   async hydrate(root = document) {
@@ -130,7 +132,7 @@ const Mem = {
   find(id, uid) { return uid ? (this.others.get(uid) || []).find(x => x.id === id) : (this.items || []).find(x => x.id === id) || (this.recv || []).find(x => x.id === id); },
   mine(it) { return !it.from || it.from === S.me.id; },
   // un souvenir protégé (privé, ou envoyé en privé) ne montre rien tant que le code n'est pas tapé
-  hidden(it) { return it.aud === 'private' ? !this.unlocked : !!it.lock && !this.mine(it) && this.pass !== it.id; },
+  hidden(it) { return it.aud === 'private' ? !this.unlocked : !!it.lock && this.pass !== it.id; },
   /* ---- ajouter ---- */
   opts() { return {target: r => this.compose(r), title: 'Nouveau souvenir', gallery: () => $('#memIn') && $('#memIn').click(), native: () => $('#memCamIn') && $('#memCamIn').click()}; },
   addSheet() {
@@ -228,10 +230,29 @@ const Mem = {
       this.items.sort((a, b) => b.takenAt - a.takenAt); closeLayer(); renderBody(); toast(to.length > 1 ? `Envoyé à ${to.length} amis` : 'Souvenir envoyé'); }
     catch (e) { btn.disabled = false; btn.textContent = 'Envoyer'; er.textContent = e.message; er.hidden = false; }
   },
+  /* ---- appui long : supprimer, envoyer, sélectionner ---- */
+  menu(id) {
+    const it = this.find(id); if (!it) return; const mine = this.mine(it);
+    sheet(`${head(mine ? 'Souvenir' : `Souvenir de ${esc(first(uOf(it.from).name))}`)}<div class="menu">
+      <button type="button" data-act="memView" data-id="${id}">${I.eye}Ouvrir</button>
+      ${mine && !it.once ? `<button type="button" data-act="memShare" data-id="${id}">${I.users}Envoyer à des amis</button>` : ''}
+      <button type="button" data-act="memSelStart" data-id="${id}">${I.check}Sélectionner plusieurs</button>
+      <button type="button" class="danger" data-act="memDelAsk" data-id="${id}">${I.trash}${mine ? 'Supprimer' : 'Retirer de mes souvenirs'}</button></div>`, 'Souvenir');
+  },
+  vaultMenu() {
+    const n = (this.items || []).filter(x => x.aud === 'private').length;
+    sheet(`${head('Dossier Privé')}<div class="menu"><button type="button" data-act="memVault">${I.lock}Ouvrir avec mon code</button>${n ? `<button type="button" class="danger" data-act="memVaultDel">${I.trash}Supprimer les ${n} souvenir${n > 1 ? 's' : ''} privé${n > 1 ? 's' : ''}</button>` : ''}</div>`, 'Dossier Privé');
+  },
+  async del(ids) {
+    let n = 0;
+    for (const id of ids) { const it = this.find(id); if (!it) continue;
+      try { await api(`/api/memories/${id}/${this.mine(it) ? 'delete' : 'remove'}`, {}); n++; this.items = (this.items || []).filter(x => x.id !== id); this.recv = (this.recv || []).filter(x => x.id !== id); } catch (e) { toast(e.message); } }
+    this.sel = null; renderBody(); if (n) toast(n > 1 ? `${n} souvenirs supprimés` : 'Souvenir supprimé');
+  },
   /* ---- regarder ---- */
   async view(id, uid) {
     const it = this.find(id, uid); if (!it) return; if (it.locked) return toast('Ce souvenir ne peut pas être ouvert sur cet appareil.');
-    if (it.aud !== 'private' && it.lock && !this.mine(it) && this.pass !== it.id) { this.after = () => { this.unlocked = this.filt === 'private' && this.unlocked; this.pass = it.id; this.view(id, uid); this.pass = null; }; return this.codeSheet(S.me.hasMemCode ? 'ask' : 'new'); }
+    if (it.aud !== 'private' && it.lock && this.pass !== it.id) { this.after = () => { this.unlocked = this.filt === 'private' && this.unlocked; this.pass = it.id; this.view(id, uid); this.pass = null; }; return this.codeSheet(S.me.hasMemCode ? 'ask' : 'new'); }
     if (this.hidden(it)) return this.unlockThen(() => { renderBody(); this.view(id, uid); });
     const recv = !uid && !this.mine(it);
     if (recv && it.once && it.opened) return toast('Souvenir à vue unique déjà ouvert.');
@@ -279,10 +300,18 @@ Object.assign(ACT, {
   memAud(d) { Mem.keepForm(); Mem.pend.aud = d.a; Mem.composeRender(); },
   memAudChange() { Mem.keepForm(); Mem.pend.fixed = false; Mem.composeRender(); },
   memCancel() { const p = Mem.pend; if (p) (p.many || [p]).forEach(x => x.url && URL.revokeObjectURL(x.url)); Mem.pend = null; closeLayer(); },
-  memView(d) { Mem.view(+d.id, d.u ? +d.u : 0); },
+  memView(d) { if (Mem.sel && !d.u) { const id = +d.id; Mem.sel.has(id) ? Mem.sel.delete(id) : Mem.sel.add(id); return renderBody(); } closeLayer(); Mem.view(+d.id, d.u ? +d.u : 0); },
   memRepost(d) { Mem.repost(+d.id); },
-  memDelAsk(d) { confirmSheet('Supprimer ce souvenir ?', 'La photo ou la vidéo sera effacée définitivement de Tam-Tam.', 'Supprimer', 'memDelYes', d.id); },
-  async memDelYes(d) { closeLayer(); try { await api(`/api/memories/${d.id}/delete`, {}); Mem.items = (Mem.items || []).filter(x => x.id !== +d.id); renderBody(); toast('Souvenir supprimé'); } catch (e) { toast(e.message); } },
+  memDelAsk(d) { const it = Mem.find(+d.id), mine = it && Mem.mine(it); confirmSheet(mine ? 'Supprimer ce souvenir ?' : 'Retirer ce souvenir ?', mine ? 'La photo ou la vidéo sera effacée définitivement de Tam-Tam, y compris chez les amis à qui vous l’avez envoyée.' : 'Il disparaîtra de vos souvenirs. Votre ami le garde de son côté.', mine ? 'Supprimer' : 'Retirer', 'memDelYes', d.id); },
+  async memDelYes(d) { closeLayer(); await Mem.del([+d.id]); },
+  memSelOn() { Mem.sel = new Set(); renderBody(); },
+  memSelStart(d) { closeLayer(); Mem.sel = new Set([+d.id]); renderBody(); },
+  memSelOff() { Mem.sel = null; renderBody(); },
+  memSelAll() { document.querySelectorAll('.mem-tile[data-id]').forEach(t => { if (!t.dataset.u) Mem.sel.add(+t.dataset.id); }); renderBody(); },
+  memSelDel() { const n = Mem.sel ? Mem.sel.size : 0; if (!n) return; confirmSheet(`Supprimer ${n > 1 ? `ces ${n} souvenirs` : 'ce souvenir'} ?`, 'Vos souvenirs sont effacés définitivement. Ceux reçus d’amis sont seulement retirés de votre liste.', 'Supprimer', 'memSelDelYes', ''); },
+  async memSelDelYes() { closeLayer(); await Mem.del([...(Mem.sel || [])]); },
+  memVaultDel() { Mem.unlockThen(() => confirmSheet('Supprimer tous vos souvenirs privés ?', 'Ils seront effacés définitivement de Tam-Tam.', 'Tout supprimer', 'memVaultDelYes', '')); },
+  async memVaultDelYes() { closeLayer(); await Mem.del((Mem.items || []).filter(x => x.aud === 'private').map(x => x.id)); Mem.unlocked = false; },
 });
 FORMS.memSave = () => Mem.save();
 FORMS.memCode = () => Mem.codeSubmit();
@@ -297,3 +326,15 @@ document.addEventListener('change', e => {
 
 // Champs de fichiers des souvenirs, toujours présents dans la page.
 document.body.insertAdjacentHTML('beforeend', '<input type="file" id="memIn" accept="image/*,video/*" multiple hidden><input type="file" id="memCamIn" accept="image/*" capture="environment" hidden>');
+
+// Appui long (téléphone) ou clic droit (ordinateur) sur un souvenir ou sur le dossier Privé.
+(() => {
+  let t = 0, xy = [0, 0];
+  const target = e => e.target.closest && e.target.closest('#body .mem-tile[data-id]:not([data-u]), #body .mem-vault');
+  const open = el => { if (el.classList.contains('mem-vault')) Mem.vaultMenu(); else Mem.menu(+el.dataset.id); };
+  document.addEventListener('contextmenu', e => { const el = target(e); if (!el || Mem.sel) return; e.preventDefault(); open(el); });
+  document.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse') return; const el = target(e); if (!el || Mem.sel) return; xy = [e.clientX, e.clientY]; clearTimeout(t); t = setTimeout(() => { Mem.pressAt = Date.now(); if (navigator.vibrate) navigator.vibrate(15); open(el); }, 520); });
+  document.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - xy[0], e.clientY - xy[1]) > 10) clearTimeout(t); }, true);
+  ['pointerup', 'pointercancel'].forEach(k => document.addEventListener(k, () => clearTimeout(t), true));
+  document.addEventListener('click', e => { if (Date.now() - (Mem.pressAt || 0) < 600) { e.preventDefault(); e.stopPropagation(); } }, true);
+})();
