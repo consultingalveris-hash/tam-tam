@@ -123,14 +123,14 @@ function renderAuth(msg) {
     <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Enregistrer et me connecter</button>`;
   else if (A.mode === 'register') h = `<h2>${m.ownerSetup ? 'Créer le compte du propriétaire' : 'Créer mon compte'}</h2>
     <p class="hint">${A.g && !m.ownerSetup ? (A.g.by ? `${esc(A.g.by)} vous invite sur tam-tam.` : 'Bienvenue sur tam-tam.') : m.ownerSetup ? `Premier compte de tam-tam${m.ownerEmail ? ` : utilisez l’adresse ${esc(m.ownerEmail)}` : ''}.` : m.invite ? `${esc(m.invite.by)} vous invite sur tam-tam.` : 'L’inscription se fait uniquement avec un lien d’invitation envoyé par un membre.'}</p>
-    ${m.ownerSetup || m.invite || A.g ? `${A.g ? `<p class="g-ok">${gIcon()}<span>Compte Google confirmé : <b>${esc(A.g.email)}</b>. Il reste à choisir votre avatar et à accepter les conditions.</span></p>` : gBtn()}
+    ${m.ownerSetup || m.invite || A.g ? `${A.g ? `<p class="g-ok">${gIcon()}<span>Compte Google confirmé : <b>${esc(A.g.email)}</b>. Il reste à choisir votre pseudo et à accepter les conditions.</span></p>` : gBtn()}
     <div class="field"><label for="aHandle">Pseudo</label><div class="at-in"><span>@</span><input id="aHandle" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="20" required placeholder="ex. lion.du.sahel" pattern="[A-Za-z0-9._]{3,20}"></div><small class="hint">C’est le seul nom que voient les membres qui ne sont pas vos contacts. 3 à 20 caractères : lettres, chiffres, point ou tiret bas.</small></div>
     <div class="field-row"><div class="field"><label for="aName">Prénom</label><input id="aName" autocomplete="given-name" maxlength="30" value="${esc(A.g ? (A.g.name || '').split(' ')[0] : '')}"></div>
     <div class="field"><label for="aLast">Nom</label><input id="aLast" autocomplete="family-name" maxlength="30" value="${esc(A.g ? (A.g.name || '').split(' ').slice(1).join(' ') : '')}"></div></div>
     <p class="hint">Votre prénom et votre nom, si vous les indiquez, ne sont visibles que par vos contacts.</p>
     ${A.g ? '' : `<div class="field"><label for="aMail">Adresse e-mail</label><input id="aMail" type="email" autocomplete="email" required></div>
     <div class="field"><label for="aPass">Mot de passe (8 caractères minimum)</label><div class="pw"><input id="aPass" type="password" autocomplete="new-password" minlength="8" required><button type="button" data-act="pwShow">Voir</button></div></div>`}
-    <span class="lbl">Votre avatar</span>${avGallery(A.avatar, 'auth')}
+    <p class="hint">Vous pourrez choisir votre avatar, votre photo et ses couleurs ensuite, dans <b>Réglages</b>.</p>
     <label class="pick chk"><input type="checkbox" id="aAge"><span>J’ai 16 ans ou plus.</span></label>
     <label class="pick chk"><input type="checkbox" id="aCgu"><span>J’ai lu et j’accepte les <a href="/conditions" target="_blank" rel="noopener">Conditions générales et la Politique de confidentialité</a>.</span></label>
 
@@ -1437,7 +1437,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.52</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.53</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
