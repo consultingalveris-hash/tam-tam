@@ -906,3 +906,12 @@ body.in-cam{overflow:hidden}
 .fp-box[open] .fp{display:block;margin-top:6px;letter-spacing:1px}
 .selbar b{white-space:nowrap;font-size:14px}.selbar .btn{white-space:nowrap;padding:0 10px}.sel-del{color:var(--danger)}
 .fwd .ic,.fwd svg{width:14px;height:14px}
+
+/* Archives */
+.title{position:relative}
+.arch-chip{position:absolute;left:12px;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;gap:5px;z-index:1}
+.arch-chip .ic{width:16px;height:16px}.arch-chip small{color:var(--fg-2);font-weight:600}
+.arch-head{display:flex;align-items:center;gap:6px;padding:4px 10px}.arch-head b{display:flex;align-items:center;gap:6px}.arch-head .ic{width:18px;height:18px}
+.arch-note{padding:0 16px 6px;margin:0}
+@media (max-width:420px){ .arch-chip{left:8px;padding:0 9px;font-size:13px;gap:4px;min-height:30px} .arch-chip .cnt{min-width:18px;height:18px;font-size:11px} }
+@media (max-width:350px){ .arch-chip{font-size:0;gap:2px} .arch-chip .cnt,.arch-chip small{font-size:11px} }

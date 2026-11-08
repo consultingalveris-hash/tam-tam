@@ -256,19 +256,24 @@ function renderAll() { renderTabs(); renderHead(); renderBody(); }
 /* ---------- liste ---------- */
 const TABS = [['chats', 'Discussions', I.chats], ['contacts', 'Contacts', I.users], ['souvenirs', 'Souvenirs', I.image], ['calls', 'Appels', I.dialpad]];
 function renderTabs() {
-  const unread = [...S.chats.values()].filter(c => c.unread > 0 && (!c.hidden || S.showHidden)).length, inc = S.contacts.incoming.length;
+  const unread = [...S.chats.values()].filter(c => c.unread > 0 && !c.archived && (!c.hidden || S.showHidden)).length, inc = S.contacts.incoming.length;
   $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${id === 'chats' && unread ? `<span class="badge" aria-label="${unread} non lues">${unread}</span>` : ''}${id === 'contacts' && inc ? `<span class="badge" aria-label="${inc} demande${inc > 1 ? 's' : ''} d’ami">${inc}</span>` : ''}</button>`).join('');
-  $('#fab').hidden = S.tab !== 'chats'; Device.badge(); const fc = $('#filts'); if (fc) fc.innerHTML = filtChips();
+  $('#fab').hidden = S.tab !== 'chats'; Device.badge(); const fc = $('#filts'); if (fc) fc.innerHTML = filtChips(); const ac = $('.arch-chip'); if (ac) ac.outerHTML = archChip();
   const n = [...S.chats.values()].reduce((a, c) => a + (c.unread || 0), 0); document.title = n ? `(${n}) tam-tam` : 'tam-tam';
 }
+const ARCH_IC = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></svg>';
+function archChip() {
+  const na = [...S.chats.values()].filter(c => c.archived && (!c.hidden || S.showHidden)), nu = na.filter(c => c.unread > 0 || c.marked).length;
+  return `<button class="chip arch-chip" type="button" data-act="filt" data-f="arch" aria-pressed="${S.filt === 'arch'}" title="Discussions archivées">${ARCH_IC}Archives${nu ? ` <span class="cnt">${nu}</span>` : na.length ? ` <small>${na.length}</small>` : ''}</button>`;
+}
 function filtChips() {
-  const n = [...S.chats.values()].filter(c => c.unread > 0 && (!c.hidden || S.showHidden)).length;
-  return [['all', 'Toutes'], ['unread', 'Non lues'], ['group', 'Groupes'], ['me', 'Mon profil']].map(([k, l]) => `<button class="chip" type="button" data-act="filt" data-f="${k}" aria-pressed="${(S.filt || 'all') === k}">${l}${k === 'unread' && n ? ` <span class="cnt">${n}</span>` : ''}</button>`).join('');
+  const n = [...S.chats.values()].filter(c => c.unread > 0 && !c.archived && (!c.hidden || S.showHidden)).length;
+  return [['all', 'Toutes'], ['unread', 'Non lues'], ['group', 'Groupes'], ['me', 'Mon profil']].map(([k, l]) => `<button class="chip" type="button" data-act="filt" data-f="${k}" aria-pressed="${(S.filt || 'all') === k || (k === 'all' && S.filt === 'arch')}">${l}${k === 'unread' && n ? ` <span class="cnt">${n}</span>` : ''}</button>`).join('');
 }
 function renderHead() {
   const h = $('#head');
   if (S.tab === 'chats') {
-    h.innerHTML = `<div class="title"><h1 class="brand-h">${BRAND()}</h1><span class="grow"></span><button class="ib dotted" type="button" data-act="addOpen" aria-label="Ajouter des amis${S.contacts.incoming.length ? ` (${S.contacts.incoming.length} demande${S.contacts.incoming.length > 1 ? 's' : ''})` : ''}" title="Ajouter des amis">${I.userplus}${S.contacts.incoming.length ? `<span class="badge">${S.contacts.incoming.length}</span>` : ''}</button><button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button></div>
+    h.innerHTML = `<div class="title">${archChip()}<h1 class="brand-h">${BRAND()}</h1><span class="grow"></span><button class="ib dotted" type="button" data-act="addOpen" aria-label="Ajouter des amis${S.contacts.incoming.length ? ` (${S.contacts.incoming.length} demande${S.contacts.incoming.length > 1 ? 's' : ''})` : ''}" title="Ajouter des amis">${I.userplus}${S.contacts.incoming.length ? `<span class="badge">${S.contacts.incoming.length}</span>` : ''}</button><button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button></div>
       <div class="stories" id="stories" aria-label="Statuts"></div>
       <label class="search">${I.search}<span class="sr">Rechercher</span><input id="q" type="search" placeholder="Rechercher une discussion" value="${esc(S.q)}" autocomplete="off"></label>
       <div class="chips filt" id="filts" role="group" aria-label="Filtrer les discussions">${filtChips()}</div>`;
@@ -317,6 +322,7 @@ function chatRows() {
   Priv.watch(q);
   const fl = S.filt || 'all';
   if (fl === 'me') return profileEditor();
+  list = list.filter(c => fl === 'arch' ? c.archived : !c.archived);
   if (fl === 'unread') list = list.filter(c => c.unread > 0); else if (fl === 'group') list = list.filter(c => c.type === 'group');
   const hitMsg = {};
   if (q && !(S.showHidden && Priv.isCode(q))) {
@@ -328,12 +334,14 @@ function chatRows() {
   if (S.showHidden) list.sort((a, b) => (b.hidden ? 1 : 0) - (a.hidden ? 1 : 0));
   list.sort((a, b) => (b.last?.at || b.createdAt) - (a.last?.at || a.createdAt));
   list.sort((a, b) => (b.pinned || 0) - (a.pinned || 0));
-  const selBar = S.sel ? `<div class="selbar"><button class="ib" type="button" data-act="selOff" aria-label="Annuler la sélection">${I.close}</button><b>${S.sel.size} sélectionnée${S.sel.size > 1 ? 's' : ''}</b><span class="grow"></span><button class="btn sm ghost" type="button" data-act="selDo" data-k="pin" title="Épingler" aria-label="Épingler">📌</button><button class="btn sm ghost" type="button" data-act="selDo" data-k="read">Lu</button><button class="btn sm ghost" type="button" data-act="selDo" data-k="unread">Non lu</button><button class="ib sel-del" type="button" data-act="selDo" data-k="clear" aria-label="Supprimer" title="Supprimer">${I.trash}</button></div>` : '';
+  const selBar = S.sel ? `<div class="selbar"><button class="ib" type="button" data-act="selOff" aria-label="Annuler la sélection">${I.close}</button><b>${S.sel.size} sélectionnée${S.sel.size > 1 ? 's' : ''}</b><span class="grow"></span><button class="btn sm ghost" type="button" data-act="selDo" data-k="pin" title="Épingler" aria-label="Épingler">📌</button><button class="btn sm ghost" type="button" data-act="selDo" data-k="read">Lu</button><button class="btn sm ghost" type="button" data-act="selDo" data-k="unread">Non lu</button><button class=\"ib\" type=\"button\" data-act=\"selDo\" data-k=\"arch\" title=\"${S.filt === 'arch' ? 'Désarchiver' : 'Archiver'}\" aria-label=\"${S.filt === 'arch' ? 'Désarchiver' : 'Archiver'}\">${ARCH_IC}</button><button class="ib sel-del" type="button" data-act="selDo" data-k="clear" aria-label="Supprimer" title="Supprimer">${I.trash}</button></div>` : '';
   const privBar = S.showHidden ? `<div class="privbar">${I.lock}<span>Discussions privées affichées</span><button class="btn sm ghost" type="button" data-act="privHide">Masquer</button></div>` : '';
+  const archHead = fl === 'arch' ? `<div class="arch-head"><button class="ib" type="button" data-act="filt" data-f="all" aria-label="Retour aux discussions">${I.back}</button><b>${ARCH_IC}Discussions archivées</b></div><p class="hint arch-note">Elles restent ici même si un nouveau message arrive. Appui long sur une discussion, puis « Désarchiver », pour la remettre dans la liste.</p>` : '';
+  if (!list.length && fl === 'arch') return archHead + '<p class="empty">Aucune discussion archivée. Pour en ranger une, appuyez longtemps dessus dans la liste, puis touchez « Archiver ».</p>';
   if (!list.length && fl !== 'all' && !q) return privBar + `<p class="empty">${{unread: 'Aucune discussion non lue.', group: 'Aucun groupe. Créez-en un avec le bouton turquoise.'}[fl]}</p>`;
   if (!list.length) return privBar + (q ? `<p class="empty">Aucune discussion ne correspond.</p>`
     : `<div class="empty"><p>Aucune discussion pour l’instant.</p><p>Invitez vos proches depuis l’onglet <b>Contacts</b>, puis appuyez sur le bouton turquoise pour leur écrire.</p><button class="btn" type="button" data-act="tab" data-t="contacts">${I.userplus}Inviter mes proches</button></div>`);
-  return privBar + selBar + list.map(c => {
+  return privBar + archHead + selBar + list.map(c => {
     const m = c.last, tu = typingIn(c.id), u = c.type === 'direct' ? uOf(c.peer) : null;
     let prev = esc(snippet(m));
     if (hitMsg[c.id]) prev = Find.mark(hitMsg[c.id].text, q);
@@ -751,6 +759,7 @@ function chatListMenu(id) {
   sheet(`${head(esc(chatTitle(c)))}<div class="menu">
     <button type="button" data-act="chatPin" data-id="${id}"><span class="pin-ic" aria-hidden="true">📌</span>${c.pinned ? 'Ne plus épingler' : 'Épingler en haut (4 au maximum)'}</button>
     <button type="button" data-act="chatRead" data-id="${id}" data-v="${unread ? '' : '1'}">${I.eye}${unread ? 'Marquer comme lue' : 'Marquer comme non lue'}</button>
+    <button type="button" data-act="chatArch" data-id="${id}">${ARCH_IC}${c.archived ? 'Désarchiver' : 'Archiver'}</button>
     <button type="button" data-act="selStart" data-id="${id}">${I.check || '✓'}Sélectionner</button>
     <button type="button" data-act="chatPriv" data-id="${id}">${I.lock}${c.hidden ? 'Ne plus rendre privée' : 'Rendre la discussion privée'}</button>
     ${u ? `<button type="button" class="danger" data-act="${blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${I.block}${blocked ? 'Débloquer ' : 'Bloquer '}${esc(first(u.name))}</button>` : ''}
@@ -1300,7 +1309,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.46</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.47</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1356,6 +1365,7 @@ const ACT = {
   chatRowMenu(d) { chatListMenu(+d.id); },
   async chatPin(d) { closeLayer(); const c = S.chats.get(+d.id); try { await chatMine(+d.id, {pin: !c.pinned}); toast(c.pinned ? 'Discussion épinglée en haut' : 'Discussion désépinglée'); } catch (e) { toast(e.message); } },
   async chatRead(d) { closeLayer(); try { await chatMine(+d.id, {unread: !!d.v}); } catch (e) { toast(e.message); } },
+  async chatArch(d) { closeLayer(); const c = S.chats.get(+d.id), on = !c.archived; try { await chatMine(+d.id, {archive: on}); renderHead(); toast(on ? 'Discussion rangée dans Archives' : 'Discussion remise dans la liste'); } catch (e) { toast(e.message); } },
   chatPriv(d) { closeLayer(); Priv.toggle(+d.id); },
   chatClearAsk(d) { confirmSheet('Supprimer la discussion ?', 'Tous les messages disparaîtront de votre côté seulement. Les autres membres les garderont. Si quelqu’un vous écrit à nouveau, la discussion réapparaîtra.', 'Supprimer', 'chatClearYes', d.id); },
   async chatClearYes(d) { closeLayer(); const id = +d.id; try { await chatMine(id, {clear: true}, true); S.msgs.delete(id); if (S.chatId === id) ACT.back(); renderTabs(); renderBody(); toast('Discussion supprimée de votre côté'); } catch (e) { toast(e.message); } },
@@ -1365,7 +1375,7 @@ const ACT = {
     const ids = [...(S.sel || [])]; if (!ids.length) return;
     if (d.k === 'clear') return confirmSheet(`Supprimer ${ids.length > 1 ? `ces ${ids.length} discussions` : 'cette discussion'} ?`, 'Les messages disparaîtront de votre côté seulement.', 'Supprimer', 'selClearYes', '');
     const allPinned = ids.every(i => S.chats.get(i)?.pinned);
-    try { for (const i of ids) await chatMine(i, d.k === 'pin' ? {pin: !allPinned} : {unread: d.k === 'unread'}, true); } catch (e) { toast(e.message); }
+    try { for (const i of ids) await chatMine(i, d.k === 'pin' ? {pin: !allPinned} : d.k === 'arch' ? {archive: S.filt !== 'arch'} : {unread: d.k === 'unread'}, true); if (d.k === 'arch') toast(S.filt === 'arch' ? 'Remises dans la liste' : `${ids.length > 1 ? 'Discussions rangées' : 'Discussion rangée'} dans Archives`); } catch (e) { toast(e.message); }
     S.sel = null; renderTabs(); renderBody();
   },
   async selClearYes() { closeLayer(); const ids = [...(S.sel || [])]; try { for (const i of ids) { await chatMine(i, {clear: true}, true); S.msgs.delete(i); if (S.chatId === i) ACT.back(); } toast('Discussions supprimées de votre côté'); } catch (e) { toast(e.message); } S.sel = null; renderTabs(); renderBody(); },
