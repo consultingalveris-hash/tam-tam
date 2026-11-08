@@ -210,6 +210,7 @@ function onEvent(ev) {
   if (S.newVer && !(typeof Call !== 'undefined' && Call.c) && !(typeof GCall !== 'undefined' && GCall.c) && !document.querySelector('#compose textarea:focus, .sheet')) { location.reload(); return; }
   if (ev.t === 'hello') { if (resync) { loadChats().then(renderAll); if (S.chatId) loadMessages(S.chatId, true); } resync = true; }
   else if (ev.t === 'msg') onMsg(ev.msg, ev.update);
+  else if (ev.t === 'hide') msgHide(ev.chatId, ev.id);
   else if (ev.t === 'read') { const c = S.chats.get(ev.chatId); if (c) { const m = c.members.find(x => x.id === ev.user); if (m) m.lastRead = Math.max(m.lastRead, ev.upTo); if (S.chatId === ev.chatId) renderMessages(true); if (S.tab === 'chats') renderBody(); } }
   else if (ev.t === 'typing') { const k = ev.chatId; if (Date.now() - (S.lastFrom.get(k + ':' + ev.user) || 0) < 2500) return; S.typing.set(k, {user: ev.user, until: Date.now() + 4000}); refreshTyping(k); setTimeout(() => refreshTyping(k), 4100); }
   else if (ev.t === 'contacts') { loadContacts().then(() => { renderTabs(); if (S.tab !== 'chats') renderBody(); if (document.getElementById('addSheet') && typeof Add !== 'undefined') Add.loadPeople(); }); loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }); }
@@ -458,7 +459,7 @@ function renderComposer() {
     el.innerHTML = `<div class="blocked-bar">${I.block}<span>${mine ? `Vous avez bloqué ${esc(first(u.name))}.` : 'Vous ne pouvez plus écrire à cette personne.'}</span>${mine ? `<button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button>` : ''}</div>`; return;
   }
   const trOn = !!(Tr.inL(c.id) || Tr.outL(c.id));
-  el.innerHTML = `<form class="composer" data-form="send" autocomplete="off">${Tr.st && Tr.st.on ? `<button class="ib tr-tog" type="button" data-act="trAuto" aria-pressed="${trOn}" aria-label="Langues de cette discussion" title="Langues de traduction de cette discussion">${I.translate}${Tr.label(c.id)}</button>` : ''}<div class="inwrap">${Emoji.btn('#msgIn')}<textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
+  el.innerHTML = `<form class="composer" data-form="send" autocomplete="off"><div class="inwrap">${Tr.st && Tr.st.on ? `<button class="ib tr-tog" type="button" data-act="trAuto" aria-pressed="${trOn}" aria-label="Langues de cette discussion" title="Langues de traduction de cette discussion">${I.translate}${Tr.label(c.id)}</button>` : ''}${Emoji.btn('#msgIn')}<textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
     <button class="ib" type="button" data-act="attach" aria-label="Joindre une photo ou une vidéo">${I.clip}</button><button class="ib" type="button" data-act="camera" aria-label="Prendre une photo ou une vidéo">${I.camera}</button><button class="ib once-tog" type="button" data-act="onceTog" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique : le message ne peut être ouvert qu’une fois"><span class="one" aria-hidden="true">1</span></button></div>
     <input type="file" id="fileIn" accept="image/*,video/*" hidden><input type="file" id="camIn" accept="image/*" capture="environment" hidden>
     <button class="send" id="sendBtn" type="button" data-act="recStart" aria-label="Enregistrer un message vocal">${I.mic}</button></form>`;
@@ -643,7 +644,7 @@ async function sendText() {
     const r = await api(`/api/chats/${c.id}/messages`, body); onMsg(r.msg);
   } catch (e) { toast(e.message); i.value = t; syncSend(); }
 }
-function autoGrow(t) { t.style.height = '42px'; t.style.height = Math.min(130, t.scrollHeight) + 'px'; }
+function autoGrow(t) { const desk = matchMedia('(min-width:821px)').matches, h0 = desk ? 42 : 46; t.style.height = h0 + 'px'; t.style.height = Math.min(desk ? 130 : Math.round(innerHeight * 0.32), Math.max(h0, t.scrollHeight)) + 'px'; }
 function renderReplyBar() {
   const c = S.chats.get(S.chatId), el = $('#replyBar'); if (!el || !c) return;
   el.innerHTML = S.replyTo ? `<div class="replybar">${quoteHtml(c, S.replyTo)}<button class="ib" type="button" data-act="replyCancel" aria-label="Annuler la réponse">${I.close}</button></div>` : '';
@@ -750,10 +751,15 @@ function reportSheet(userId, chatId) {
     ${userId ? '<label class="pick chk"><input type="checkbox" id="rrBlock" checked><span>Bloquer aussi cette personne</span></label>' : ''}
     <p class="err" id="rrErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="submit">Signaler</button></div></div></form>`, 'Signaler');
 }
+const DEL_ALL_MAX = 3600_000;
+function msgHide(chatId, id) { const l = S.msgs.get(chatId); if (l) { const i = l.findIndex(x => x.id === id); if (i >= 0) l.splice(i, 1); } if (S.chatId === chatId) renderMessages(true); loadChats().then(() => { if (S.tab === 'chats') renderBody(); }).catch(() => {}); }
 function msgMenu(id) {
-  const list = S.msgs.get(S.chatId) || [], m = list.find(x => x.id === id); if (!m || m.deleted) return;
+  const list = S.msgs.get(S.chatId) || [], m = list.find(x => x.id === id); if (!m) return;
+  if (m.deleted) return sheet(`<div class="menu" style="padding-top:12px"><button type="button" class="danger" data-act="hideAsk" data-id="${id}">${I.trash}Supprimer pour moi</button></div>`, 'Message');
+  const canAll = m.from === S.me.id && Date.now() - m.at < DEL_ALL_MAX;
   sheet(`<div class="menu" style="padding-top:12px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once && !m.locked && m.from !== S.me.id && Tr.st && Tr.st.on && S.me.trConsent ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}${Tr.shown.has(id) ? 'Voir la traduction' : 'Traduire'}</button>` : ''}${m.text && !m.once && !(S.chats.get(S.chatId) || {}).hidden ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
-    ${m.from === S.me.id ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde</button>` : ''}</div>`, 'Message');
+    <button type="button" class="danger" data-act="hideAsk" data-id="${id}">${I.trash}Supprimer pour moi</button>
+    ${canAll ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde</button>` : m.from === S.me.id ? '<p class="hint" style="padding:4px 16px 10px">Plus d’une heure après l’envoi, un message ne peut plus être supprimé pour tout le monde.</p>' : ''}</div>`, 'Message');
 }
 
 /* ---------- statuts : création et lecture ---------- */
@@ -1212,7 +1218,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.44</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.45</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1347,6 +1353,8 @@ const ACT = {
   replyCancel() { S.replyTo = null; renderReplyBar(); },
   jump(d) { const el = document.querySelector(`.msg[data-mid="${d.id}"]`); if (el) el.scrollIntoView({block: 'center', behavior: 'smooth'}); },
   copy(d) { const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +d.id); closeLayer(); if (m && navigator.clipboard) navigator.clipboard.writeText(m.text || '').then(() => toast('Texte copié')); },
+  hideAsk(d) { confirmSheet('Supprimer pour moi ?', 'Le message disparaîtra seulement de votre côté. Les autres membres le verront toujours.', 'Supprimer', 'hideYes', d.id); },
+  async hideYes(d) { closeLayer(); try { await api(`/api/messages/${d.id}/hide`, {}); msgHide(S.chatId, +d.id); toast('Message supprimé pour vous'); } catch (e) { toast(e.message); } },
   delAsk(d) { confirmSheet('Supprimer pour tout le monde ?', 'Le message sera remplacé par « Ce message a été supprimé » chez tous les membres.', 'Supprimer', 'delYes', d.id); },
   async delYes(d) { closeLayer(); try { await api(`/api/messages/${d.id}/delete`, {}); } catch (e) { toast(e.message); } },
   stNew(d, el, e) { e.stopPropagation(); stComposer(); },
