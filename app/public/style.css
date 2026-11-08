@@ -960,3 +960,21 @@ body.in-cam{overflow:hidden}
 .mc-logo svg,.mc-logo img{height:34px;width:auto;filter:brightness(0)}.mc-logo span{display:flex;gap:4px;align-items:center;font-weight:800}.mc-logo span svg{height:15px}
 .mc-in{align-self:center;width:200px;max-width:100%;text-align:center;font-size:30px;letter-spacing:18px;padding:10px 0 10px 18px;border-radius:14px}
 .mc-dots{display:none;justify-content:center;gap:18px;padding:10px 0;cursor:text}.mc-dots i{width:18px;height:18px;border-radius:50%;border:2px solid var(--accent);display:block}.mc-dots i.on{background:var(--accent)}
+/* dossier Privé : fond clair, logo turquoise (comme l'écran d'accueil) */
+.mem-vault{background:var(--chat-bg);color:var(--accent-strong);border:1px solid var(--line)}
+.mem-vault .mv-logo svg,.mem-vault .mv-logo img{filter:none}
+.mem-vault .mv-lbl{color:var(--fg)}
+.mc-logo{background:var(--chat-bg);color:var(--fg);border:1px solid var(--line)}.mc-logo svg,.mc-logo img{filter:none}
+.mem-tile.veiled .mem-th{background:var(--chat-bg)}
+.mem-veil.vlt{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--fg);padding:8px}
+.mem-veil.vlt .mv-logo{width:70%;line-height:0}.mem-veil.vlt .mv-logo svg,.mem-veil.vlt .mv-logo img{width:100%;height:auto}
+.mem-veil.vlt b{display:flex;align-items:center;gap:4px;font-size:13px}.mem-veil.vlt b svg{width:13px;height:13px}.mem-veil.vlt small{font-size:11px;color:var(--fg-2)}
+.mem-fixed{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.mem-fixed span{display:flex;align-items:center;gap:6px}.mem-fixed svg{width:16px;height:16px}
+/* sur ordinateur : photos et vidéos dans une fenêtre, pas en plein écran */
+@media (min-width:821px){
+  .mem-view,.zoom{inset:auto;top:50%;left:50%;transform:translate(-50%,-50%);width:min(920px,88vw);height:min(82vh,780px);border-radius:18px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.45)}
+  #layer:has(> .zoom, > .mem-view)::before{content:'';position:fixed;inset:0;z-index:29;background:rgba(5,15,20,.62)}
+  .zoom{background:#000}.zoom img{max-width:100%;max-height:100%;object-fit:contain}
+  .mg-play video{max-height:100%}
+}

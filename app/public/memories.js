@@ -28,7 +28,7 @@ const Mem = {
       if (m === 'again') { if (v !== this.newCode) return this.codeSheet('new', 'Les deux codes ne sont pas identiques. Recommencez.'); await api('/api/mem/code', {set: v}); S.me.hasMemCode = true; toast('Code des souvenirs enregistré'); }
       else if (m === 'forgot') { await api('/api/mem/code', {set: v, pass: $('#mcPass').value}); S.me.hasMemCode = true; toast('Nouveau code enregistré'); }
       else await api('/api/mem/code', {code: v});
-      this.unlocked = true; closeLayer(); const f = this.after; this.after = null; if (f) f();
+      this.unlocked = true; closeLayer(); const f = this.after; this.after = null; if (f) f(); if (this.filt !== 'private') { this.unlocked = false; }
     } catch (e) { this.codeSheet(m === 'again' ? 'new' : m, e.message); }
   },
   /* ---- chiffrement ---- */
@@ -114,7 +114,7 @@ const Mem = {
   },
   tile(it, other) {
     const [l, ic] = MEM_AUD[it.aud] || MEM_AUD.private, recv = !this.mine(it) && !other, fu = recv ? uOf(it.from) : null;
-    const veil = it.locked ? '🔒' : it.once && recv ? `<span class="mem-veil once">${it.opened ? 'Ouvert' : '① Vue unique'}</span>` : this.hidden(it) ? `<span class="mem-veil">${I.lock}</span>` : '';
+    const veil = it.locked ? '🔒' : this.hidden(it) ? `<span class="mem-veil vlt"><span class="mv-logo">${BRAND()}</span><b>${I.lock}Privé</b>${it.once ? '<small>① Vue unique</small>' : ''}</span>` : it.once && recv ? `<span class="mem-veil once">${it.opened ? 'Ouvert' : '① Vue unique'}</span>` : '';
     const noTh = !!veil;
     const badge = recv ? `<span class="mem-b from">${!it.seen ? '<i class="new-dot"></i>' : ''}${esc(first(fu.name))}</span>` : other ? '' : `<span class="mem-b">${ic}${it.aud === 'friends' ? `${(it.to || []).length || ''}` : l}${it.lock ? ' · ' + I.lock : ''}${it.once ? ' · ①' : ''}</span>`;
     return `<button class="mem-tile${noTh ? ' veiled' : ''}" type="button" data-act="memView" data-id="${it.id}"${other ? ` data-u="${other}"` : ''} aria-label="${it.kind === 'video' ? 'Vidéo' : 'Photo'} ${recv ? 'reçue de ' + esc(fu.name) : l.toLowerCase()} du ${new Date(it.takenAt).toLocaleDateString('fr-FR')}"><span class="mem-th"${noTh ? '' : ` data-memth="${it.id}"`}${other ? ` data-u="${other}"` : ''}>${veil}</span>${it.kind === 'video' && !noTh ? `<span class="mem-play">▶</span>` : ''}${badge}</button>`;
@@ -130,7 +130,7 @@ const Mem = {
   find(id, uid) { return uid ? (this.others.get(uid) || []).find(x => x.id === id) : (this.items || []).find(x => x.id === id) || (this.recv || []).find(x => x.id === id); },
   mine(it) { return !it.from || it.from === S.me.id; },
   // un souvenir protégé (privé, ou envoyé en privé) ne montre rien tant que le code n'est pas tapé
-  hidden(it) { return (it.aud === 'private' || it.lock) && !this.unlocked; },
+  hidden(it) { return it.aud === 'private' ? !this.unlocked : !!it.lock && !this.mine(it) && this.pass !== it.id; },
   /* ---- ajouter ---- */
   opts() { return {target: r => this.compose(r), title: 'Nouveau souvenir', gallery: () => $('#memIn') && $('#memIn').click(), native: () => $('#memCamIn') && $('#memCamIn').click()}; },
   addSheet() {
@@ -144,24 +144,26 @@ const Mem = {
     if (big.length) toast(`${big.length} fichier${big.length > 1 ? 's' : ''} de plus de 40 Mo ignoré${big.length > 1 ? 's' : ''}.`);
     if (!ok.length) return;
     if (ok.length === 1) { const r = ok[0]; URL.revokeObjectURL(r.url); return r.kind === 'video' ? Edit.videoFile(r.blob, this.opts()) : Edit.photoFile(r.blob, this.opts()); }
-    this.pend = {many: ok.slice(0, 30), aud: null, to: [], cap: '', lock: false, once: false};
+    this.pend = {many: ok.slice(0, 30), aud: this.preAud(), to: [], cap: '', lock: false, once: false};
     if (ok.length > 30) toast('30 souvenirs au maximum à la fois : les 30 premiers sont gardés.');
     this.composeRender();
   },
+  preAud() { return ['public', 'private', 'friends'].includes(this.filt) ? this.filt : null; },
   compose(r) {
-    this.pend = {...r, url: URL.createObjectURL(r.blob), aud: null, to: [], lock: false, once: false, date: new Date().toISOString().slice(0, 10)};
+    this.pend = {...r, url: URL.createObjectURL(r.blob), aud: this.preAud(), to: [], lock: false, once: false, date: new Date().toISOString().slice(0, 10)};
     this.composeRender();
   },
   composeRender() {
-    const p = this.pend, cs = S.contacts.contacts || [];
+    const p = this.pend; if (p.fixed == null) p.fixed = !!p.aud;
+    const cs = S.contacts.contacts || [];
     const many = p.many, n = many ? many.length : 1;
     sheet(`${head(many ? `${n} nouveaux souvenirs` : 'Nouveau souvenir')}<form data-form="memSave"><div class="sheet-body">
       ${many ? `<div class="mem-strip">${many.map(x => x.kind === 'video' ? `<video src="${x.url}" muted playsinline preload="metadata"></video>` : `<img src="${x.url}" alt="">`).join('')}</div><p class="hint">Chaque souvenir garde la date de sa photo ou de sa vidéo.</p>`
         : `<div class="mem-prev">${p.kind === 'video' ? `<video src="${p.url}" class="${p.mirror ? 'mirror' : ''}" autoplay loop muted playsinline></video>` : `<img src="${p.url}" alt="Aperçu">`}</div>`}
       <div class="field"><label for="memCap">Légende</label><div class="mem-capw">${Emoji.btn('#memCap')}<input id="memCap" maxlength="500" value="${esc(p.cap || '')}" placeholder="Ce moment en quelques mots…" autocomplete="off"></div></div>
       ${many ? '' : `<div class="field"><label for="memDate">Date du souvenir</label><input id="memDate" type="date" value="${p.date}" max="${new Date().toISOString().slice(0, 10)}"><small class="hint">Pour une ancienne photo, mettez sa vraie date : Tam-Tam vous la rappellera chaque année ce jour-là.</small></div>`}
-      <span class="lbl">Qui peut ${many ? 'les' : 'le'} voir ? <small>(à choisir)</small></span>
-      <div class="seg mem-aud">${Object.entries(MEM_AUD).map(([k, [l, ic]]) => `<button type="button" data-act="memAud" data-a="${k}" aria-pressed="${p.aud === k}">${ic}${l}</button>`).join('')}</div>
+      ${p.fixed ? `<div class="mem-fixed"><span>${MEM_AUD[p.aud][1]}<b>${MEM_AUD[p.aud][0]}</b></span><button class="linkless" type="button" data-act="memAudChange">Changer</button></div>` : `<span class="lbl">Qui peut ${many ? 'les' : 'le'} voir ? <small>(à choisir)</small></span>
+      <div class="seg mem-aud">${Object.entries(MEM_AUD).map(([k, [l, ic]]) => `<button type="button" data-act="memAud" data-a="${k}" aria-pressed="${p.aud === k}">${ic}${l}</button>`).join('')}</div>`}
       <p class="hint">${{public: 'Visible par tous les membres sur votre profil.', private: 'Vous seul. Chiffré pour vous seul, et rangé dans le dossier Privé ouvert avec votre code à 4 chiffres.', friends: 'Envoyé aux amis cochés, chiffré pour eux seulement. Ils sont prévenus.'}[p.aud] || 'Touchez Public, Privé ou Amis Tam-Tam.'}</p>
       ${p.aud === 'friends' ? `<div class="mem-opts"><label class="pick chk"><input type="checkbox" id="memLock"${p.lock ? ' checked' : ''}><span><b>${I.lock} Privé</b> · chaque ami l’ouvre avec son propre code à 4 chiffres</span></label><label class="pick chk"><input type="checkbox" id="memOnce"${p.once ? ' checked' : ''}><span><b>① Vue unique</b> · il ne pourra l’ouvrir qu’une seule fois</span></label></div>` : ''}
       ${p.aud === 'friends' ? `<div class="grp-box"><div class="cg-tools"><label class="pick cg-all"><input type="checkbox" id="memAll"${cs.length && p.to.length === cs.length ? ' checked' : ''}><span><b>Tout cocher</b></span></label><span class="hint">${p.to.length} sur ${cs.length}</span></div>
@@ -229,6 +231,7 @@ const Mem = {
   /* ---- regarder ---- */
   async view(id, uid) {
     const it = this.find(id, uid); if (!it) return; if (it.locked) return toast('Ce souvenir ne peut pas être ouvert sur cet appareil.');
+    if (it.aud !== 'private' && it.lock && !this.mine(it) && this.pass !== it.id) { this.after = () => { this.unlocked = this.filt === 'private' && this.unlocked; this.pass = it.id; this.view(id, uid); this.pass = null; }; return this.codeSheet(S.me.hasMemCode ? 'ask' : 'new'); }
     if (this.hidden(it)) return this.unlockThen(() => { renderBody(); this.view(id, uid); });
     const recv = !uid && !this.mine(it);
     if (recv && it.once && it.opened) return toast('Souvenir à vue unique déjà ouvert.');
@@ -263,7 +266,7 @@ const Mem = {
   },
 };
 Object.assign(ACT, {
-  memFilt(d) { if (d.f === 'private' && !Mem.unlocked) { Mem.filt = 'private'; renderBody(); return Mem.unlockThen(() => renderBody()); } Mem.filt = d.f; renderBody(); if (d.f === 'friends') Mem.markSeen(); },
+  memFilt(d) { if (d.f !== 'private') Mem.unlocked = false; if (d.f === 'private' && !Mem.unlocked) { Mem.filt = 'private'; renderBody(); return Mem.unlockThen(() => renderBody()); } Mem.filt = d.f; renderBody(); if (d.f === 'friends') Mem.markSeen(); },
   memVault() { Mem.unlockThen(() => { Mem.filt = 'private'; renderBody(); }); },
   memRelock() { Mem.unlocked = false; Mem.filt = 'all'; renderBody(); },
   memForgot() { Mem.codeSheet('forgot'); },
@@ -274,6 +277,7 @@ Object.assign(ACT, {
   memCam() { closeLayer(); Cam.open({...Mem.opts(), mode: 'photo'}); },
   memVid() { closeLayer(); Cam.open({...Mem.opts(), mode: 'video'}); },
   memAud(d) { Mem.keepForm(); Mem.pend.aud = d.a; Mem.composeRender(); },
+  memAudChange() { Mem.keepForm(); Mem.pend.fixed = false; Mem.composeRender(); },
   memCancel() { const p = Mem.pend; if (p) (p.many || [p]).forEach(x => x.url && URL.revokeObjectURL(x.url)); Mem.pend = null; closeLayer(); },
   memView(d) { Mem.view(+d.id, d.u ? +d.u : 0); },
   memRepost(d) { Mem.repost(+d.id); },

@@ -205,6 +205,8 @@ const HPick = {
       catch (er) { msg.textContent = er.message; msg.classList.add('bad'); b.disabled = false; } });
   },
 };
+// Sur ordinateur, un clic à côté de la fenêtre photo ou vidéo la ferme.
+document.addEventListener('click', e => { if (e.target === layer && layer.querySelector(':scope > .zoom, :scope > .mem-view')) { const z = layer.querySelector(':scope > .zoom[data-act="mgBack"]'); if (z) ACT.mgBack(); else closeLayer(); } });
 document.addEventListener('visibilitychange', () => { if (document.hidden && typeof Mem !== 'undefined') Mem.unlocked = false; });
 function connect() {
   if (es) es.close();
@@ -713,7 +715,9 @@ function sheet(html, label, focus) {
   const f = layer.querySelector(focus || '.sheet button, .sheet input'); if (f) f.focus({preventScroll: true});
 }
 // Filigrane au nom de la personne qui regarde : une capture faite malgré tout montre qui l'a prise.
-function watermark() {
+// Filigranes retirés à la demande du propriétaire (la protection contre les captures reste active sur Android).
+function watermark() { return ''; }
+function watermarkOld() {
   const t = `@${S.me.handle} · ${new Date().toLocaleDateString('fr-FR')} ${hm(Date.now())}`.replace(/[<>&"']/g, '');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="260" height="150"><text x="10" y="90" transform="rotate(-24 130 75)" fill="white" fill-opacity="0.22" font-family="sans-serif" font-size="15">${t}</text></svg>`;
   return `<div class="wmark" aria-hidden="true" style="background-image:url('data:image/svg+xml;utf8,${encodeURIComponent(svg)}')"></div>`;
@@ -1417,7 +1421,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.49</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.50</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
