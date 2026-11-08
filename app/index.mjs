@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS status_views(status_id INTEGER NOT NULL REFERENCES st
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, target_user INTEGER, chat_id INTEGER, reason TEXT NOT NULL, note TEXT,
   created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0);
 `);
-for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `ALTER TABLE users ADD COLUMN avail TEXT NOT NULL DEFAULT 'on'`, `ALTER TABLE users ADD COLUMN tr_consent INTEGER`, `ALTER TABLE users ADD COLUMN priv_env TEXT`, `ALTER TABLE users ADD COLUMN tel_env TEXT`, `ALTER TABLE users ADD COLUMN tel_hash TEXT`, `ALTER TABLE statuses ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE chats ADD COLUMN expires INTEGER`, `ALTER TABLE statuses ADD COLUMN music TEXT`, `ALTER TABLE users ADD COLUMN handle_set INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS msg_hidden(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, PRIMARY KEY(user_id, msg_id))`, `ALTER TABLE users ADD COLUMN handle_at INTEGER`, `CREATE TABLE IF NOT EXISTS memories(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL, media TEXT NOT NULL, thumb TEXT, env TEXT NOT NULL, aud TEXT NOT NULL, taken_at INTEGER NOT NULL, created_at INTEGER NOT NULL)`, `CREATE INDEX IF NOT EXISTS mem_user ON memories(user_id, taken_at)`, `CREATE TABLE IF NOT EXISTS mem_access(mem_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(mem_id, user_id))`, `CREATE TABLE IF NOT EXISTS corpus(id INTEGER PRIMARY KEY, src TEXT NOT NULL, sl TEXT, tgt TEXT NOT NULL, tl TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL)`, `CREATE UNIQUE INDEX IF NOT EXISTS corpus_u ON corpus(src, tl, tgt, kind)`, `CREATE TABLE IF NOT EXISTS tr_mine(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, id TEXT NOT NULL, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(user_id, id))`, `CREATE TABLE IF NOT EXISTS tr_votes(id TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cid TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(id, user_id))`, `CREATE TABLE IF NOT EXISTS tr_cache(id TEXT PRIMARY KEY, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL)`, `ALTER TABLE tr_cache ADD COLUMN promoted INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
+for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `ALTER TABLE users ADD COLUMN avail TEXT NOT NULL DEFAULT 'on'`, `ALTER TABLE users ADD COLUMN tr_consent INTEGER`, `ALTER TABLE users ADD COLUMN priv_env TEXT`, `ALTER TABLE users ADD COLUMN tel_env TEXT`, `ALTER TABLE users ADD COLUMN tel_hash TEXT`, `ALTER TABLE statuses ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE chats ADD COLUMN expires INTEGER`, `ALTER TABLE statuses ADD COLUMN music TEXT`, `ALTER TABLE users ADD COLUMN handle_set INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS msg_hidden(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, PRIMARY KEY(user_id, msg_id))`, `ALTER TABLE users ADD COLUMN handle_at INTEGER`, `CREATE TABLE IF NOT EXISTS reactions(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, emo TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `ALTER TABLE messages ADD COLUMN fwd INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE chats ADD COLUMN pinned_msg INTEGER`, `ALTER TABLE members ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN unread_mark INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN cleared INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS memories(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL, media TEXT NOT NULL, thumb TEXT, env TEXT NOT NULL, aud TEXT NOT NULL, taken_at INTEGER NOT NULL, created_at INTEGER NOT NULL)`, `CREATE INDEX IF NOT EXISTS mem_user ON memories(user_id, taken_at)`, `CREATE TABLE IF NOT EXISTS mem_access(mem_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(mem_id, user_id))`, `CREATE TABLE IF NOT EXISTS corpus(id INTEGER PRIMARY KEY, src TEXT NOT NULL, sl TEXT, tgt TEXT NOT NULL, tl TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL)`, `CREATE UNIQUE INDEX IF NOT EXISTS corpus_u ON corpus(src, tl, tgt, kind)`, `CREATE TABLE IF NOT EXISTS tr_mine(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, id TEXT NOT NULL, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(user_id, id))`, `CREATE TABLE IF NOT EXISTS tr_votes(id TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cid TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(id, user_id))`, `CREATE TABLE IF NOT EXISTS tr_cache(id TEXT PRIMARY KEY, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL)`, `ALTER TABLE tr_cache ADD COLUMN promoted INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`]) { try { db.exec(sql); } catch {} }
 db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, call_id TEXT NOT NULL, kind TEXT NOT NULL, chat_id INTEGER NOT NULL, caller INTEGER NOT NULL, callee INTEGER, video INTEGER NOT NULL, status TEXT NOT NULL, joined TEXT NOT NULL DEFAULT '[]', started INTEGER NOT NULL, answered INTEGER, ended INTEGER);
@@ -186,7 +186,8 @@ const getUser = id => q1(`SELECT * FROM users WHERE id=?`, id);
 function msgOut(m) {
   if (!m) return null;
   return { id: m.id, chatId: m.chat_id, from: m.sender, kind: m.kind, text: m.deleted || m.e2e ? '' : m.text, enc: m.e2e && !m.deleted ? J(m.text, null) : null,
-    media: m.deleted ? null : mediaUrl(m.media), replyTo: m.reply_to, deleted: !!m.deleted, at: m.created_at,
+    media: m.deleted ? null : mediaUrl(m.media), replyTo: m.reply_to, deleted: !!m.deleted, at: m.created_at, fwd: m.fwd && !m.deleted ? true : undefined,
+    reacts: m.deleted ? undefined : (r => r.length ? r : undefined)(qa(`SELECT user_id u, emo e FROM reactions WHERE msg_id=? ORDER BY at`, m.id)),
     ...(m.once ? { once: true, opened: qa(`SELECT user_id FROM once_views WHERE msg_id=?`, m.id).map(r => r.user_id) } : {}) };
 }
 // Un message à vue unique déjà ouvert ne renvoie plus son contenu à celui qui l'a ouvert (ni à l'expéditeur).
@@ -196,12 +197,14 @@ function msgFor(m, uid) {
   return o;
 }
 function chatOut(c, me) {
-  const mem = qa(`SELECT m.user_id, m.last_read, m.admin, m.hidden, m.fav FROM members m WHERE m.chat_id=?`, c.id);
+  const mem = qa(`SELECT m.user_id, m.last_read, m.admin, m.hidden, m.fav, m.pinned, m.unread_mark, m.cleared FROM members m WHERE m.chat_id=?`, c.id);
   const mine = mem.find(x => x.user_id === me);
-  const last = q1(`SELECT * FROM messages WHERE chat_id=? AND id NOT IN (SELECT msg_id FROM msg_hidden WHERE user_id=?) ORDER BY id DESC LIMIT 1`, c.id, me);
-  const unread = q1(`SELECT COUNT(*) n FROM messages WHERE chat_id=? AND id>? AND (sender IS NULL OR sender<>?) AND id NOT IN (SELECT msg_id FROM msg_hidden WHERE user_id=?)`, c.id, mine ? mine.last_read : 0, me, me).n;
+  const cl = mine ? mine.cleared : 0;
+  const last = q1(`SELECT * FROM messages WHERE chat_id=? AND id>? AND id NOT IN (SELECT msg_id FROM msg_hidden WHERE user_id=?) ORDER BY id DESC LIMIT 1`, c.id, cl, me);
+  const unread = q1(`SELECT COUNT(*) n FROM messages WHERE chat_id=? AND id>? AND (sender IS NULL OR sender<>?) AND id NOT IN (SELECT msg_id FROM msg_hidden WHERE user_id=?)`, c.id, Math.max(cl, mine ? mine.last_read : 0), me, me).n;
   const others = mem.filter(x => x.user_id !== me);
-  const out = { id: c.id, type: c.type, name: c.name, createdAt: c.created_at, unread, last: msgOut(last), hidden: !!(mine && mine.hidden), fav: !!(mine && mine.fav),
+  const out = { id: c.id, type: c.type, name: c.name, createdAt: c.created_at, unread, last: msgOut(last), hidden: !!(mine && mine.hidden), fav: !!(mine && mine.fav), pinned: mine && mine.pinned ? mine.pinned : 0, marked: !!(mine && mine.unread_mark) && !unread,
+    pinMsg: c.pinned_msg ? (pm => pm && !pm.deleted && pm.id > cl ? msgOut(pm) : null)(q1(`SELECT * FROM messages WHERE id=?`, c.pinned_msg)) : null,
     // Un membre « hors ligne » ne révèle pas qu'il a lu : ses coches restent grises chez les autres.
     members: mem.map(x => ({ id: x.user_id, lastRead: x.user_id !== me && availOf(x.user_id) === 'off' ? 0 : x.last_read, admin: !!x.admin })),
     users: Object.fromEntries(mem.map(x => [x.user_id, userCard(getUser(x.user_id), me)])) };
@@ -838,7 +841,8 @@ R('POST', /^\/api\/chats\/(\d+)\/leave$/, async ({ me, m }) => {
 });
 R('GET', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, url }) => {
   const c = chatFor(me, +m[1]), before = +url.searchParams.get('before') || 9e15;
-  const rows = qa(`SELECT * FROM messages WHERE chat_id=? AND id<? AND id NOT IN (SELECT msg_id FROM msg_hidden WHERE user_id=?) ORDER BY id DESC LIMIT 60`, c.id, before, me.id).reverse();
+  const cl = q1(`SELECT cleared FROM members WHERE chat_id=? AND user_id=?`, c.id, me.id)?.cleared || 0;
+  const rows = qa(`SELECT * FROM messages WHERE chat_id=? AND id<? AND id>? AND id NOT IN (SELECT msg_id FROM msg_hidden WHERE user_id=?) ORDER BY id DESC LIMIT 60`, c.id, before, cl, me.id).reverse();
   return { messages: rows.map(r => msgFor(r, me.id)), more: rows.length === 60 };
 });
 R('POST', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, body }) => {
@@ -858,7 +862,7 @@ R('POST', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, body }) => {
   if (body.media) { const md = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.media), me.id); if (!md) E(400, 'Photo introuvable.'); media = md.id; }
   if (!text && !media) E(400, 'Message vide.');
   const reply = body.replyTo && q1(`SELECT id FROM messages WHERE id=? AND chat_id=?`, +body.replyTo, c.id) ? +body.replyTo : null;
-  const id = Number(run(`INSERT INTO messages(chat_id,sender,kind,text,media,reply_to,e2e,once,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, c.id, me.id, media ? (e2e && ['audio', 'video'].includes(body.kind) ? body.kind : 'image') : 'text', text || null, media, body.once ? null : reply, e2e, body.once ? 1 : 0, now()).lastInsertRowid);
+  const id = Number(run(`INSERT INTO messages(chat_id,sender,kind,text,media,reply_to,e2e,once,fwd,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, c.id, me.id, media ? (e2e && ['audio', 'video'].includes(body.kind) ? body.kind : 'image') : (e2e && body.kind === 'loc' ? 'loc' : 'text'), text || null, media, body.once ? null : reply, e2e, body.once ? 1 : 0, body.fwd && !body.once ? 1 : 0, now()).lastInsertRowid);
   if (media) run(`UPDATE media SET scope='chat', ref=? WHERE id=?`, c.id, media);
   run(`UPDATE members SET last_read=? WHERE chat_id=? AND user_id=?`, id, c.id, me.id);
   const msg = msgOut(q1(`SELECT * FROM messages WHERE id=?`, id));
@@ -866,18 +870,48 @@ R('POST', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, body }) => {
   const hiddenFor = new Set(qa(`SELECT user_id FROM members WHERE chat_id=? AND hidden=1`, c.id).map(r => r.user_id));
   for (const uid of memberIds(c.id)) if (uid !== me.id) webPush(uid, hiddenFor.has(uid) ? { title: 'tam-tam', body: 'Nouveau message', tag: 'chat-p', url: '/' } : c.type === 'group'
     ? { title: c.name || 'Groupe', body: `${firstFor(me, uid)} : ${media ? (body.kind === 'video' ? '🎥 Vidéo' : body.kind === 'audio' ? '🎤 Vocal' : '📷 Photo') : 'nouveau message'}`, tag: 'chat-' + c.id, url: '/?chat=' + c.id }
-    : { title: nameFor(me, uid), body: media ? (body.kind === 'video' ? '🎥 Vidéo' : body.kind === 'audio' ? '🎤 Vocal' : '📷 Photo') : 'Nouveau message', tag: 'chat-' + c.id, url: '/?chat=' + c.id });
+    : { title: nameFor(me, uid), body: body.kind === 'loc' ? '📍 Position' : media ? (body.kind === 'video' ? '🎥 Vidéo' : body.kind === 'audio' ? '🎤 Vocal' : '📷 Photo') : 'Nouveau message', tag: 'chat-' + c.id, url: '/?chat=' + c.id });
   return { msg };
 });
 R('POST', /^\/api\/chats\/(\d+)\/read$/, async ({ me, m, body }) => {
   const c = chatFor(me, +m[1]), up = Math.max(0, +body.upTo || 0);
   const mx = q1(`SELECT MAX(id) x FROM messages WHERE chat_id=?`, c.id).x || 0, v = Math.min(up, mx);
-  run(`UPDATE members SET last_read=MAX(last_read,?) WHERE chat_id=? AND user_id=?`, v, c.id, me.id);
+  run(`UPDATE members SET last_read=MAX(last_read,?), unread_mark=0 WHERE chat_id=? AND user_id=?`, v, c.id, me.id);
   pushMany(me.avail === 'off' ? [me.id] : memberIds(c.id), { t: 'read', chatId: c.id, user: me.id, upTo: v });
   return { ok: true };
 });
 R('POST', /^\/api\/chats\/(\d+)\/typing$/, async ({ me, m }) => {
   const c = chatFor(me, +m[1]); pushMany(memberIds(c.id).filter(x => x !== me.id), { t: 'typing', chatId: c.id, user: me.id }); return { ok: true };
+});
+// Réaction : une émoticône par personne et par message (la même une seconde fois l'enlève).
+R('POST', /^\/api\/messages\/(\d+)\/react$/, async ({ me, m, body }) => {
+  const msg = q1(`SELECT * FROM messages WHERE id=?`, +m[1]); if (!msg || msg.deleted || msg.kind === 'sys') E(404, 'Message introuvable.'); const c = chatFor(me, msg.chat_id);
+  const e = String(body.emo || '').trim().slice(0, 16), cur = q1(`SELECT emo FROM reactions WHERE msg_id=? AND user_id=?`, msg.id, me.id);
+  if (!e || (cur && cur.emo === e)) run(`DELETE FROM reactions WHERE msg_id=? AND user_id=?`, msg.id, me.id);
+  else run(`INSERT INTO reactions(msg_id,user_id,emo,at) VALUES(?,?,?,?) ON CONFLICT(msg_id,user_id) DO UPDATE SET emo=excluded.emo, at=excluded.at`, msg.id, me.id, e, now());
+  pushMany(memberIds(c.id), { t: 'msg', msg: msgOut(q1(`SELECT * FROM messages WHERE id=?`, msg.id)), update: true }); return { ok: true };
+});
+// Message épinglé en haut de la discussion (un seul à la fois, visible par tous les membres).
+R('POST', /^\/api\/chats\/(\d+)\/pinmsg$/, async ({ me, m, body }) => {
+  const c = chatFor(me, +m[1]); let id = body.msgId ? +body.msgId : null;
+  if (id) { const msg = q1(`SELECT * FROM messages WHERE id=? AND chat_id=?`, id, c.id); if (!msg || msg.deleted || msg.once || msg.kind === 'sys') E(400, 'Ce message ne peut pas être épinglé.'); }
+  run(`UPDATE chats SET pinned_msg=? WHERE id=?`, id, c.id);
+  sysMsg(c.id, id ? `📌 ${nameInChat(me, c)} a épinglé un message` : `${nameInChat(me, c)} a retiré le message épinglé`);
+  pushMany(memberIds(c.id), { t: 'chats' }); return { ok: true };
+});
+// Réglages de la discussion propres à chacun : épinglée en haut (4 au plus), non lue, effacée.
+R('POST', /^\/api\/chats\/(\d+)\/mine$/, async ({ me, m, body }) => {
+  const c = chatFor(me, +m[1]);
+  if (body.pin != null) {
+    if (body.pin && q1(`SELECT COUNT(*) n FROM members WHERE user_id=? AND pinned>0 AND chat_id<>?`, me.id, c.id).n >= 4) E(400, 'Vous avez déjà 4 discussions épinglées. Retirez-en une d’abord.');
+    run(`UPDATE members SET pinned=? WHERE chat_id=? AND user_id=?`, body.pin ? now() : 0, c.id, me.id);
+  }
+  if (body.unread != null) {
+    if (body.unread) run(`UPDATE members SET unread_mark=1 WHERE chat_id=? AND user_id=?`, c.id, me.id);
+    else { const mx = q1(`SELECT MAX(id) x FROM messages WHERE chat_id=?`, c.id).x || 0; run(`UPDATE members SET unread_mark=0, last_read=MAX(last_read,?) WHERE chat_id=? AND user_id=?`, mx, c.id, me.id); pushMany(me.avail === 'off' ? [me.id] : memberIds(c.id), { t: 'read', chatId: c.id, user: me.id, upTo: mx }); }
+  }
+  if (body.clear) { const mx = q1(`SELECT MAX(id) x FROM messages WHERE chat_id=?`, c.id).x || 0; run(`UPDATE members SET cleared=?, last_read=MAX(last_read,?), pinned=0, unread_mark=0 WHERE chat_id=? AND user_id=?`, mx, mx, c.id, me.id); }
+  push(me.id, { t: 'chats' }); return { chat: chatOut(c, me.id) };
 });
 // Supprimer pour moi : le message disparaît seulement de mon côté, à tout moment.
 R('POST', /^\/api\/messages\/(\d+)\/hide$/, async ({ me, m }) => {
@@ -1279,7 +1313,7 @@ R('GET', /^\/api\/stream$/, async ({ me, req, res }) => {
 });
 
 /* ---------- serveur ---------- */
-const SEC = { ...(secure ? { 'Strict-Transport-Security': 'max-age=31536000' } : {}), 'Permissions-Policy': 'geolocation=(), payment=()', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'X-Frame-Options': 'DENY',
+const SEC = { ...(secure ? { 'Strict-Transport-Security': 'max-age=31536000' } : {}), 'Permissions-Policy': 'geolocation=(self), payment=()', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'X-Frame-Options': 'DENY',
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" };
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, BASE_URL), p = url.pathname;

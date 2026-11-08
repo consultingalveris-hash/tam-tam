@@ -214,7 +214,7 @@ function onEvent(ev) {
   else if (ev.t === 'read') { const c = S.chats.get(ev.chatId); if (c) { const m = c.members.find(x => x.id === ev.user); if (m) m.lastRead = Math.max(m.lastRead, ev.upTo); if (S.chatId === ev.chatId) renderMessages(true); if (S.tab === 'chats') renderBody(); } }
   else if (ev.t === 'typing') { const k = ev.chatId; if (Date.now() - (S.lastFrom.get(k + ':' + ev.user) || 0) < 2500) return; S.typing.set(k, {user: ev.user, until: Date.now() + 4000}); refreshTyping(k); setTimeout(() => refreshTyping(k), 4100); }
   else if (ev.t === 'contacts') { loadContacts().then(() => { renderTabs(); if (S.tab !== 'chats') renderBody(); if (document.getElementById('addSheet') && typeof Add !== 'undefined') Add.loadPeople(); }); loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }); }
-  else if (ev.t === 'chats') loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) renderMessages(true); });
+  else if (ev.t === 'chats') loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) { renderPin(); renderMessages(true); } });
   else if (ev.t === 'statuses') loadStatuses().then(renderStories);
   else if (ev.t === 'presence') { const u = S.users.get(ev.id); if (u) { u.online = ev.online; u.busy = ev.busy; u.lastSeen = ev.lastSeen; } if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }
   else if (ev.t === 'read' && ev.user === S.me.id) Device.badge();
@@ -232,10 +232,10 @@ async function reveal(m) {
   const r = await E2E.open(m.enc, S.me.id);
   if (r.err === 'absent') { m.text = '🔒 Message chiffré avant votre arrivée, ou pour une ancienne clé'; m.locked = true; }
   else if (r.err) { m.text = '🔒 Message illisible sur cet appareil'; m.locked = true; }
-  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; }
+  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; if (r.payload.loc) m.loc = r.payload.loc; }
   return m;
 }
-async function loadChats() { const r = await api('/api/chats'); const map = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); await reveal(c.last); map.set(c.id, c); } S.chats = map; }
+async function loadChats() { const r = await api('/api/chats'); const map = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); await reveal(c.last); if (c.pinMsg) await reveal(c.pinMsg); map.set(c.id, c); } S.chats = map; }
 async function loadContacts() {
   const r = await api('/api/contacts'); S.contacts = r;
   await Promise.all(r.contacts.filter(u => u.telEnv || u.privEnv).map(u => PP.reveal(u).catch(() => {})));
@@ -301,7 +301,7 @@ function renderModal(first) {
 const chatTitle = c => c.type === 'group' ? c.name : uOf(c.peer).name;
 function snippet(m) {
   if (!m) return 'Aucun message';
-  if (m.deleted) return 'Message supprimé'; if (m.kind === 'sys') return m.text; if (m.once) return m.kind === 'audio' ? '① Vocal à vue unique' : m.kind === 'video' ? '① Vidéo à vue unique' : m.media ? '① Photo à vue unique' : '① Message à vue unique'; if (m.kind === 'audio') return '🎤 Message vocal'; if (m.kind === 'video') return '🎥 Vidéo' + (m.text ? ' · ' + m.text : ''); if (m.locked) return m.text;
+  if (m.deleted) return 'Message supprimé'; if (m.kind === 'sys') return m.text; if (m.once) return m.kind === 'audio' ? '① Vocal à vue unique' : m.kind === 'video' ? '① Vidéo à vue unique' : m.media ? '① Photo à vue unique' : '① Message à vue unique'; if (m.kind === 'audio') return '🎤 Message vocal'; if (m.kind === 'loc') return '📍 Position'; if (m.kind === 'video') return '🎥 Vidéo' + (m.text ? ' · ' + m.text : ''); if (m.locked) return m.text;
   return (m.media ? '📷 Photo' + (m.text ? ' · ' : '') : '') + (m.text || '');
 }
 function readState(c, m) {
@@ -327,21 +327,25 @@ function chatRows() {
   }
   if (S.showHidden) list.sort((a, b) => (b.hidden ? 1 : 0) - (a.hidden ? 1 : 0));
   list.sort((a, b) => (b.last?.at || b.createdAt) - (a.last?.at || a.createdAt));
+  list.sort((a, b) => (b.pinned || 0) - (a.pinned || 0));
+  const selBar = S.sel ? `<div class="selbar"><button class="ib" type="button" data-act="selOff" aria-label="Annuler la sélection">${I.close}</button><b>${S.sel.size} sélectionnée${S.sel.size > 1 ? 's' : ''}</b><span class="grow"></span><button class="btn sm ghost" type="button" data-act="selDo" data-k="pin" title="Épingler" aria-label="Épingler">📌</button><button class="btn sm ghost" type="button" data-act="selDo" data-k="read">Lu</button><button class="btn sm ghost" type="button" data-act="selDo" data-k="unread">Non lu</button><button class="ib sel-del" type="button" data-act="selDo" data-k="clear" aria-label="Supprimer" title="Supprimer">${I.trash}</button></div>` : '';
   const privBar = S.showHidden ? `<div class="privbar">${I.lock}<span>Discussions privées affichées</span><button class="btn sm ghost" type="button" data-act="privHide">Masquer</button></div>` : '';
   if (!list.length && fl !== 'all' && !q) return privBar + `<p class="empty">${{unread: 'Aucune discussion non lue.', group: 'Aucun groupe. Créez-en un avec le bouton turquoise.'}[fl]}</p>`;
   if (!list.length) return privBar + (q ? `<p class="empty">Aucune discussion ne correspond.</p>`
     : `<div class="empty"><p>Aucune discussion pour l’instant.</p><p>Invitez vos proches depuis l’onglet <b>Contacts</b>, puis appuyez sur le bouton turquoise pour leur écrire.</p><button class="btn" type="button" data-act="tab" data-t="contacts">${I.userplus}Inviter mes proches</button></div>`);
-  return privBar + list.map(c => {
+  return privBar + selBar + list.map(c => {
     const m = c.last, tu = typingIn(c.id), u = c.type === 'direct' ? uOf(c.peer) : null;
     let prev = esc(snippet(m));
     if (hitMsg[c.id]) prev = Find.mark(hitMsg[c.id].text, q);
     if (tu) prev = `<span class="typing-t">${c.type === 'group' ? esc(first(uOf(tu).name)) + ' écrit…' : 'écrit…'}</span>`;
     else if (m && c.type === 'group' && m.from && m.kind !== 'sys') prev = esc(m.from === S.me.id ? 'Vous' : first(uOf(m.from).name)) + ' : ' + prev;
     const mine = m && m.from === S.me.id && !m.deleted && m.kind !== 'sys';
-    return `<button class="row${c.id === S.chatId ? ' active' : ''}" type="button" data-act="open" data-id="${c.id}">
-      ${c.type === 'group' ? grpAv(c) : avOn(u)}
-      <span class="row-name">${esc(chatTitle(c))}</span><span class="row-time${c.unread ? ' new' : ''}">${m ? listTime(m.at) : ''}</span>
-      <span class="row-prev">${mine && !tu ? tick(readState(c, m)) : ''}<span>${prev}</span>${c.unread ? `<span class="badge" style="margin-left:auto">${c.unread}</span>` : ''}</span></button>`;
+    const sel = S.sel && S.sel.has(c.id);
+    return `<button class="row chat-row${c.id === S.chatId && !S.sel ? ' active' : ''}${sel ? ' sel' : ''}" type="button" data-act="open" data-id="${c.id}"${S.sel ? ` aria-pressed="${!!sel}"` : ''}>
+      ${S.sel ? `<span class="selmark" aria-hidden="true">${sel ? '✓' : ''}</span>` : ''}${c.type === 'group' ? grpAv(c) : avOn(u)}
+      <span class="row-name">${esc(chatTitle(c))}</span><span class="row-time${c.unread || c.marked ? ' new' : ''}">${m ? listTime(m.at) : ''}</span>
+      <span class="row-prev">${mine && !tu ? tick(readState(c, m)) : ''}<span>${prev}</span><span class="row-flags">${c.pinned ? '<span class="pin-f" title="Épinglée">📌</span>' : ''}${c.unread ? `<span class="badge">${c.unread}</span>` : c.marked ? '<span class="badge dot" title="Marquée comme non lue"></span>' : ''}</span></span>
+      ${S.sel ? '' : `<span class="row-more" role="button" tabindex="-1" data-act="chatRowMenu" data-id="${c.id}" aria-label="Options de la discussion" title="Options">${I.chev}</span>`}</button>`;
   }).join('');
 }
 
@@ -401,7 +405,7 @@ async function profSheet(id, back) {
   const p = u.pub || {}, bd = p.bd && p.bm ? `${p.bd} ${MOIS[p.bm - 1]}` : '';
   sheet(`${back ? `<div class="sheet-head"><button class="ib back-b" type="button" data-act="profBack" aria-label="Retour à la liste">${I.back}</button><h2 style="flex:1">Profil</h2><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>` : head('Profil')}<div class="sheet-body"><div class="prof">${avatar(u, 'xl')}<b>${esc(u.name)}</b>${subH(u) ? `<span>${esc(subH(u))}</span>` : ''}${u.rel === 'contact' ? `<small>${presLabel(u).replace(/^./, x => x.toUpperCase())}</small>` : ''}${u.mutual ? `<small>${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun</small>` : ''}</div>
     ${dl(PUB_L.map(([k, l]) => [l, p[k]]).concat([['Anniversaire', bd]])) || '<p class="hint" style="text-align:center">Profil public encore vide.</p>'}
-    ${u.rel === 'contact' && u.pubkey ? `<p class="hint">${I.shield} Code de sécurité de ${esc(first(u.name))} : <b class="fp" id="peerFp">…</b></p>` : ''}
+    ${u.rel === 'contact' && u.pubkey ? `<details class="fp-box"><summary>${I.shield}Chiffrement de bout en bout · vérifier le code de sécurité</summary><p class="hint">Ce code n’est pas un secret : il sert seulement à vérifier, en le comparant de vive voix avec ${esc(first(u.name))}, que personne ne s’est glissé entre vous. S’il est identique sur vos deux téléphones, vos échanges sont bien protégés.</p><b class="fp" id="peerFp">…</b></details>` : ''}
     ${u.limTheirs ? `<p class="hint">${I.lock} Ajouté par code QR : vous voyez seulement son profil public.</p>` : ''}
     ${u.limMine ? `<div class="qrnote"><span>${I.lock} Contact ajouté avec votre code QR : ${esc(first(u.name))} ne voit pas votre profil privé (téléphone, adresse…).</span><button class="btn sm ghost" type="button" data-act="sharePriv" data-id="${u.id}">Lui montrer mon profil privé</button></div>` : ''}
     ${picsView(u.pics, 'Photos publiques')}
@@ -437,9 +441,13 @@ function renderMain() {
   const main = $('#main'); if (!main) return;
   const c = S.chats.get(S.chatId);
   if (!c) { main.innerHTML = `<div class="chat-empty">${BRAND('empty')}<span>Choisissez une discussion, ou invitez vos proches depuis l’onglet Contacts.</span></div>`; return; }
-  main.innerHTML = `<header class="chat-head" id="chatHead"></header><div class="msgs${c.hidden ? ' nocopy' : ''}" id="msgs" tabindex="0" aria-label="Messages"></div><div id="replyBar"></div><div id="compose"></div>`;
-  renderChatHead(); renderComposer(); renderMessages();
+  main.innerHTML = `<header class="chat-head" id="chatHead"></header><div id="pinBar"></div><div class="msgs${c.hidden ? ' nocopy' : ''}" id="msgs" tabindex="0" aria-label="Messages"></div><div id="replyBar"></div><div id="compose"></div>`;
+  renderChatHead(); renderPin(); renderComposer(); renderMessages();
   $('#msgs').addEventListener('scroll', e => { if (e.target.scrollTop < 40 && S.more.get(S.chatId) && !S.loadingOld) { S.loadingOld = true; loadOlder().finally(() => { S.loadingOld = false; }); } });
+}
+function renderPin() {
+  const c = S.chats.get(S.chatId), el = $('#pinBar'); if (!c || !el) return; const m = c.pinMsg;
+  el.innerHTML = m ? `<div class="pinbar"><button type="button" class="pin-go" data-act="pinJump" data-id="${m.id}">📌<span><b>Message épinglé</b><small>${esc(snippet(m))}</small></span></button><button class="ib" type="button" data-act="pinMsgOff" aria-label="Retirer le message épinglé">${I.close}</button></div>` : '';
 }
 function renderChatHead() {
   const c = S.chats.get(S.chatId), h = $('#chatHead'); if (!c || !h) return;
@@ -460,7 +468,7 @@ function renderComposer() {
   }
   const trOn = !!(Tr.inL(c.id) || Tr.outL(c.id));
   el.innerHTML = `<form class="composer" data-form="send" autocomplete="off"><div class="inwrap">${Tr.st && Tr.st.on ? `<button class="ib tr-tog" type="button" data-act="trAuto" aria-pressed="${trOn}" aria-label="Langues de cette discussion" title="Langues de traduction de cette discussion">${I.translate}${Tr.label(c.id)}</button>` : ''}${Emoji.btn('#msgIn')}<textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
-    <button class="ib" type="button" data-act="attach" aria-label="Joindre une photo ou une vidéo">${I.clip}</button><button class="ib" type="button" data-act="camera" aria-label="Prendre une photo ou une vidéo">${I.camera}</button><button class="ib once-tog" type="button" data-act="onceTog" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique : le message ne peut être ouvert qu’une fois"><span class="one" aria-hidden="true">1</span></button></div>
+    <button class="ib" type="button" data-act="attach" aria-label="Joindre une photo, une vidéo ou ma position">${I.clip}</button><button class="ib" type="button" data-act="camera" aria-label="Prendre une photo ou une vidéo">${I.camera}</button><button class="ib once-tog" type="button" data-act="onceTog" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique : le message ne peut être ouvert qu’une fois"><span class="one" aria-hidden="true">1</span></button></div>
     <input type="file" id="fileIn" accept="image/*,video/*" hidden><input type="file" id="camIn" accept="image/*" capture="environment" hidden>
     <button class="send" id="sendBtn" type="button" data-act="recStart" aria-label="Enregistrer un message vocal">${I.mic}</button></form>`;
 }
@@ -533,11 +541,12 @@ function renderMessages(keep) {
     if (m.deleted) body = `<span class="txt gone">${out ? 'Vous avez supprimé ce message' : 'Ce message a été supprimé'}</span>`;
     else if (m.once) body = onceBubble(m, out);
     else if (m.kind === 'video') body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + `<div class="vidb"><video class="photo vid" data-vid="${m.id}" playsinline controls preload="metadata" controlslist="nodownload"${E2E.vids.has(m.id) ? ` src="${E2E.vids.get(m.id)}"` : ''}></video>${m.dur ? `<small class="vid-d">${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>` + (m.text ? Tr.txt(m) : '');
+    else if (m.kind === 'loc') body = locHtml(m);
     else if (m.kind === 'audio') body = `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
     else body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? Tr.txt(m) : '');
     h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble">
-      ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${body}<span class="meta">${hm(m.at)}${out && !m.deleted ? tick(readState(c, m)) : ''}</span>
-      ${m.deleted ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message">${I.chev}</button>`}</div></div>`;
+      ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${m.fwd ? `<span class="fwd">${FWD_IC}Transféré</span>` : ''}${body}<span class="meta">${hm(m.at)}${out && !m.deleted ? tick(readState(c, m)) : ''}</span>
+      ${m.deleted ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message" title="Options : réagir, répondre, transférer, épingler…">${I.chev}</button>`}</div>${reactsHtml(m)}</div>`;
   }
   const tu = typingIn(c.id); if (tu) h += `<div class="msg in first typing-b"><div class="bubble" aria-label="En train d’écrire"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
   box.innerHTML = h;
@@ -736,6 +745,21 @@ function chatMenu() {
     <button type="button" class="danger" data-act="reportAsk" data-id="${u ? u.id : ''}" data-chat="${c.id}">${I.flag}Signaler</button>
     ${u ? `<button type="button" class="danger" data-act="${blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${I.block}${blocked ? 'Débloquer ' : 'Bloquer '}${esc(first(u.name))}</button>` : ''}</div>`, 'Options');
 }
+function chatListMenu(id) {
+  const c = S.chats.get(id); if (!c) return;
+  const u = c.type === 'direct' ? uOf(c.peer) : null, blocked = u && (S.me.blocked || []).some(b => b.id === u.id), unread = c.unread || c.marked;
+  sheet(`${head(esc(chatTitle(c)))}<div class="menu">
+    <button type="button" data-act="chatPin" data-id="${id}"><span class="pin-ic" aria-hidden="true">📌</span>${c.pinned ? 'Ne plus épingler' : 'Épingler en haut (4 au maximum)'}</button>
+    <button type="button" data-act="chatRead" data-id="${id}" data-v="${unread ? '' : '1'}">${I.eye}${unread ? 'Marquer comme lue' : 'Marquer comme non lue'}</button>
+    <button type="button" data-act="selStart" data-id="${id}">${I.check || '✓'}Sélectionner</button>
+    <button type="button" data-act="chatPriv" data-id="${id}">${I.lock}${c.hidden ? 'Ne plus rendre privée' : 'Rendre la discussion privée'}</button>
+    ${u ? `<button type="button" class="danger" data-act="${blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${I.block}${blocked ? 'Débloquer ' : 'Bloquer '}${esc(first(u.name))}</button>` : ''}
+    <button type="button" class="danger" data-act="chatClearAsk" data-id="${id}">${I.trash}Supprimer la discussion</button></div>`, 'Options');
+}
+async function chatMine(id, body, quiet) {
+  const r = await api(`/api/chats/${id}/mine`, body); const c = S.chats.get(id); if (c) { await reveal(r.chat.last); if (r.chat.pinMsg) await reveal(r.chat.pinMsg); S.chats.set(id, Object.assign(c, r.chat)); }
+  if (!quiet) { renderTabs(); if (S.tab === 'chats') renderBody(); }
+}
 function groupInfo() {
   const c = S.chats.get(S.chatId); if (!c) return;
   sheet(`${head(esc(c.name))}<div class="sheet-body"><div class="prof">${grpAv(c, 'lg')}<b>${esc(c.name)}</b><span>Groupe · ${c.members.length} membres</span></div></div>
@@ -752,12 +776,70 @@ function reportSheet(userId, chatId) {
     <p class="err" id="rrErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="submit">Signaler</button></div></div></form>`, 'Signaler');
 }
 const DEL_ALL_MAX = 3600_000;
+const FWD_IC = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l6 6-6 6"/><path d="M21 11H10a6 6 0 0 0-6 6v2"/></svg>';
+const QUICK = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+function reactsHtml(m) {
+  if (!m.reacts || !m.reacts.length) return '';
+  const g = {}; for (const r of m.reacts) (g[r.e] = g[r.e] || []).push(r.u);
+  const mine = m.reacts.some(r => r.u === S.me.id);
+  return `<button type="button" class="reacts${mine ? ' mine' : ''}" data-act="reactWho" data-id="${m.id}" aria-label="Réactions">${Object.entries(g).map(([e, us]) => `<span>${e}${us.length > 1 ? `<small>${us.length}</small>` : ''}</span>`).join('')}</button>`;
+}
+function locHtml(m) {
+  const l = m.loc || {}; if (l.la == null) return '<span class="txt gone">📍 Position illisible</span>';
+  const q = `${(+l.la).toFixed(6)},${(+l.lo).toFixed(6)}`;
+  return `<a class="locb" href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener"><span class="loc-pin" aria-hidden="true">📍</span><span><b>Position${m.from === S.me.id ? ' envoyée' : ''}</b><small>${l.acc ? `Précision : environ ${Math.round(l.acc)} m · ` : ''}Touchez pour ouvrir la carte</small></span></a>`;
+}
+async function msgBytes(m) {
+  const map = m.kind === 'video' ? E2E.vids : m.kind === 'audio' ? E2E.auds : E2E.imgs;
+  if (map.has(m.id)) return (await fetch(map.get(m.id))).arrayBuffer();
+  if (!m._key || !m.miv) throw new Error('Ce fichier n’est pas encore chargé. Réessayez dans un instant.');
+  const r = await fetch(m.media, {credentials: 'same-origin'}); return E2E.decBytes(m._key, m.miv, await r.arrayBuffer());
+}
+// Transférer : le message est déchiffré sur l'appareil puis rechiffré pour chaque discussion choisie.
+async function fwdSend(m, ids) {
+  const payload = {t: m.text || ''}; if (m.loc) payload.loc = m.loc; if (m.amime) payload.mime = m.amime; if (m.dur) payload.dur = m.dur;
+  const bytes = m.media ? await msgBytes(m) : undefined, kind = m.kind === 'video' || m.kind === 'audio' || m.kind === 'loc' ? m.kind : undefined;
+  for (const id of ids) {
+    const c = S.chats.get(id); if (!c) continue;
+    const sealed = await E2E.seal(payload, recipients(c), bytes);
+    let media = null; if (sealed.blob) media = (await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'})).id;
+    const r = await api(`/api/chats/${id}/messages`, {enc: sealed.env, media, kind, fwd: true}); onMsg(r.msg);
+  }
+}
+function fwdSheet(id) {
+  const m = (S.msgs.get(S.chatId) || []).find(x => x.id === id); if (!m) return; S.fwd = {m, sel: new Set()};
+  const list = [...S.chats.values()].filter(c => !c.blocked && !(c.type === 'direct' && !c.peer)).sort((a, b) => (b.last?.at || 0) - (a.last?.at || 0));
+  sheet(`${head('Transférer à…')}<div class="sheet-body" style="padding-bottom:0"><p class="hint">Choisissez jusqu’à 5 discussions. Le message portera la mention « Transféré ».</p></div>
+    <div class="sheet-scroll">${list.map(c => `<label class="row fwd-row">${c.type === 'group' ? grpAv(c, 'sm') : avOn(uOf(c.peer))}<span class="row-name">${esc(chatTitle(c))}</span><input type="checkbox" data-fwd="${c.id}" aria-label="Choisir ${esc(chatTitle(c))}"></label>`).join('')}</div>
+    <div class="sheet-body"><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="button" data-act="fwdGo" id="fwdGo" disabled>Transférer</button></div></div>`, 'Transférer');
+}
+document.addEventListener('change', e => {
+  const b = e.target.closest && e.target.closest('[data-fwd]'); if (!b || !S.fwd) return;
+  const id = +b.dataset.fwd; if (b.checked) { if (S.fwd.sel.size >= 5) { b.checked = false; return toast('5 discussions au maximum.'); } S.fwd.sel.add(id); } else S.fwd.sel.delete(id);
+  const g = $('#fwdGo'); if (g) { g.disabled = !S.fwd.sel.size; g.textContent = S.fwd.sel.size > 1 ? `Transférer (${S.fwd.sel.size})` : 'Transférer'; }
+});
+function moreEmoji(id) {
+  const list = (EMO[1][2].slice(0, 40)).concat(EMO[3][2].slice(0, 16), EMO[2][2].slice(0, 24));
+  sheet(`${head('Réagir')}<div class="sheet-body"><div class="emo-grid react-grid">${list.map(e => `<button type="button" data-act="react" data-id="${id}" data-e="${e}">${e}</button>`).join('')}</div></div>`, 'Réagir');
+}
+async function sendLoc() {
+  if (!navigator.geolocation) return toast('Cet appareil ne permet pas de partager la position.');
+  closeLayer(); toast('Recherche de votre position…');
+  navigator.geolocation.getCurrentPosition(p => {
+    S.locNow = {la: +p.coords.latitude.toFixed(6), lo: +p.coords.longitude.toFixed(6), acc: Math.round(p.coords.accuracy || 0)};
+    const c = S.chats.get(S.chatId); if (!c) return;
+    confirmSheet('Envoyer votre position actuelle ?', `${esc(chatTitle(c))} verra l’endroit où vous êtes en ce moment${S.locNow.acc ? ` (précision : environ ${S.locNow.acc} m)` : ''}. La position est chiffrée de bout en bout et n’est pas suivie après l’envoi.`, 'Envoyer', 'locGo', c.id);
+  }, err => toast(err.code === 1 ? 'Tam-Tam n’a pas accès à votre position. Autorisez la localisation dans les réglages de votre téléphone ou de votre navigateur.' : 'Position introuvable pour l’instant. Vérifiez que la localisation (GPS) est activée, puis réessayez.'),
+  {enableHighAccuracy: true, timeout: 20000, maximumAge: 30000});
+}
 function msgHide(chatId, id) { const l = S.msgs.get(chatId); if (l) { const i = l.findIndex(x => x.id === id); if (i >= 0) l.splice(i, 1); } if (S.chatId === chatId) renderMessages(true); loadChats().then(() => { if (S.tab === 'chats') renderBody(); }).catch(() => {}); }
 function msgMenu(id) {
   const list = S.msgs.get(S.chatId) || [], m = list.find(x => x.id === id); if (!m) return;
   if (m.deleted) return sheet(`<div class="menu" style="padding-top:12px"><button type="button" class="danger" data-act="hideAsk" data-id="${id}">${I.trash}Supprimer pour moi</button></div>`, 'Message');
-  const canAll = m.from === S.me.id && Date.now() - m.at < DEL_ALL_MAX;
-  sheet(`<div class="menu" style="padding-top:12px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once && !m.locked && m.from !== S.me.id && Tr.st && Tr.st.on && S.me.trConsent ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}${Tr.shown.has(id) ? 'Voir la traduction' : 'Traduire'}</button>` : ''}${m.text && !m.once && !(S.chats.get(S.chatId) || {}).hidden ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
+  const canAll = m.from === S.me.id && Date.now() - m.at < DEL_ALL_MAX, c = S.chats.get(S.chatId) || {}, myR = (m.reacts || []).find(r => r.u === S.me.id);
+  const canFwd = !m.once && !m.locked && !c.hidden && m.kind !== 'sys', pinned = c.pinMsg && c.pinMsg.id === m.id;
+  sheet(`<div class="react-bar" role="group" aria-label="Réagir">${QUICK.map(e => `<button type="button" data-act="react" data-id="${id}" data-e="${e}" aria-pressed="${!!myR && myR.e === e}">${e}</button>`).join('')}<button type="button" class="more" data-act="reactMore" data-id="${id}" aria-label="Plus d’émoticônes">${I.plus}</button></div><div class="menu" style="padding-top:4px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once && !m.locked && m.from !== S.me.id && Tr.st && Tr.st.on && S.me.trConsent ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}${Tr.shown.has(id) ? 'Voir la traduction' : 'Traduire'}</button>` : ''}${m.text && !m.once && !(S.chats.get(S.chatId) || {}).hidden ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
+    ${canFwd ? `<button type="button" data-act="fwd" data-id="${id}">${FWD_IC}Transférer</button>` : ''}${!m.once ? `<button type="button" data-act="${pinned ? 'pinMsgOff' : 'pinMsg'}" data-id="${id}"><span class="pin-ic" aria-hidden="true">📌</span>${pinned ? 'Retirer l’épingle' : 'Épingler en haut de la discussion'}</button>` : ''}
     <button type="button" class="danger" data-act="hideAsk" data-id="${id}">${I.trash}Supprimer pour moi</button>
     ${canAll ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde</button>` : m.from === S.me.id ? '<p class="hint" style="padding:4px 16px 10px">Plus d’une heure après l’envoi, un message ne peut plus être supprimé pour tout le monde.</p>' : ''}</div>`, 'Message');
 }
@@ -1218,7 +1300,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.45</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.46</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1270,7 +1352,41 @@ const ACT = {
   },
   tab(d) { if (d.t === 'settings' && isDesk()) { closeLayer(); return pmOpen('settings'); } if (d.t === 'calls') Calls.log = null; S.tab = d.t; closeLayer(); renderAll(); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
   fab() { newChatSheet(); },
-  open(d) { openChat(+d.id); },
+  open(d) { if (S.sel) { const id = +d.id; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); if (!S.sel.size) S.sel = null; return renderBody(); } openChat(+d.id); },
+  chatRowMenu(d) { chatListMenu(+d.id); },
+  async chatPin(d) { closeLayer(); const c = S.chats.get(+d.id); try { await chatMine(+d.id, {pin: !c.pinned}); toast(c.pinned ? 'Discussion épinglée en haut' : 'Discussion désépinglée'); } catch (e) { toast(e.message); } },
+  async chatRead(d) { closeLayer(); try { await chatMine(+d.id, {unread: !!d.v}); } catch (e) { toast(e.message); } },
+  chatPriv(d) { closeLayer(); Priv.toggle(+d.id); },
+  chatClearAsk(d) { confirmSheet('Supprimer la discussion ?', 'Tous les messages disparaîtront de votre côté seulement. Les autres membres les garderont. Si quelqu’un vous écrit à nouveau, la discussion réapparaîtra.', 'Supprimer', 'chatClearYes', d.id); },
+  async chatClearYes(d) { closeLayer(); const id = +d.id; try { await chatMine(id, {clear: true}, true); S.msgs.delete(id); if (S.chatId === id) ACT.back(); renderTabs(); renderBody(); toast('Discussion supprimée de votre côté'); } catch (e) { toast(e.message); } },
+  selStart(d) { closeLayer(); S.sel = new Set([+d.id]); renderBody(); },
+  selOff() { S.sel = null; renderBody(); },
+  async selDo(d) {
+    const ids = [...(S.sel || [])]; if (!ids.length) return;
+    if (d.k === 'clear') return confirmSheet(`Supprimer ${ids.length > 1 ? `ces ${ids.length} discussions` : 'cette discussion'} ?`, 'Les messages disparaîtront de votre côté seulement.', 'Supprimer', 'selClearYes', '');
+    const allPinned = ids.every(i => S.chats.get(i)?.pinned);
+    try { for (const i of ids) await chatMine(i, d.k === 'pin' ? {pin: !allPinned} : {unread: d.k === 'unread'}, true); } catch (e) { toast(e.message); }
+    S.sel = null; renderTabs(); renderBody();
+  },
+  async selClearYes() { closeLayer(); const ids = [...(S.sel || [])]; try { for (const i of ids) { await chatMine(i, {clear: true}, true); S.msgs.delete(i); if (S.chatId === i) ACT.back(); } toast('Discussions supprimées de votre côté'); } catch (e) { toast(e.message); } S.sel = null; renderTabs(); renderBody(); },
+  async react(d) { closeLayer(); try { await api(`/api/messages/${d.id}/react`, {emo: d.e}); } catch (e) { toast(e.message); } },
+  reactMore(d) { moreEmoji(+d.id); },
+  reactWho(d) {
+    const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +d.id); if (!m || !m.reacts) return;
+    sheet(`${head('Réactions')}<div class="sheet-scroll">${m.reacts.map(r => { const u = r.u === S.me.id ? S.me : uOf(r.u); return `<div class="row">${avOn(u)}<span class="row-name">${esc(r.u === S.me.id ? 'Vous' : u.name)}</span><span class="row-end react-e">${r.e}</span>${r.u === S.me.id ? `<span class="row-prev"><button class="linkless" type="button" data-act="react" data-id="${m.id}" data-e="${r.e}">Touchez pour retirer</button></span>` : ''}</div>`; }).join('')}</div>`, 'Réactions');
+  },
+  fwd(d) { fwdSheet(+d.id); },
+  async fwdGo() { const f = S.fwd; if (!f || !f.sel.size) return; const g = $('#fwdGo'); if (g) { g.disabled = true; g.textContent = 'Envoi…'; } try { await fwdSend(f.m, [...f.sel]); closeLayer(); toast(f.sel.size > 1 ? `Message transféré à ${f.sel.size} discussions` : 'Message transféré'); } catch (e) { toast(e.message); if (g) { g.disabled = false; g.textContent = 'Transférer'; } } },
+  async pinMsg(d) { closeLayer(); try { await api(`/api/chats/${S.chatId}/pinmsg`, {msgId: +d.id}); } catch (e) { toast(e.message); } },
+  async pinMsgOff() { closeLayer(); try { await api(`/api/chats/${S.chatId}/pinmsg`, {msgId: null}); } catch (e) { toast(e.message); } },
+  pinJump(d) { const el = document.querySelector(`.msg[data-mid="${d.id}"]`); if (el) { el.scrollIntoView({block: 'center', behavior: 'smooth'}); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); } else toast('Ce message est plus ancien : faites défiler la discussion vers le haut.'); },
+  attachMenu() { sheet(`<div class="menu" style="padding-top:12px"><button type="button" data-act="attachPick">${I.image || I.clip}Photo ou vidéo</button><button type="button" data-act="locSend"><span class="pin-ic" aria-hidden="true">📍</span>Ma position actuelle</button></div>`, 'Joindre'); },
+  attachPick() { closeLayer(); $('#fileIn').click(); },
+  locSend() { sendLoc(); },
+  async locGo(d) {
+    closeLayer(); const c = S.chats.get(+d.id), l = S.locNow; if (!c || !l) return;
+    try { const sealed = await E2E.seal({t: '', loc: l}, recipients(c)); const r = await api(`/api/chats/${c.id}/messages`, {enc: sealed.env, kind: 'loc'}); onMsg(r.msg); toast('Position envoyée'); } catch (e) { toast(e.message); }
+  },
   back() { S.chatId = null; $('.app').dataset.view = 'list'; renderMain(); renderBody(); },
   async write(d) { closeLayer(); try { const r = await api('/api/chats/direct', {userId: +d.id}); keepUsers(Object.values(r.chat.users)); S.chats.set(r.chat.id, r.chat); S.tab = 'chats'; renderAll(); openChat(r.chat.id); } catch (e) { toast(e.message); } },
   close() { closeLayer(); },
@@ -1293,7 +1409,7 @@ const ACT = {
   groupAddOpen() { groupSheet(S.chats.get(S.chatId)); },
   leaveAsk() { confirmSheet('Quitter le groupe ?', 'Vous ne recevrez plus les messages de ce groupe.', 'Quitter', 'leaveYes'); },
   async leaveYes() { closeLayer(); try { await api(`/api/chats/${S.chatId}/leave`, {}); S.chats.delete(S.chatId); S.chatId = null; $('.app').dataset.view = 'list'; renderMain(); renderAll(); } catch (e) { toast(e.message); } },
-  attach() { $('#fileIn').click(); },
+  attach() { ACT.attachMenu(); },
   camera() { Cam.open(); },
   phCancel() { S.once = false; closeLayer(); renderComposer(); },
   trProv(d) { S.trProv = d.v; const el = $('#trBox'); if (el) el.outerHTML = trBox(); },
@@ -1538,12 +1654,19 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Enter' && !e.shiftKey && e.target.id === 'msgIn' && !e.isComposing && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); sendText(); }
   else if (S.sv && e.key === 'ArrowRight') svStep(1); else if (S.sv && e.key === 'ArrowLeft') svStep(-1);
 });
-document.addEventListener('contextmenu', e => { const m = e.target.closest('.msg[data-mid] .bubble'); if (!m || !S.me) return; e.preventDefault(); msgMenu(+m.parentNode.dataset.mid); });
-let pressT, pressXY = [0, 0];
-document.addEventListener('pointerdown', e => {
-  if (e.pointerType === 'mouse') return; const b = e.target.closest('.msg[data-mid] .bubble'); if (!b || e.target.closest('button,img')) return;
-  pressXY = [e.clientX, e.clientY]; clearTimeout(pressT); pressT = setTimeout(() => msgMenu(+b.parentNode.dataset.mid), 520);
+document.addEventListener('contextmenu', e => {
+  if (!S.me) return; const m = e.target.closest('.msg[data-mid] .bubble'); if (m) { e.preventDefault(); return msgMenu(+m.parentNode.dataset.mid); }
+  const r = e.target.closest('#body .chat-row'); if (r && !S.sel) { e.preventDefault(); chatListMenu(+r.dataset.id); }
 });
+let pressT, pressXY = [0, 0], pressFired = 0;
+document.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse') return;
+  const b = e.target.closest('.msg[data-mid] .bubble'), r = !b && e.target.closest('#body .chat-row');
+  if (b && !e.target.closest('button,a,video,audio')) { pressXY = [e.clientX, e.clientY]; clearTimeout(pressT); pressT = setTimeout(() => { pressFired = Date.now(); msgMenu(+b.parentNode.dataset.mid); }, 520); }
+  else if (r && !S.sel && !e.target.closest('.row-more')) { pressXY = [e.clientX, e.clientY]; clearTimeout(pressT); pressT = setTimeout(() => { pressFired = Date.now(); if (navigator.vibrate) navigator.vibrate(15); chatListMenu(+r.dataset.id); }, 520); }
+});
+// Après un appui long, le doigt relâché ne doit pas ouvrir la discussion ni la photo.
+document.addEventListener('click', e => { if (Date.now() - pressFired < 600) { e.preventDefault(); e.stopPropagation(); } }, true);
 document.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - pressXY[0], e.clientY - pressXY[1]) > 10) clearTimeout(pressT); }, true);
 ['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, () => clearTimeout(pressT), true));
 setInterval(() => { if (S.me && S.tab === 'chats') renderBody(); }, 60_000);

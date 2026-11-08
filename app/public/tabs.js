@@ -110,8 +110,8 @@ const Priv = {
     }, 450);
   },
   hide() { S.showHidden = false; const c = S.chatId && S.chats.get(S.chatId); if (c && c.hidden) ACT.back(); renderTabs(); renderBody(); },
-  async toggle() {
-    const c = S.chats.get(S.chatId); if (!c) return;
+  async toggle(id) {
+    const c = S.chats.get(id || S.chatId); if (!c) return;
     if (c.hidden) return this.set(c, false);
     if (!S.me.hasHideCode) return this.codeSheet(c);
     this.set(c, true);
