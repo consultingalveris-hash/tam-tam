@@ -854,3 +854,9 @@ body.in-cam{overflow:hidden}
 .hp-card h2{margin:0;font-size:1.2rem}.hp-card p{margin:0;line-height:1.45}.hp-logo{width:44px;height:44px;justify-self:center}
 .hp-ideas{display:flex;flex-wrap:wrap;gap:8px}.hp-ideas button{border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:99px;padding:7px 12px;font:inherit;cursor:pointer}
 .hp-ideas button:hover{border-color:var(--accent)}.hp-card .hint.bad{color:var(--danger)}
+
+/* statut en pause */
+.sv-paused{display:none;position:absolute;top:96px;left:50%;transform:translateX(-50%);background:rgb(0 0 0/.55);color:#fff;border-radius:99px;padding:4px 12px;font-size:.85rem;z-index:3;pointer-events:none}
+.sv.paused .sv-paused{display:block}
+.sv .sv-pp,.sv .sv-pp:hover,.sv .sv-pp:focus{background:rgb(255 255 255/.14);color:#fff}.sv-pp svg{width:20px;height:20px}
+.sv-stage{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}

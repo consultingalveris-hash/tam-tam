@@ -828,6 +828,18 @@ async function stPublish() {
   } catch (e) { toast(e.message); if (b) { b.disabled = false; b.textContent = 'Publier'; } }
 }
 let svT;
+const SV_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+const SV_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>';
+// Pause / reprise de la lecture d'un statut : le temps restant, la barre, la vidéo et la musique s'arrêtent ensemble.
+function svPause(on) {
+  const v = S.sv; if (!v) return; on = on == null ? !v.paused : on; if (on === v.paused) return;
+  const box = layer.querySelector('.sv'), bar = layer.querySelector('.sv-bars i.run b'), med = [...layer.querySelectorAll('video[data-stvid], audio[data-stmus]')], bt = layer.querySelector('.sv-pp');
+  if (on) { clearTimeout(svT); v.left = Math.max(300, v.left - (Date.now() - v.t0)); med.forEach(m => m.pause()); }
+  else { v.t0 = Date.now(); svT = setTimeout(() => svStep(1), v.left); med.forEach(m => { if (m.src) m.play().catch(() => {}); }); }
+  v.paused = on; if (bar) bar.style.animationPlayState = on ? 'paused' : 'running'; if (box) box.classList.toggle('paused', on);
+  if (bt) { bt.innerHTML = on ? SV_PLAY : SV_PAUSE; bt.setAttribute('aria-label', on ? 'Reprendre la lecture' : 'Mettre en pause'); }
+}
+document.addEventListener('keydown', e => { if (S.sv && e.code === 'Space' && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName || '')) { e.preventDefault(); svPause(); } });
 function stOpen(uid) {
   const g = uid === S.me.id ? {user: S.me, items: S.statuses.mine.items} : S.statuses.others.find(x => x.user.id === uid);
   if (!g || !g.items.length) return; const i = Math.max(0, g.items.findIndex(x => !x.seen)); S.sv = {uid, i: uid === S.me.id ? 0 : i}; renderSV();
@@ -839,16 +851,23 @@ function renderSV() {
   if (!mine && !it.seen) { it.seen = true; api(`/api/statuses/${it.id}/view`, {}).catch(() => {}); }
   const vid = it.kind === 'video', dur = vid ? (Math.min(62, Math.max(3, it.dur || 15)) + 2) * 1000 : it.music ? 15000 : 6000; stFontsLoad();
   layer.innerHTML = `<div class="sv${it.media ? ' media' : ''}" style="${stBgStyle(it.bg || 170)}${stBgc(it.bg) ? `;--bgd:${stBgc(it.bg)}` : ''}" role="dialog" aria-modal="true" aria-label="Statut"><div class="sv-bars">${g.items.map((_, k) => `<i class="${k < v.i ? 'done' : k === v.i ? 'run' : ''}"><b${k === v.i ? ` style="animation-duration:${dur / 1000}s"` : ''}></b></i>`).join('')}</div>
-    <div class="sv-head">${avatar(g.user, 'sm')}<div class="grow"><b>${esc(mine ? 'Mon statut' : g.user.name)}</b><small>${dayLabel(it.at)}, ${hm(it.at)} · ${it.aud === 'private' ? 'Privé' : 'Public'}</small></div><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>
+    <div class="sv-head">${avatar(g.user, 'sm')}<div class="grow"><b>${esc(mine ? 'Mon statut' : g.user.name)}</b><small>${dayLabel(it.at)}, ${hm(it.at)} · ${it.aud === 'private' ? 'Privé' : 'Public'}</small></div><button class="ib sv-pp" type="button" data-act="svPause" aria-label="Mettre en pause" title="Pause (barre d’espace)">${SV_PAUSE}</button><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div><span class="sv-paused" aria-live="polite">En pause</span>
     <div class="sv-stage"><div class="sv-box${it.aud === 'private' ? ' nocopy' : ''}">${it.media ? (vid ? `<video data-stvid="${it.id}" class="${it.mir ? 'mirror' : ''}" playsinline autoplay controlslist="nodownload" disablepictureinpicture></video>` : it.enc ? `<img data-stenc="${it.id}" alt="" draggable="false">` : `<img src="${esc(it.media)}" alt="" draggable="false">`) : `<div class="sv-text" style="font-family:${stFont(it.font)}">${esc(it.text)}</div>`}${it.media && it.text ? `<div class="sv-cap" style="font-family:${stFont(it.font)}">${esc(it.text)}</div>` : ''}${it.music ? `<div class="sv-mus">🎵 ${esc(it.mname || 'Musique')}</div><audio data-stmus="${it.id}" loop></audio>` : ''}
       ${it.aud === 'private' && !mine ? watermark() : ''}<button class="sv-nav prev" type="button" data-act="svPrev" aria-label="Précédent"></button><button class="sv-nav next" type="button" data-act="svNext" aria-label="Suivant"></button></div></div>
     ${mine ? `<div class="sv-foot"><button class="btn sm ghost" type="button" data-act="svViews">${I.eye}${(it.views || []).length} vue${(it.views || []).length > 1 ? 's' : ''}</button><button class="btn sm ghost" type="button" data-act="stNew">${I.plus}Ajouter</button><button class="btn sm ghost" type="button" data-act="stDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}</div>`;
-  clearTimeout(svT); svT = setTimeout(() => svStep(1), dur);
+  clearTimeout(svT); svT = setTimeout(() => svStep(1), dur); Object.assign(v, {t0: Date.now(), left: dur, paused: false});
+  // Doigt posé sur le statut (ou clic maintenu) : pause le temps de lire, reprise au relâchement.
+  const stg = layer.querySelector('.sv-stage'); let holdT = 0, held = false;
+  stg.addEventListener('pointerdown', () => { held = false; clearTimeout(holdT); holdT = setTimeout(() => { if (!S.sv || S.sv.paused) return; held = true; svPause(true); }, 220); });
+  const up = () => { clearTimeout(holdT); if (held) { svPause(false); setTimeout(() => { held = false; }, 0); } };
+  stg.addEventListener('pointerup', up); stg.addEventListener('pointercancel', up); stg.addEventListener('pointerleave', up);
+  stg.addEventListener('click', e => { if (held) { e.stopPropagation(); e.preventDefault(); } }, true);
+  stg.addEventListener('contextmenu', e => e.preventDefault());
   const dec = (url, iv, type) => fetch(url, {credentials: 'same-origin'}).then(r => r.arrayBuffer()).then(b => E2E.decBytes(it._key, iv, b)).then(b => URL.createObjectURL(new Blob([b], {type})));
   const vv = layer.querySelector('video[data-stvid]');
-  if (vv && it._key && it.miv) dec(it.media, it.miv, it.vmime || 'video/mp4').then(u => { if (!layer.contains(vv)) return; vv.src = u; vv.play().catch(() => { vv.muted = true; vv.play().catch(() => {}); }); vv.onended = () => { clearTimeout(svT); svStep(1); }; }).catch(() => {});
+  if (vv && it._key && it.miv) dec(it.media, it.miv, it.vmime || 'video/mp4').then(u => { if (!layer.contains(vv)) return; vv.src = u; if (S.sv && S.sv.paused) return; vv.play().catch(() => { vv.muted = true; vv.play().catch(() => {}); }); vv.onended = () => { clearTimeout(svT); svStep(1); }; }).catch(() => {});
   const au = layer.querySelector('audio[data-stmus]');
-  if (au && it._key && it.mmiv) dec(it.music, it.mmiv, 'audio/mpeg').then(u => { if (!layer.contains(au)) return; au.src = u; au.play().catch(() => {}); }).catch(() => {});
+  if (au && it._key && it.mmiv) dec(it.music, it.mmiv, 'audio/mpeg').then(u => { if (!layer.contains(au)) return; au.src = u; if (!(S.sv && S.sv.paused)) au.play().catch(() => {}); }).catch(() => {});
   const im = layer.querySelector('img[data-stenc]');
   if (im && it._key && it.miv) fetch(it.media, {credentials: 'same-origin'}).then(r => r.arrayBuffer()).then(b => E2E.decBytes(it._key, it.miv, b)).then(b => { im.src = URL.createObjectURL(new Blob([b], {type: 'image/jpeg'})); }).catch(() => {});
 }
@@ -1193,7 +1212,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.42</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.43</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1349,7 +1368,7 @@ const ACT = {
   stNoPhoto() { keepSt(); if (S.sc.url) URL.revokeObjectURL(S.sc.url); Object.assign(S.sc, {kind: 'text', blob: null, url: null}); stComposer(); },
   stPublish() { stPublish(); },
   closeEdit() { keepSt(); S.sc = S.sc; closeLayer(); if (isDesk()) pmOpen('settings'); else { S.tab = 'settings'; renderAll(); } setTimeout(() => { const el = document.querySelector('input[name="close"]'); if (el) el.scrollIntoView({block: 'center'}); }, 50); toast('Cochez les personnes de votre groupe privé, puis revenez publier votre statut.'); },
-  svNext() { svStep(1); }, svPrev() { svStep(-1); },
+  svNext() { svStep(1); }, svPrev() { svStep(-1); }, svPause() { svPause(); },
   svViews() {
     const it = S.statuses.mine.items[S.sv.i]; clearTimeout(svT);
     sheet(`${head('Vu par')}<div class="sheet-scroll">${(it.views || []).length ? it.views.map(v => `<div class="row">${avatar(v.user)}<span class="row-name">${esc(v.user.name)}</span><span class="row-prev"><span>${dayLabel(v.at)}, ${hm(v.at)}</span></span></div>`).join('') : '<p class="empty">Personne pour l’instant.</p>'}</div>`, 'Vu par');
