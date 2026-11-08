@@ -1,6 +1,8 @@
 /* tam-tam — Souvenirs : les photos et vidéos qu'on garde dans le temps.
    Public : visible par tous sur votre profil. Privé : vous seul, chiffré pour vous seul et ouvert avec votre code à 4 chiffres.
    Mon Tam-Tam : envoyé aux amis choisis (chiffré pour eux seulement), privé ou non, à vue unique ou non. */
+// date du jour à l'heure de l'appareil (et non à l'heure de Greenwich)
+const dayISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const MEM_AUD = {public: ['Public', I.globe], private: ['Privé', I.lock], friends: ['Mon Tam-Tam', I.users]};
 const Mem = {
   items: null, recv: null, unseen: 0, filt: 'all', unlocked: false, thumbs: new Map(), others: new Map(),
@@ -44,13 +46,13 @@ const Mem = {
       let payload, key;
       if (it.env && it.env.k) { key = await subtle.importKey('raw', unb64(it.env.k), 'AES-GCM', false, ['decrypt']); payload = JSON.parse(td.decode(await subtle.decrypt({name: 'AES-GCM', iv: unb64(it.env.iv)}, key, unb64(it.env.ct)))); }
       else { const o = E2E.ready() ? await E2E.open(it.env, S.me.id) : {err: 1}; if (o.err) throw 0; payload = o.payload; key = o.key; }
-      Object.assign(it, {cap: payload.t || '', _key: key, miv: payload.miv, tiv: payload.mmiv || null, vmime: payload.mime || null, dur: payload.dur || 0});
+      Object.assign(it, {cap: payload.t || '', _key: key, miv: payload.miv, tiv: payload.mmiv || null, vmime: payload.mime || null, dur: payload.dur || 0, fname: payload.name || '', fsize: payload.size || 0});
     } catch { it.locked = true; }
     return it;
   },
   async thumb(it) {
     if (this.thumbs.has(it.id)) return this.thumbs.get(it.id);
-    if (it.locked) return null;
+    if (it.locked || it.kind === 'doc') return null;
     const useThumb = it.thumb && it.tiv, url = useThumb ? it.thumb : it.media, iv = useThumb ? it.tiv : it.miv;
     const p = fetch(url, {credentials: 'same-origin'}).then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); }).then(b => E2E.decBytes(it._key, iv, b))
       .then(b => URL.createObjectURL(new Blob([b], {type: useThumb || it.kind !== 'video' ? 'image/jpeg' : (it.vmime || 'video/mp4')}))).catch(() => null);
@@ -58,7 +60,7 @@ const Mem = {
   },
   async full(it) {
     const r = await fetch(it.media, {credentials: 'same-origin'}); if (!r.ok) throw new Error('Souvenir indisponible.');
-    return new Blob([await E2E.decBytes(it._key, it.miv, await r.arrayBuffer())], {type: it.kind === 'video' ? (it.vmime || 'video/mp4') : 'image/jpeg'});
+    return new Blob([await E2E.decBytes(it._key, it.miv, await r.arrayBuffer())], {type: it.kind === 'video' ? (it.vmime || 'video/mp4') : it.kind === 'doc' ? (it.vmime || 'application/octet-stream') : 'image/jpeg'});
   },
   async load() {
     try { const r = await api('/api/memories'); this.items = await Promise.all(r.items.map(x => this.open(x))); }
@@ -81,7 +83,7 @@ const Mem = {
     const bdays = (S.contacts.contacts || []).filter(u => u.pub && +u.pub.bd === d.getDate() && +u.pub.bm === d.getMonth() + 1);
     return {past, bdays};
   },
-  laterKey: () => 'tt-mem-later-' + new Date().toISOString().slice(0, 10),
+  laterKey: () => 'tt-mem-later-' + dayISO(new Date()),
   body() {
     if (!this.items) { this.load(); return '<p class="empty">Chargement…</p>'; }
     if (!this.recv) this.loadRecv(true);
@@ -95,17 +97,21 @@ const Mem = {
       <div class="mem-today-a">${first ? `<button class="btn sm" type="button" data-act="memRepost" data-id="${first.id}">Reposter en statut</button>` : ''}${t.bdays.length ? `<button class="btn sm${first ? ' ghost' : ''}" type="button" data-act="write" data-id="${t.bdays[0].id}">Lui souhaiter</button>` : ''}<button class="btn sm ghost" type="button" data-act="memLater">Plus tard</button></div></div></div>` : '';
     const byYear = list => { const yrs = new Map(); for (const it of list) { const y = new Date(it.takenAt).getFullYear(); if (!yrs.has(y)) yrs.set(y, []); yrs.get(y).push(it); } return [...yrs.entries()].map(([y, its]) => `<div class="sec">${y}</div><div class="mem-grid">${its.map(it => this.tile(it)).join('')}</div>`).join(''); };
     // le dossier privé : turquoise, logo Tam-Tam en noir, « Privé » et un cadenas
-    const vault = `<button class="mem-vault" type="button" data-act="memVault"><span class="mv-logo">${BRAND()}</span><span class="mv-lbl">${I.lock}Privé</span><small>${priv.length} souvenir${priv.length > 1 ? 's' : ''}</small><span class="mem-more" role="button" tabindex="0" data-act="memVaultMenu" aria-label="Options du dossier Privé" title="Options">${I.more}</span></button>`;
+    const vault = `<button class="mem-vault" type="button" data-act="memVault"><span class="mv-logo">${BRAND()}</span><span class="mv-lbl">${I.lock}Privé</span><small>${priv.length} souvenir${priv.length > 1 ? 's' : ''}</small><span class="mem-more" role="button" tabindex="0" data-act="memVaultMenu" aria-label="Options du dossier Privé" title="Options"><i></i></span></button>`;
+    const isDoc = it => it.kind === 'doc', docsOf = list => list.filter(isDoc), noDoc = list => list.filter(x => !isDoc(x));
+    const docFolder = list => { const n = docsOf(list).length; return `<button class="mem-vault mem-docs" type="button" data-act="memDocs"><span class="mv-ic">${I.clip}</span><span class="mv-lbl">Documents</span><small>${n} document${n > 1 ? 's' : ''}</small></button>`; };
     const empty = (title, txt) => `<div class="empty"><p><b>${title}</b></p>${txt ? `<p>${txt}</p>` : ''}<button class="btn" type="button" data-act="memAdd">${I.plus}Ajouter des souvenirs</button></div>`;
     let main;
-    if (f === 'private') main = this.unlocked ? (priv.length ? `<div class="mem-unl">${I.lock}Souvenirs privés ouverts · <button class="linkless" type="button" data-act="memRelock">Refermer</button></div>` + byYear(priv) : empty('Aucun souvenir privé', 'Choisissez « Privé » en ajoutant un souvenir : il sera chiffré pour vous seul et protégé par votre code.'))
+    if (f === 'docs') { const all = docsOf([...pub, ...sent, ...recv]).sort((a, b) => b.at - a.at);
+      main = `<div class="arch-head"><button class="ib" type="button" data-act="memFilt" data-f="${this.docFrom || 'all'}" aria-label="Retour">${I.back}</button><b>${I.clip}Documents</b></div>` + (all.length ? `<div class="mem-grid">${all.map(it => this.tile(it)).join('')}</div>` : '<p class="empty">Aucun document. Touchez Ajouter, puis Fichiers.</p>'); }
+    else if (f === 'private') main = this.unlocked ? (priv.length ? `<div class="mem-unl">${I.lock}Souvenirs privés ouverts · <button class="linkless" type="button" data-act="memRelock">Refermer</button></div>` + byYear(priv) : empty('Aucun souvenir privé', 'Choisissez « Privé » en ajoutant un souvenir : il sera chiffré pour vous seul et protégé par votre code.'))
       : `<div class="mem-grid">${vault}</div><p class="hint" style="padding:0 16px">Touchez le dossier et tapez votre code à 4 chiffres.</p>`;
-    else if (f === 'public') main = pub.length ? byYear(pub) : empty('Aucun souvenir public', 'Un souvenir public est visible par tous les membres sur votre profil.');
+    else if (f === 'public') main = pub.length ? (docsOf(pub).length ? `<div class="mem-grid">${docFolder(pub)}</div>` : '') + byYear(noDoc(pub)) : empty('Aucun souvenir public', 'Un souvenir public est visible par tous les membres sur votre profil.');
     else if (f === 'friends') main = (recv.length ? `<div class="sec">Reçus de mes amis</div><div class="mem-grid">${recv.map(it => this.tile(it)).join('')}</div>` : '<p class="hint" style="padding:0 16px">Les souvenirs que vos amis vous envoient arriveront ici.</p>')
       + (sent.length ? `<div class="sec">Envoyés à mes amis</div><div class="mem-grid">${sent.map(it => this.tile(it)).join('')}</div>` : '')
-      + `<div style="padding:8px 16px"><button class="btn" type="button" data-act="memAdd">${I.plus}Envoyer un souvenir à mon Tam-Tam</button></div>`;
-    else { const all = [...pub, ...sent, ...recv.filter(x => !x.once || !x.opened)].sort((a, b) => b.takenAt - a.takenAt);
-      main = `<div class="mem-grid">${vault}</div>` + (all.length ? byYear(all) : priv.length ? '' : empty('Gardez vos plus beaux moments', 'Ajoutez des photos et des vidéos : chaque année, Tam-Tam vous les rappellera le jour même.')); }
+      + `<div style="padding:8px 16px"><button class="btn" type="button" data-act="memAdd">${I.plus}Envoyer un souvenir</button></div>`;
+    else { const all0 = [...pub, ...sent, ...recv.filter(x => !x.once || !x.opened)], all = noDoc(all0).sort((a, b) => b.takenAt - a.takenAt);
+      main = `<div class="mem-grid">${vault}${docsOf(all0).length ? docFolder(all0) : ''}</div>` + (all.length ? byYear(all) : priv.length ? '' : empty('Gardez vos plus beaux moments', 'Ajoutez des photos et des vidéos : chaque année, Tam-Tam vous les rappellera le jour même.')); }
     const un = this.unseen, nSel = this.sel ? this.sel.size : 0;
     const selBar = this.sel ? `<div class="selbar mem-selbar"><button class="ib" type="button" data-act="memSelOff" aria-label="Annuler la sélection">${I.close}</button><b>${nSel} sélectionné${nSel > 1 ? 's' : ''}</b><span class="grow"></span><button class="btn sm ghost" type="button" data-act="memSelAll">Tout</button><button class="ib sel-del" type="button" data-act="memSelDel" aria-label="Supprimer la sélection" title="Supprimer"${nSel ? '' : ' disabled'}>${I.trash}</button></div>` : '';
     return `<div class="mem">${selBar}
@@ -117,9 +123,10 @@ const Mem = {
     const [l, ic] = MEM_AUD[it.aud] || MEM_AUD.private, recv = !this.mine(it) && !other, fu = recv ? uOf(it.from) : null;
     const sel = this.sel ? this.sel.has(it.id) : false;
     const veil = it.locked ? '🔒' : this.hidden(it) ? `<span class="mem-veil vlt"><span class="mv-logo">${BRAND()}</span><b>${I.lock}Privé</b>${it.once ? '<small>① Vue unique</small>' : ''}</span>` : it.once && recv ? `<span class="mem-veil once">${it.opened ? 'Ouvert' : '① Vue unique'}</span>` : '';
-    const noTh = !!veil;
+    const noTh = !!veil || it.kind === 'doc';
+    const docv = !veil && it.kind === 'doc' ? `<span class="mem-doc"><b>${esc(((it.fname || '').split('.').pop() || 'DOC').slice(0, 4).toUpperCase())}</b><small>${esc(it.fname || 'Document')}</small></span>` : '';
     const badge = recv ? `<span class="mem-b from">${!it.seen ? '<i class="new-dot"></i>' : ''}${esc(first(fu.name))}</span>` : other ? '' : `<span class="mem-b">${ic}${it.aud === 'friends' ? `${(it.to || []).length || ''}` : l}${it.lock ? ' · ' + I.lock : ''}${it.once ? ' · ①' : ''}</span>`;
-    return `<button class="mem-tile${noTh ? ' veiled' : ''}" type="button" data-act="memView" data-id="${it.id}"${other ? ` data-u="${other}"` : ''} aria-label="${it.kind === 'video' ? 'Vidéo' : 'Photo'} ${recv ? 'reçue de ' + esc(fu.name) : l.toLowerCase()} du ${new Date(it.takenAt).toLocaleDateString('fr-FR')}"><span class="mem-th"${noTh ? '' : ` data-memth="${it.id}"`}${other ? ` data-u="${other}"` : ''}>${veil}</span>${it.kind === 'video' && !noTh ? `<span class="mem-play">▶</span>` : ''}${badge}${!this.sel && !other ? `<span class="mem-more" role="button" tabindex="0" data-act="memMenu" data-id="${it.id}" aria-label="Options : supprimer, sélectionner" title="Options">${I.more}</span>` : ''}${this.sel && !other ? `<span class="mem-chk${sel ? ' on' : ''}" aria-hidden="true">${sel ? '✓' : ''}</span>` : ''}</button>`;
+    return `<button class="mem-tile${noTh ? ' veiled' : ''}" type="button" data-act="memView" data-id="${it.id}"${other ? ` data-u="${other}"` : ''} aria-label="${it.kind === 'video' ? 'Vidéo' : 'Photo'} ${recv ? 'reçue de ' + esc(fu.name) : l.toLowerCase()} du ${new Date(it.takenAt).toLocaleDateString('fr-FR')}"><span class="mem-th"${noTh ? '' : ` data-memth="${it.id}"`}${other ? ` data-u="${other}"` : ''}>${veil}${docv}</span>${it.kind === 'video' && !noTh ? `<span class="mem-play">▶</span>` : ''}${badge}${!this.sel && !other ? `<span class="mem-more" role="button" tabindex="0" data-act="memMenu" data-id="${it.id}" aria-label="Options : supprimer, sélectionner" title="Options"><i></i></span>` : ''}${this.sel && !other ? `<span class="mem-chk${sel ? ' on' : ''}" aria-hidden="true">${sel ? '✓' : ''}</span>` : ''}</button>`;
   },
   // Remplit les vignettes déchiffrées après l'affichage.
   async hydrate(root = document) {
@@ -136,34 +143,35 @@ const Mem = {
   /* ---- ajouter ---- */
   opts() { return {target: r => this.compose(r), title: 'Nouveau souvenir', gallery: () => $('#memIn') && $('#memIn').click(), native: () => $('#memCamIn') && $('#memCamIn').click()}; },
   addSheet() {
-    sheet(`${head('Ajouter un souvenir')}<div class="sheet-body"><p class="hint">Une photo ou une vidéo de votre téléphone, ou prise maintenant.</p>
-      <div class="mem-add">${[['memPick', I.image, 'Galerie (plusieurs)'], ['memCam', CI.photo, 'Photo'], ['memVid', CI.video, 'Vidéo']].map(([a, ic, l]) => `<button type="button" data-act="${a}">${ic}<span>${l}</span></button>`).join('')}</div></div>`, 'Ajouter un souvenir');
+    sheet(`${head('Ajouter un souvenir')}<div class="sheet-body"><p class="hint">Des photos ou des vidéos de votre téléphone, prises maintenant, ou des documents (PDF, Word, Excel…).</p>
+      <div class="mem-add">${[['memPick', I.image, 'Galerie'], ['memCam', CI.photo, 'Photo'], ['memVid', CI.video, 'Vidéo'], ['memDoc', I.clip, 'Fichiers']].map(([a, ic, l]) => `<button type="button" data-act="${a}">${ic}<span>${l}</span></button>`).join('')}</div></div>`, 'Ajouter un souvenir');
   },
   // Plusieurs photos et vidéos choisies d'un coup dans la galerie : un seul réglage pour toutes.
-  composeMany(files) {
+  composeMany(files, docs) {
     const ok = [], big = [];
-    for (const f of files) { if (!/^(image|video)\//.test(f.type)) continue; if (f.size > 40_000_000) { big.push(f.name); continue; } ok.push({kind: /^video/.test(f.type) ? 'video' : 'photo', blob: f, mime: f.type, dur: 0, url: URL.createObjectURL(f), date: new Date(f.lastModified || Date.now()).toISOString().slice(0, 10)}); }
+    for (const f of files) { const media = !docs && /^(image|video)\//.test(f.type); if (!docs && !media) continue; if (f.size > 40_000_000) { big.push(f.name); continue; }
+      ok.push({kind: media ? (/^video/.test(f.type) ? 'video' : 'photo') : 'doc', blob: f, mime: f.type || 'application/octet-stream', name: f.name, size: f.size, dur: 0, url: media ? URL.createObjectURL(f) : null, date: dayISO(new Date(f.lastModified || Date.now()))}); }
     if (big.length) toast(`${big.length} fichier${big.length > 1 ? 's' : ''} de plus de 40 Mo ignoré${big.length > 1 ? 's' : ''}.`);
     if (!ok.length) return;
-    if (ok.length === 1) { const r = ok[0]; URL.revokeObjectURL(r.url); return r.kind === 'video' ? Edit.videoFile(r.blob, this.opts()) : Edit.photoFile(r.blob, this.opts()); }
+    if (ok.length === 1 && ok[0].kind !== 'doc') { const r = ok[0]; URL.revokeObjectURL(r.url); return r.kind === 'video' ? Edit.videoFile(r.blob, this.opts()) : Edit.photoFile(r.blob, this.opts()); }
     this.pend = {many: ok.slice(0, 30), aud: this.preAud(), to: [], cap: '', lock: false, once: false};
     if (ok.length > 30) toast('30 souvenirs au maximum à la fois : les 30 premiers sont gardés.');
     this.composeRender();
   },
-  preAud() { return ['public', 'private', 'friends'].includes(this.filt) ? this.filt : null; },
+  preAud() { const f = this.filt === 'docs' ? this.docFrom : this.filt; return ['public', 'private', 'friends'].includes(f) ? f : null; },
   compose(r) {
-    this.pend = {...r, url: URL.createObjectURL(r.blob), aud: this.preAud(), to: [], lock: false, once: false, date: new Date().toISOString().slice(0, 10)};
+    this.pend = {...r, url: URL.createObjectURL(r.blob), aud: this.preAud(), to: [], lock: false, once: false, date: dayISO(new Date())};
     this.composeRender();
   },
   composeRender() {
     const p = this.pend; if (p.fixed == null) p.fixed = !!p.aud;
     const cs = S.contacts.contacts || [];
-    const many = p.many, n = many ? many.length : 1;
-    sheet(`${head(many ? `${n} nouveaux souvenirs` : 'Nouveau souvenir')}<form data-form="memSave"><div class="sheet-body">
-      ${many ? `<div class="mem-strip">${many.map(x => x.kind === 'video' ? `<video src="${x.url}" muted playsinline preload="metadata"></video>` : `<img src="${x.url}" alt="">`).join('')}</div><p class="hint">Chaque souvenir garde la date de sa photo ou de sa vidéo.</p>`
+    const many = p.many, n = many ? many.length : 1, docs = many && many.every(x => x.kind === 'doc');
+    sheet(`${head(docs ? (n > 1 ? `${n} documents` : '1 document') : many ? `${n} nouveaux souvenirs` : 'Nouveau souvenir')}<form data-form="memSave"><div class="sheet-body">
+      ${many ? `<div class="mem-strip">${many.map(x => x.kind === 'doc' ? `<span class="mem-sdoc"><b>${esc(((x.name || '').split('.').pop() || 'DOC').slice(0, 4).toUpperCase())}</b><small>${esc(x.name)}</small></span>` : x.kind === 'video' ? `<video src="${x.url}" muted playsinline preload="metadata"></video>` : `<img src="${x.url}" alt="">`).join('')}</div><p class="hint">${docs ? 'Les documents seront rangés dans le dossier « Documents » de vos souvenirs.' : 'Chaque souvenir garde la date de sa photo ou de sa vidéo.'}</p>`
         : `<div class="mem-prev">${p.kind === 'video' ? `<video src="${p.url}" class="${p.mirror ? 'mirror' : ''}" autoplay loop muted playsinline></video>` : `<img src="${p.url}" alt="Aperçu">`}</div>`}
       <div class="field"><label for="memCap">Légende</label><div class="mem-capw">${Emoji.btn('#memCap')}<input id="memCap" maxlength="500" value="${esc(p.cap || '')}" placeholder="Ce moment en quelques mots…" autocomplete="off"></div></div>
-      ${many ? '' : `<div class="field"><label for="memDate">Date du souvenir</label><input id="memDate" type="date" value="${p.date}" max="${new Date().toISOString().slice(0, 10)}"><small class="hint">Pour une ancienne photo, mettez sa vraie date : Tam-Tam vous la rappellera chaque année ce jour-là.</small></div>`}
+      ${many ? '' : `<div class="field"><label for="memDate">Date du souvenir</label><input id="memDate" type="date" value="${p.date}" max="${dayISO(new Date())}"><small class="hint">Pour une ancienne photo, mettez sa vraie date : Tam-Tam vous la rappellera chaque année ce jour-là.</small></div>`}
       ${p.fixed ? `<div class="mem-fixed"><span>${MEM_AUD[p.aud][1]}<b>${MEM_AUD[p.aud][0]}</b></span><button class="linkless" type="button" data-act="memAudChange">Changer</button></div>` : `<span class="lbl">Qui peut ${many ? 'les' : 'le'} voir ? <small>(à choisir)</small></span>
       <div class="seg mem-aud">${Object.entries(MEM_AUD).map(([k, [l, ic]]) => `<button type="button" data-act="memAud" data-a="${k}" aria-pressed="${p.aud === k}">${ic}${l}</button>`).join('')}</div>`}
       <p class="hint">${{public: 'Visible par tous les membres sur votre profil.', private: 'Vous seul. Chiffré pour vous seul, et rangé dans le dossier Privé ouvert avec votre code à 4 chiffres.', friends: 'Envoyé aux amis cochés, chiffré pour eux seulement. Ils sont prévenus.'}[p.aud] || 'Touchez Public, Privé ou Mon Tam-Tam.'}</p>
@@ -187,15 +195,15 @@ const Mem = {
     return new Promise(ok => cv.toBlob(ok, 'image/jpeg', .8));
   },
   async saveOne(r, p, cap, date) {
-    let thumb = null; try { thumb = await this.thumbOf(r); } catch {}
-    const payload = {t: (cap || '').trim()}; if (r.kind === 'video') Object.assign(payload, {mime: r.mime, dur: r.dur || 0});
+    let thumb = null; if (r.kind !== 'doc') try { thumb = await this.thumbOf(r); } catch {}
+    const payload = {t: (cap || '').trim()}; if (r.kind === 'video') Object.assign(payload, {mime: r.mime, dur: r.dur || 0}); if (r.kind === 'doc') Object.assign(payload, {name: (r.name || 'document').slice(0, 120), size: r.size || 0, mime: r.mime});
     const bytes = await r.blob.arrayBuffer(), tb = thumb ? await thumb.arrayBuffer() : undefined;
     let sealed;
     if (p.aud === 'public') sealed = await this.sealPublic(payload, bytes, tb);
     else { const rc = [[S.me.id, E2E.pubJwk]]; if (p.aud === 'friends') for (const u of S.contacts.contacts) if (p.to.includes(u.id) && u.pubkey) rc.push([u.id, u.pubkey]); sealed = await E2E.seal(payload, rc, bytes, tb); }
     const media = (await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'})).id;
     const th = sealed.blob2 ? (await api('/api/media', sealed.blob2, {raw: true, type: 'application/octet-stream'})).id : null;
-    const res = await api('/api/memories', {media, thumb: th, env: sealed.env, aud: p.aud, kind: r.kind === 'video' ? 'video' : 'image', taken: new Date(date + 'T12:00:00').getTime(), to: p.to, lock: p.lock, once: p.once});
+    const res = await api('/api/memories', {media, thumb: th, env: sealed.env, aud: p.aud, kind: r.kind === 'video' ? 'video' : r.kind === 'doc' ? 'doc' : 'image', taken: new Date(date + 'T12:00:00').getTime(), to: p.to, lock: p.lock, once: p.once});
     const it = await this.open(res.item); it.to = p.aud === 'friends' ? p.to.slice() : undefined; if (thumb) this.thumbs.set(it.id, Promise.resolve(URL.createObjectURL(thumb)));
     (this.items = this.items || []).push(it);
   },
@@ -208,7 +216,7 @@ const Mem = {
       for (let i = 0; i < list.length; i++) { btn.textContent = list.length > 1 ? `Envoi ${i + 1} / ${list.length}…` : 'Enregistrement…'; await this.saveOne(list[i], p, p.cap, list[i].date || p.date); }
       this.items.sort((a, b) => b.takenAt - a.takenAt);
       list.forEach(x => x.url && URL.revokeObjectURL(x.url)); this.pend = null; closeLayer();
-      this.filt = p.aud === 'friends' ? 'friends' : p.aud === 'private' ? 'private' : 'all'; if (p.aud === 'private') this.unlocked = true;
+      this.filt = p.aud === 'friends' ? 'friends' : p.aud === 'private' ? 'private' : ['public', 'docs'].includes(this.filt) ? this.filt : 'all'; if (p.aud === 'private') this.unlocked = true;
       if (S.tab !== 'souvenirs') { S.tab = 'souvenirs'; renderAll(); } else renderBody();
       toast(p.aud === 'friends' ? (list.length > 1 ? `${list.length} souvenirs envoyés` : 'Souvenir envoyé') : list.length > 1 ? `${list.length} souvenirs enregistrés` : 'Souvenir enregistré');
     } catch (e) { btn.disabled = false; btn.textContent = 'Réessayer'; er.textContent = e.message; er.hidden = false; renderBody(); }
@@ -226,7 +234,7 @@ const Mem = {
     const it = this.find(this.shareId), to = [...document.querySelectorAll('input[name="shTo"]:checked')].map(i => +i.value), er = $('#shErr'), btn = $('#shBtn');
     if (!to.length) { er.textContent = 'Cochez au moins un ami.'; er.hidden = false; return; }
     btn.disabled = true; btn.textContent = 'Envoi…';
-    try { const b = await this.full(it); await this.saveOne({kind: it.kind === 'video' ? 'video' : 'photo', blob: b, mime: it.vmime || 'video/mp4', dur: it.dur || 0}, {aud: 'friends', to, lock: $('#shLock').checked, once: $('#shOnce').checked}, it.cap, new Date(it.takenAt).toISOString().slice(0, 10));
+    try { const b = await this.full(it); await this.saveOne({kind: it.kind === 'video' ? 'video' : 'photo', blob: b, mime: it.vmime || 'video/mp4', dur: it.dur || 0}, {aud: 'friends', to, lock: $('#shLock').checked, once: $('#shOnce').checked}, it.cap, dayISO(new Date(it.takenAt)));
       this.items.sort((a, b) => b.takenAt - a.takenAt); closeLayer(); renderBody(); toast(to.length > 1 ? `Envoyé à ${to.length} amis` : 'Souvenir envoyé'); }
     catch (e) { btn.disabled = false; btn.textContent = 'Envoyer'; er.textContent = e.message; er.hidden = false; }
   },
@@ -264,6 +272,7 @@ const Mem = {
       ${mine ? `<div class="mv-foot"><button class="btn sm" type="button" data-act="memShare" data-id="${it.id}">${I.users}Envoyer à mon Tam-Tam</button>${it.aud === 'public' ? `<button class="btn sm ghost" type="button" data-act="memRepost" data-id="${it.id}">Reposter en statut</button>` : ''}<button class="btn sm ghost danger" type="button" data-act="memDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}${prot && !mine ? watermark() : ''}</div>`;
     try {
       const b = await this.full(it), u = URL.createObjectURL(b), st = layer.querySelector('.mv-stage'); if (!st) return URL.revokeObjectURL(u);
+      if (it.kind === 'doc') { st.innerHTML = `<div class="mv-docbox"><span class="mem-doc big"><b>${esc(((it.fname || '').split('.').pop() || 'DOC').slice(0, 4).toUpperCase())}</b><small>${esc(it.fname || 'Document')}</small></span><button class="btn" type="button" id="mvDocOpen">Ouvrir le document</button></div>`; $('#mvDocOpen').onclick = () => { const a = document.createElement('a'); a.href = u; a.download = it.fname || 'document'; if (/pdf|image|text/.test(b.type)) a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove(); }; return; }
       st.innerHTML = it.kind === 'video' ? `<video src="${u}" playsinline autoplay controls controlslist="nodownload" disablepictureinpicture></video>` : `<img src="${u}" alt="" draggable="false">`;
       if (recv && it.once) { it.opened = true; }
     } catch (e) { toast(recv && it.once ? 'Souvenir à vue unique déjà ouvert.' : e.message); }
@@ -288,13 +297,15 @@ const Mem = {
 };
 Object.assign(ACT, {
   memFilt(d) { if (d.f !== 'private') Mem.unlocked = false; if (d.f === 'private' && !Mem.unlocked) { Mem.filt = 'private'; renderBody(); return Mem.unlockThen(() => renderBody()); } Mem.filt = d.f; renderBody(); if (d.f === 'friends') Mem.markSeen(); },
+  memDocs() { Mem.docFrom = Mem.filt === 'docs' ? 'all' : Mem.filt; Mem.filt = 'docs'; renderBody(); },
   memVault() { Mem.unlockThen(() => { Mem.filt = 'private'; renderBody(); }); },
   memRelock() { Mem.unlocked = false; Mem.filt = 'all'; renderBody(); },
   memForgot() { Mem.codeSheet('forgot'); },
   memShare(d) { Mem.shareSheet(+d.id); },
   memLater() { try { localStorage.setItem(Mem.laterKey(), '1'); } catch {} renderBody(); },
-  memAdd() { Mem.addSheet(); },
+  memAdd() { if (Mem.filt === 'docs') return $('#memDocIn').click(); Mem.addSheet(); },
   memPick() { $('#memIn').click(); },
+  memDoc() { $('#memDocIn').click(); },
   memCam() { closeLayer(); Cam.open({...Mem.opts(), mode: 'photo'}); },
   memVid() { closeLayer(); Cam.open({...Mem.opts(), mode: 'video'}); },
   memAud(d) { Mem.keepForm(); Mem.pend.aud = d.a; Mem.composeRender(); },
@@ -320,14 +331,15 @@ FORMS.memCode = () => Mem.codeSubmit();
 FORMS.memShare = () => Mem.share();
 document.addEventListener('change', e => {
   const t = e.target;
-  if (t.id === 'memIn') { const fs = [...t.files]; t.value = ''; if (!fs.length) return; closeLayer(); Mem.composeMany(fs); }
+  if (t.id === 'memDocIn') { const fs = [...t.files]; t.value = ''; if (!fs.length) return; closeLayer(); Mem.composeMany(fs, true); }
+  else if (t.id === 'memIn') { const fs = [...t.files]; t.value = ''; if (!fs.length) return; closeLayer(); Mem.composeMany(fs); }
   else if (t.id === 'memCamIn') { const f = t.files[0]; t.value = ''; if (!f) return; closeLayer(); Edit.photoFile(f, Mem.opts()); }
   else if (t.id === 'memAll') { document.querySelectorAll('input[name="memTo"]').forEach(i => { i.checked = t.checked; }); Mem.keepForm(); const h = t.closest('.grp-box').querySelector('.hint'); if (h) h.textContent = `${Mem.pend.to.length} sur ${(S.contacts.contacts || []).length}`; }
   else if (t.name === 'memTo') { Mem.keepForm(); const box = t.closest('.grp-box'), all = box.querySelector('#memAll'), h = box.querySelector('.cg-tools .hint'), n = (S.contacts.contacts || []).length; if (all) all.checked = Mem.pend.to.length === n; if (h) h.textContent = `${Mem.pend.to.length} sur ${n}`; }
 });
 
 // Champs de fichiers des souvenirs, toujours présents dans la page.
-document.body.insertAdjacentHTML('beforeend', '<input type="file" id="memIn" accept="image/*,video/*" multiple hidden><input type="file" id="memCamIn" accept="image/*" capture="environment" hidden>');
+document.body.insertAdjacentHTML('beforeend', '<input type="file" id="memIn" accept="image/*,video/*" multiple hidden><input type="file" id="memDocIn" multiple hidden><input type="file" id="memCamIn" accept="image/*" capture="environment" hidden>');
 
 // Appui long (téléphone) ou clic droit (ordinateur) sur un souvenir ou sur le dossier Privé.
 (() => {

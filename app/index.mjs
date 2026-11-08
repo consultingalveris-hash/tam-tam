@@ -1003,7 +1003,7 @@ R('POST', /^\/api\/media$/, async ({ me, req }) => {
   const ct = String(req.headers['content-type'] || ''), enc = ct === 'application/octet-stream';
   if (!enc && !/^image\/(jpeg|png|webp)$/.test(ct)) E(415, 'Seules les photos (JPEG, PNG, WebP) sont acceptées.');
   if (tooMany('up:' + me.id, 60, 10 * 60_000)) E(429, 'Trop de photos envoyées. Patientez un peu.');
-  const buf = await readBody(req, enc ? 42_000_000 : 6_000_000); if (buf.length < 100) E(400, 'Fichier vide.');
+  const buf = await readBody(req, enc ? 42_000_000 : 6_000_000); if (buf.length < (enc ? 17 : 100)) E(400, 'Fichier vide.');
   const sig = buf.subarray(0, 12).toString('hex');
   if (!enc && !(sig.startsWith('ffd8ff') || sig.startsWith('89504e47') || (sig.startsWith('52494646') && buf.subarray(8, 12).toString() === 'WEBP'))) E(415, 'Ce fichier n’est pas une photo valide.');
   const id = rnd(18); fs.writeFileSync(path.join(MEDIA, id), buf);
@@ -1070,7 +1070,7 @@ R('POST', /^\/api\/mem\/code$/, async ({ me, body }) => {
 R('POST', /^\/api\/memories$/, async ({ me, body }) => {
   if (tooMany('mem:' + me.id, 120, DAY)) E(429, 'Beaucoup de souvenirs ajoutés aujourd’hui. Réessayez demain.');
   if (q1(`SELECT COUNT(*) n FROM memories WHERE user_id=?`, me.id).n >= 2000) E(400, 'Vous avez atteint 2 000 souvenirs. Supprimez-en quelques-uns.');
-  const aud = body.aud === 'restricted' ? 'friends' : ['public', 'private', 'friends'].includes(body.aud) ? body.aud : null, kind = body.kind === 'video' ? 'video' : 'image';
+  const aud = body.aud === 'restricted' ? 'friends' : ['public', 'private', 'friends'].includes(body.aud) ? body.aud : null, kind = body.kind === 'video' ? 'video' : body.kind === 'doc' ? 'doc' : 'image';
   if (!aud) E(400, 'Choisissez qui peut voir ce souvenir.');
   const env = body.env; if (!env || typeof env !== 'object' || typeof env.ct !== 'string' || typeof env.iv !== 'string' || JSON.stringify(env).length > 200_000) E(400, 'Souvenir invalide.');
   if (aud === 'public' ? typeof env.k !== 'string' : (!env.keys || env.k)) E(400, 'Souvenir invalide.');

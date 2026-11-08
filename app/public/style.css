@@ -1005,3 +1005,25 @@ body.in-cam{overflow:hidden}
 .mc-in{width:132px;font-size:22px;letter-spacing:12px;padding:6px 0 6px 12px}
 .mc-body .linkless{background:none;border:0;color:var(--accent-strong);text-decoration:underline;font:inherit;font-size:14px;cursor:pointer;align-self:center;padding:2px}
 .mc-logo{padding:10px}.mc-logo svg,.mc-logo img{height:28px}
+
+/* un seul point d'options */
+.mem-more{width:22px;height:22px;top:7px;right:7px;background:rgb(0 0 0/.38)}.mem-more svg{display:none}
+.mem-more i{display:block;width:6px;height:6px;border-radius:50%;background:#fff}.mem-vault .mem-more{background:rgb(15 36 48/.1)}.mem-vault .mem-more i{background:var(--fg)}
+/* case du code : petite, sans contour, légèrement grise */
+.mc-in{width:120px;height:34px;font-size:20px;letter-spacing:10px;padding:0 0 0 10px;border:0!important;outline:0;box-shadow:none!important;border-radius:10px;background:var(--surface-2)}
+.mc-in:focus{background:var(--accent-soft)}
+/* ajouter : quatre carrés */
+.mem-add{grid-template-columns:repeat(4,1fr);gap:8px}.mem-add button{padding:12px 4px;font-size:13px;gap:6px}.mem-add svg{width:22px;height:22px}
+@media (max-width:360px){ .mem-add{grid-template-columns:repeat(2,1fr)} }
+.mem-add button[data-act="memDoc"] svg{transform:rotate(-45deg)}
+/* documents dans les souvenirs */
+.mem-docs .mv-ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--accent);color:#fff}.mem-docs .mv-ic svg{width:24px;height:24px;transform:rotate(-45deg)}
+.mem-doc{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:100%;height:100%;padding:8px;background:var(--surface-2);text-align:center}
+.mem-doc b{display:grid;place-items:center;width:46px;height:54px;border-radius:8px;background:var(--accent);color:#fff;font-size:12px}
+.mem-doc small{font-size:11.5px;color:var(--fg);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
+.mem-doc.big{background:none;color:#fff}.mem-doc.big b{width:70px;height:84px;font-size:16px}.mem-doc.big small{color:#fff;font-size:14px}
+.mv-docbox{display:flex;flex-direction:column;align-items:center;gap:16px}
+.mem-sdoc{flex:none;width:84px;height:84px;border-radius:10px;background:var(--surface-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:4px}
+.mem-sdoc b{font-size:11px;padding:4px 6px;border-radius:6px;background:var(--accent);color:#fff}.mem-sdoc small{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+/* traduction : le bouton de langue ne chevauche plus les émoticônes */
+.inwrap .tr-tog{width:auto!important;padding:0 8px;flex:none}
