@@ -1212,7 +1212,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.43</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.44</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1352,7 +1352,7 @@ const ACT = {
   stNew(d, el, e) { e.stopPropagation(); stComposer(); },
   stOpen(d) { stOpen(+d.u); },
   stCancel() { if (S.sc && S.sc.url) URL.revokeObjectURL(S.sc.url); if (S.sc && S.sc.music) URL.revokeObjectURL(S.sc.music.url); S.sc = null; Emoji.close(); closeLayer(); },
-  stAud(d) { keepSt(); S.sc.aud = d.a; if (d.a === 'private' && !(S.me.close || []).length && !matchMedia('(min-width:821px)').matches) S.sc.grp = true; stComposer(); },
+  stAud(d) { keepSt(); S.sc.aud = d.a; S.sc.grp = false; stComposer(); }, // le groupe privé s'ouvre seulement quand on touche « Mon groupe privé »
   // Changer la couleur ne fait pas apparaître le clavier : on change seulement le fond.
   stBg(d) { S.sc.bg = +d.h; const b = document.querySelector('.st-box'); if (b) { b.style.setProperty('--h', d.h); if (stBgc(d.h)) b.style.setProperty('--bgc', stBgc(d.h)); else b.style.removeProperty('--bgc'); } document.querySelectorAll('.st-bgs .sw').forEach(x => x.setAttribute('aria-pressed', x.dataset.h === d.h)); if (matchMedia('(min-width:821px) and (pointer:fine)').matches) { const t = $('#stText'); if (t) t.focus(); } },
   stPhoto() { keepSt(); $('#stIn').click(); },
