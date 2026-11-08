@@ -93,6 +93,7 @@ const A = {mode: 'login', avatar: {v: 2, st: 'court', sk: 'c', sh: '#14b8c9', f:
 async function boot() {
   S.pendingChat = +((/[?&]chat=(\d+)/.exec(location.search) || [])[1] || 0);
   const gj = (/[?&]g=([A-Za-z0-9_-]{6,40})/.exec(location.search) || [])[1]; if (gj) S.pendingJoin = gj;
+  if (/[?&]tab=souvenirs/.test(location.search)) S.pendingTab = 'souvenirs';
   const p = location.pathname, inv = (p.match(/^\/invite\/([A-Za-z0-9_-]+)$/) || [])[1], rst = (p.match(/^\/reset\/([A-Za-z0-9_-]+)$/) || [])[1];
   if (inv) S.invite = inv;
   const qr = (p.match(/^\/add\/([A-Za-z0-9_-]+)$/) || [])[1]; if (qr) { S.qrAdd = qr; S.invite = qr; }
@@ -178,6 +179,8 @@ async function startApp() {
   GCall.loadActive(); Call.checkPending(); Device.badge();
   if (S.lock.type === 'off') return requireLock();
   if (S.pendingChat && S.chats.has(S.pendingChat)) openChat(S.pendingChat); S.pendingChat = 0;
+  if (S.pendingTab) { S.tab = S.pendingTab; S.pendingTab = null; history.replaceState(null, '', '/'); renderAll(); }
+  if (typeof Mem !== 'undefined') Mem.loadRecv(true);
   if (S.pendingJoin) { const g = S.pendingJoin; S.pendingJoin = null; history.replaceState(null, '', '/'); joinPreview(g); }
   if (S.qrAdd) { const t = S.qrAdd; S.qrAdd = null; Qr.connect(t); }
 }
@@ -202,6 +205,7 @@ const HPick = {
       catch (er) { msg.textContent = er.message; msg.classList.add('bad'); b.disabled = false; } });
   },
 };
+document.addEventListener('visibilitychange', () => { if (document.hidden && typeof Mem !== 'undefined') Mem.unlocked = false; });
 function connect() {
   if (es) es.close();
   es = new EventSource('/api/stream');
@@ -218,6 +222,7 @@ function onEvent(ev) {
   else if (ev.t === 'read') { const c = S.chats.get(ev.chatId); if (c) { const m = c.members.find(x => x.id === ev.user); if (m) m.lastRead = Math.max(m.lastRead, ev.upTo); if (S.chatId === ev.chatId) renderMessages(true); if (S.tab === 'chats') renderBody(); } }
   else if (ev.t === 'typing') { const k = ev.chatId; if (Date.now() - (S.lastFrom.get(k + ':' + ev.user) || 0) < 2500) return; S.typing.set(k, {user: ev.user, until: Date.now() + 4000}); refreshTyping(k); setTimeout(() => refreshTyping(k), 4100); }
   else if (ev.t === 'contacts') { loadContacts().then(() => { renderTabs(); if (S.tab !== 'chats') renderBody(); if (document.getElementById('addSheet') && typeof Add !== 'undefined') Add.loadPeople(); }); loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }); }
+  else if (ev.t === 'mem') { if (typeof Mem !== 'undefined') Mem.loadRecv(true); }
   else if (ev.t === 'chats') loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) { renderPin(); renderMessages(true); } });
   else if (ev.t === 'statuses') loadStatuses().then(renderStories);
   else if (ev.t === 'presence') { const u = S.users.get(ev.id); if (u) { u.online = ev.online; u.busy = ev.busy; u.lastSeen = ev.lastSeen; } if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }
@@ -261,7 +266,7 @@ function renderAll() { renderTabs(); renderHead(); renderBody(); }
 const TABS = [['chats', 'Discussions', I.chats], ['contacts', 'Contacts', I.users], ['souvenirs', 'Souvenirs', I.image], ['calls', 'Appels', I.dialpad]];
 function renderTabs() {
   const unread = [...S.chats.values()].filter(c => (c.unread > 0 || c.marked) && !c.archived && (!c.hidden || S.showHidden)).length, inc = S.contacts.incoming.length;
-  $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${id === 'chats' && unread ? `<span class="badge" aria-label="${unread} non lues">${unread}</span>` : ''}${id === 'contacts' && inc ? `<span class="badge" aria-label="${inc} demande${inc > 1 ? 's' : ''} d’ami">${inc}</span>` : ''}</button>`).join('');
+  $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${id === 'chats' && unread ? `<span class="badge" aria-label="${unread} non lues">${unread}</span>` : ''}${id === 'souvenirs' && typeof Mem !== 'undefined' && Mem.unseen ? `<span class="badge" aria-label="${Mem.unseen} souvenir${Mem.unseen > 1 ? 's' : ''} reçu${Mem.unseen > 1 ? 's' : ''}">${Mem.unseen}</span>` : ''}${id === 'contacts' && inc ? `<span class="badge" aria-label="${inc} demande${inc > 1 ? 's' : ''} d’ami">${inc}</span>` : ''}</button>`).join('');
   $('#fab').hidden = S.tab !== 'chats'; Device.badge(); const fc = $('#filts'); if (fc) fc.innerHTML = filtChips(); const ac = $('.arch-chip'); if (ac) ac.outerHTML = archChip();
   const n = [...S.chats.values()].reduce((a, c) => a + (c.unread || 0), 0); document.title = n ? `(${n}) tam-tam` : 'tam-tam';
 }
@@ -1412,7 +1417,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.48</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.49</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1462,7 +1467,7 @@ const ACT = {
     if (d.who === 'auth') { A.avatar = a; $('#avg-auth').outerHTML = avGallery(a, 'auth'); }
     else { if (S.pp && S.pp.url) URL.revokeObjectURL(S.pp.url); S.pp = {kind: 'av', av: a}; renderBody(); }
   },
-  tab(d) { if (d.t === 'settings' && isDesk()) { closeLayer(); return pmOpen('settings'); } if (d.t === 'calls') Calls.log = null; S.tab = d.t; closeLayer(); renderAll(); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
+  tab(d) { if (d.t === 'settings' && isDesk()) { closeLayer(); return pmOpen('settings'); } if (d.t !== 'souvenirs' && typeof Mem !== 'undefined') Mem.unlocked = false; if (d.t === 'calls') Calls.log = null; S.tab = d.t; closeLayer(); renderAll(); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
   fab() { newChatSheet(); },
   open(d) { if (S.sel) { const id = +d.id; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); if (!S.sel.size) S.sel = null; return renderBody(); } openChat(+d.id); },
   chatRowMenu(d) { chatListMenu(+d.id); },

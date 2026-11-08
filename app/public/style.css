@@ -941,3 +941,22 @@ body.in-cam{overflow:hidden}
 .mg-ph{aspect-ratio:1;max-width:100%;border:0;padding:0;background:var(--surface-2);overflow:hidden;cursor:pointer}.mg-ph img{width:100%;height:100%;object-fit:cover;display:block}
 .mg-ic{font-size:22px;width:40px;text-align:center}.mg-link{text-decoration:none;color:inherit}.mg-loc{padding:6px 16px}
 .mg-play{display:grid;place-items:center}.mg-play video{max-width:100%;max-height:85vh}.mg-play audio{width:min(420px,90%)}
+/* souvenirs : dossier privé, amis Tam-Tam, code */
+.mem-vault{position:relative;aspect-ratio:3/4;max-width:100%;border:0;border-radius:12px;background:var(--accent);color:#0b1214;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;padding:8px;box-shadow:0 2px 6px var(--shadow)}
+.mem-vault .mv-logo{width:72%;line-height:0}.mem-vault .mv-logo svg,.mem-vault .mv-logo img{width:100%;height:auto;filter:brightness(0)}
+.mem-vault .mv-lbl{display:flex;align-items:center;gap:4px;font-weight:800;font-size:14px}.mem-vault .mv-lbl svg{width:15px;height:15px}
+.mem-vault small{font-size:11px;opacity:.75;font-weight:600}
+.mem-grid.vault-only{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+.mem-tile.veiled .mem-th{background:linear-gradient(135deg,var(--accent-soft),var(--surface-2))}
+.mem-veil{display:grid;place-items:center;width:100%;height:100%;color:var(--accent-strong);font-weight:800;font-size:13px}.mem-veil svg{width:26px;height:26px}
+.mem-veil.once{font-size:13px}
+.mem-b.from{background:rgb(0 0 0/.6);color:#fff;display:flex;align-items:center;gap:4px}.new-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block}
+.mem-b svg{width:12px;height:12px;vertical-align:-2px}
+.mem-unl{display:flex;align-items:center;gap:6px;padding:4px 16px;color:var(--fg-2);font-size:13px}.mem-unl svg{width:14px;height:14px}
+.mem-filts .chip svg{width:14px;height:14px;margin-right:2px;vertical-align:-2px}
+.mem-strip{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}.mem-strip img,.mem-strip video{flex:none;width:84px;height:84px;object-fit:cover;border-radius:10px;background:#000}
+.mem-opts{display:grid;gap:6px}.mem-opts b svg{width:14px;height:14px;vertical-align:-2px}
+.mc-body{align-items:stretch}.mc-logo{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px;border-radius:16px;background:var(--accent);color:#0b1214}
+.mc-logo svg,.mc-logo img{height:34px;width:auto;filter:brightness(0)}.mc-logo span{display:flex;gap:4px;align-items:center;font-weight:800}.mc-logo span svg{height:15px}
+.mc-in{align-self:center;width:200px;max-width:100%;text-align:center;font-size:30px;letter-spacing:18px;padding:10px 0 10px 18px;border-radius:14px}
+.mc-dots{display:none;justify-content:center;gap:18px;padding:10px 0;cursor:text}.mc-dots i{width:18px;height:18px;border-radius:50%;border:2px solid var(--accent);display:block}.mc-dots i.on{background:var(--accent)}

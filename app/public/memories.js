@@ -1,9 +1,36 @@
 /* tam-tam — Souvenirs : les photos et vidéos qu'on garde dans le temps.
-   Public : visible par tous sur votre profil. Privé : vous seul (chiffré pour vous seul).
-   Restreint : les amis de votre choix (chiffré pour eux seulement). */
-const MEM_AUD = {public: ['Public', I.globe], private: ['Privé', I.lock], restricted: ['Restreint', I.users]};
+   Public : visible par tous sur votre profil. Privé : vous seul, chiffré pour vous seul et ouvert avec votre code à 4 chiffres.
+   Amis Tam-Tam : envoyé aux amis choisis (chiffré pour eux seulement), privé ou non, à vue unique ou non. */
+const MEM_AUD = {public: ['Public', I.globe], private: ['Privé', I.lock], friends: ['Amis Tam-Tam', I.users]};
 const Mem = {
-  items: null, filt: 'all', thumbs: new Map(), others: new Map(),
+  items: null, recv: null, unseen: 0, filt: 'all', unlocked: false, thumbs: new Map(), others: new Map(),
+  /* ---- code à 4 chiffres ---- */
+  unlockThen(fn) {
+    if (this.unlocked) return fn();
+    this.after = fn; this.codeSheet(S.me.hasMemCode ? 'ask' : 'new');
+  },
+  codeSheet(mode, msg) {
+    this.cmode = mode; const t = {ask: 'Souvenirs privés', new: 'Créez votre code', again: 'Confirmez votre code', forgot: 'Nouveau code'}[mode];
+    const sub = {ask: 'Tapez votre code à 4 chiffres pour ouvrir vos souvenirs privés.', new: 'Choisissez un code à 4 chiffres. Il protège vos souvenirs privés et ceux que vos amis vous envoient en privé.', again: 'Tapez le même code une seconde fois.', forgot: 'Tapez le mot de passe de votre compte Tam-Tam, puis un nouveau code à 4 chiffres.'}[mode];
+    sheet(`${head(t)}<form data-form="memCode"><div class="sheet-body mc-body"><div class="mc-logo">${BRAND()}<span>${I.lock}Privé</span></div><p class="hint" style="text-align:center">${sub}</p>
+      ${mode === 'forgot' ? '<div class="field"><label for="mcPass">Mot de passe du compte</label><input id="mcPass" type="password" autocomplete="current-password" required></div>' : ''}
+      <input id="mcIn" class="mc-in" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" aria-label="Code à 4 chiffres" required>
+      <div class="mc-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <p class="err" id="mcErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p>
+      ${mode === 'ask' ? '<button class="linkless" type="button" data-act="memForgot">Code oublié ?</button>' : ''}
+      <div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="submit">${mode === 'ask' ? 'Ouvrir' : 'Valider'}</button></div></div></form>`, t, '#mcIn');
+    const i = $('#mcIn'); if (i) i.addEventListener('input', () => { i.value = i.value.replace(/\D/g, '').slice(0, 4); document.querySelectorAll('.mc-dots i').forEach((d, k) => d.classList.toggle('on', k < i.value.length)); if (i.value.length === 4 && mode !== 'forgot') this.codeSubmit(); });
+  },
+  async codeSubmit() {
+    const v = ($('#mcIn') || {}).value || '', m = this.cmode; if (!/^\d{4}$/.test(v)) return this.codeSheet(m, 'Le code doit faire 4 chiffres.');
+    try {
+      if (m === 'new') { this.newCode = v; return this.codeSheet('again'); }
+      if (m === 'again') { if (v !== this.newCode) return this.codeSheet('new', 'Les deux codes ne sont pas identiques. Recommencez.'); await api('/api/mem/code', {set: v}); S.me.hasMemCode = true; toast('Code des souvenirs enregistré'); }
+      else if (m === 'forgot') { await api('/api/mem/code', {set: v, pass: $('#mcPass').value}); S.me.hasMemCode = true; toast('Nouveau code enregistré'); }
+      else await api('/api/mem/code', {code: v});
+      this.unlocked = true; closeLayer(); const f = this.after; this.after = null; if (f) f();
+    } catch (e) { this.codeSheet(m === 'again' ? 'new' : m, e.message); }
+  },
   /* ---- chiffrement ---- */
   async sealPublic(payload, bytes, bytes2) {
     const raw = crypto.getRandomValues(new Uint8Array(32)), k = await subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
@@ -38,6 +65,12 @@ const Mem = {
     catch (e) { this.items = this.items || []; toast(e.message); }
     if (S.tab === 'souvenirs') renderBody();
   },
+  async loadRecv(quiet) {
+    try { const r = await api('/api/memories/received'); keepUsers(r.items.map(x => x.fromUser).filter(Boolean)); this.recv = await Promise.all(r.items.map(x => this.open(x))); this.unseen = r.unseen; }
+    catch (e) { this.recv = this.recv || []; if (!quiet) toast(e.message); }
+    renderTabs(); if (S.tab === 'souvenirs') { renderBody(); if (this.filt === 'friends' && this.unseen) this.markSeen(); }
+  },
+  markSeen() { if (!this.unseen) return; this.unseen = 0; (this.recv || []).forEach(x => { x.seen = true; }); api('/api/memories/received/seen', {}).catch(() => {}); renderTabs(); },
   async loadFor(uid) {
     const r = await api('/api/memories?user=' + uid); const list = await Promise.all(r.items.map(x => this.open(x))); this.others.set(uid, list); return list;
   },
@@ -51,25 +84,40 @@ const Mem = {
   laterKey: () => 'tt-mem-later-' + new Date().toISOString().slice(0, 10),
   body() {
     if (!this.items) { this.load(); return '<p class="empty">Chargement…</p>'; }
-    const f = this.filt, list = this.items.filter(it => f === 'all' || it.aud === f), t = this.today();
+    if (!this.recv) this.loadRecv(true);
+    const f = this.filt, t = this.today(), recv = this.recv || [];
+    const mineAll = this.items, priv = mineAll.filter(it => it.aud === 'private'), pub = mineAll.filter(it => it.aud === 'public'), sent = mineAll.filter(it => it.aud === 'friends');
     let later = false; try { later = !!localStorage.getItem(this.laterKey()); } catch {}
-    const yrs = new Map(); for (const it of list) { const y = new Date(it.takenAt).getFullYear(); if (!yrs.has(y)) yrs.set(y, []); yrs.get(y).push(it); }
     const first = t.past[0], n = first ? new Date().getFullYear() - new Date(first.takenAt).getFullYear() : 0;
-    const card = !later && (t.past.length || t.bdays.length) ? `<div class="mem-today">${first ? `<div class="mem-today-img" data-memth="${first.id}"></div>` : '<div class="mem-today-img party">🎉</div>'}
+    const card = f === 'all' && !later && (t.past.length || t.bdays.length) ? `<div class="mem-today">${first ? `<div class="mem-today-img" data-memth="${first.id}"></div>` : '<div class="mem-today-img party">🎉</div>'}
       <div class="mem-today-t"><b>${first ? `Il y a ${n} an${n > 1 ? 's' : ''} aujourd’hui` : 'Aujourd’hui'}</b>
       <span>${[t.bdays.length ? `Anniversaire de ${t.bdays.map(u => esc(first ? u.name.split(' ')[0] : u.name)).join(', ')}` : '', t.past.length > 1 ? `${t.past.length} souvenirs` : t.past.length ? '1 souvenir' : ''].filter(Boolean).join(' · ')}</span>
       <div class="mem-today-a">${first ? `<button class="btn sm" type="button" data-act="memRepost" data-id="${first.id}">Reposter en statut</button>` : ''}${t.bdays.length ? `<button class="btn sm${first ? ' ghost' : ''}" type="button" data-act="write" data-id="${t.bdays[0].id}">Lui souhaiter</button>` : ''}<button class="btn sm ghost" type="button" data-act="memLater">Plus tard</button></div></div></div>` : '';
+    const byYear = list => { const yrs = new Map(); for (const it of list) { const y = new Date(it.takenAt).getFullYear(); if (!yrs.has(y)) yrs.set(y, []); yrs.get(y).push(it); } return [...yrs.entries()].map(([y, its]) => `<div class="sec">${y}</div><div class="mem-grid">${its.map(it => this.tile(it)).join('')}</div>`).join(''); };
+    // le dossier privé : turquoise, logo Tam-Tam en noir, « Privé » et un cadenas
+    const vault = `<button class="mem-vault" type="button" data-act="memVault"><span class="mv-logo">${BRAND()}</span><span class="mv-lbl">${I.lock}Privé</span><small>${priv.length} souvenir${priv.length > 1 ? 's' : ''}</small></button>`;
+    const empty = (title, txt) => `<div class="empty"><p><b>${title}</b></p>${txt ? `<p>${txt}</p>` : ''}<button class="btn" type="button" data-act="memAdd">${I.plus}Ajouter des souvenirs</button></div>`;
+    let main;
+    if (f === 'private') main = this.unlocked ? (priv.length ? `<div class="mem-unl">${I.lock}Souvenirs privés ouverts · <button class="linkless" type="button" data-act="memRelock">Refermer</button></div>` + byYear(priv) : empty('Aucun souvenir privé', 'Choisissez « Privé » en ajoutant un souvenir : il sera chiffré pour vous seul et protégé par votre code.'))
+      : `<div class="mem-grid vault-only">${vault}</div><p class="hint" style="padding:0 16px">Touchez le dossier et tapez votre code à 4 chiffres.</p>`;
+    else if (f === 'public') main = pub.length ? byYear(pub) : empty('Aucun souvenir public', 'Un souvenir public est visible par tous les membres sur votre profil.');
+    else if (f === 'friends') main = (recv.length ? `<div class="sec">Reçus de mes amis</div><div class="mem-grid">${recv.map(it => this.tile(it)).join('')}</div>` : '<p class="hint" style="padding:0 16px">Les souvenirs que vos amis vous envoient arriveront ici.</p>')
+      + (sent.length ? `<div class="sec">Envoyés à mes amis</div><div class="mem-grid">${sent.map(it => this.tile(it)).join('')}</div>` : '')
+      + `<div style="padding:8px 16px"><button class="btn" type="button" data-act="memAdd">${I.plus}Envoyer un souvenir à des amis</button></div>`;
+    else { const all = [...pub, ...sent, ...recv.filter(x => !x.once || !x.opened)].sort((a, b) => b.takenAt - a.takenAt);
+      main = `<div class="mem-grid">${vault}</div>` + (all.length ? byYear(all) : priv.length ? '' : empty('Gardez vos plus beaux moments', 'Ajoutez des photos et des vidéos : chaque année, Tam-Tam vous les rappellera le jour même.')); }
+    const un = this.unseen;
     return `<div class="mem">
-      <div class="chips mem-filts">${[['all', 'Tous'], ['public', 'Publics'], ['private', 'Privés'], ['restricted', 'Restreints']].map(([k, l]) => `<button class="chip" type="button" data-act="memFilt" data-f="${k}" aria-pressed="${f === k}">${l}</button>`).join('')}</div>
-      ${card}
-      <p class="hint mem-legend">Public : visible par tous sur votre profil. Privé : vous seul. Restreint : les personnes de votre choix.</p>
-      ${list.length ? [...yrs.entries()].map(([y, its]) => `<div class="sec">${y}</div><div class="mem-grid">${its.map(it => this.tile(it)).join('')}</div>`).join('')
-        : `<div class="empty"><p><b>${f === 'all' ? 'Gardez vos plus beaux moments' : 'Rien dans ce filtre'}</b></p>${f === 'all' ? '<p>Ajoutez des photos et des vidéos : chaque année, Tam-Tam vous les rappellera le jour même.</p>' : ''}<button class="btn" type="button" data-act="memAdd">${I.plus}Ajouter un souvenir</button></div>`}
+      <div class="chips mem-filts">${[['all', 'Tous'], ['public', 'Publics'], ['friends', 'Amis Tam-Tam'], ['private', 'Privés']].map(([k, l]) => `<button class="chip" type="button" data-act="memFilt" data-f="${k}" aria-pressed="${f === k}">${k === 'private' ? I.lock : ''}${l}${k === 'friends' && un ? ` <span class="cnt">${un}</span>` : ''}</button>`).join('')}</div>
+      ${card}${main}
     </div>`;
   },
   tile(it, other) {
-    const [l, ic] = MEM_AUD[it.aud] || MEM_AUD.private;
-    return `<button class="mem-tile" type="button" data-act="memView" data-id="${it.id}"${other ? ` data-u="${other}"` : ''} aria-label="${it.kind === 'video' ? 'Vidéo' : 'Photo'} ${l.toLowerCase()} du ${new Date(it.takenAt).toLocaleDateString('fr-FR')}"><span class="mem-th" data-memth="${it.id}"${other ? ` data-u="${other}"` : ''}>${it.locked ? '🔒' : ''}</span>${it.kind === 'video' ? `<span class="mem-play">▶</span>` : ''}${other ? '' : `<span class="mem-b">${ic}${l}</span>`}</button>`;
+    const [l, ic] = MEM_AUD[it.aud] || MEM_AUD.private, recv = !this.mine(it) && !other, fu = recv ? uOf(it.from) : null;
+    const veil = it.locked ? '🔒' : it.once && recv ? `<span class="mem-veil once">${it.opened ? 'Ouvert' : '① Vue unique'}</span>` : this.hidden(it) ? `<span class="mem-veil">${I.lock}</span>` : '';
+    const noTh = !!veil;
+    const badge = recv ? `<span class="mem-b from">${!it.seen ? '<i class="new-dot"></i>' : ''}${esc(first(fu.name))}</span>` : other ? '' : `<span class="mem-b">${ic}${it.aud === 'friends' ? `${(it.to || []).length || ''}` : l}${it.lock ? ' · ' + I.lock : ''}${it.once ? ' · ①' : ''}</span>`;
+    return `<button class="mem-tile${noTh ? ' veiled' : ''}" type="button" data-act="memView" data-id="${it.id}"${other ? ` data-u="${other}"` : ''} aria-label="${it.kind === 'video' ? 'Vidéo' : 'Photo'} ${recv ? 'reçue de ' + esc(fu.name) : l.toLowerCase()} du ${new Date(it.takenAt).toLocaleDateString('fr-FR')}"><span class="mem-th"${noTh ? '' : ` data-memth="${it.id}"`}${other ? ` data-u="${other}"` : ''}>${veil}</span>${it.kind === 'video' && !noTh ? `<span class="mem-play">▶</span>` : ''}${badge}</button>`;
   },
   // Remplit les vignettes déchiffrées après l'affichage.
   async hydrate(root = document) {
@@ -79,33 +127,50 @@ const Mem = {
       if (it.kind === 'video' && !it.thumb) el.innerHTML = `<video src="${u}" muted playsinline preload="metadata"></video>`; else el.style.backgroundImage = `url("${u}")`;
     }
   },
-  find(id, uid) { return (uid ? this.others.get(uid) : this.items || []).find(x => x.id === id); },
+  find(id, uid) { return uid ? (this.others.get(uid) || []).find(x => x.id === id) : (this.items || []).find(x => x.id === id) || (this.recv || []).find(x => x.id === id); },
+  mine(it) { return !it.from || it.from === S.me.id; },
+  // un souvenir protégé (privé, ou envoyé en privé) ne montre rien tant que le code n'est pas tapé
+  hidden(it) { return (it.aud === 'private' || it.lock) && !this.unlocked; },
   /* ---- ajouter ---- */
   opts() { return {target: r => this.compose(r), title: 'Nouveau souvenir', gallery: () => $('#memIn') && $('#memIn').click(), native: () => $('#memCamIn') && $('#memCamIn').click()}; },
   addSheet() {
     sheet(`${head('Ajouter un souvenir')}<div class="sheet-body"><p class="hint">Une photo ou une vidéo de votre téléphone, ou prise maintenant.</p>
-      <div class="mem-add">${[['memPick', I.image, 'Galerie'], ['memCam', CI.photo, 'Photo'], ['memVid', CI.video, 'Vidéo']].map(([a, ic, l]) => `<button type="button" data-act="${a}">${ic}<span>${l}</span></button>`).join('')}</div></div>`, 'Ajouter un souvenir');
+      <div class="mem-add">${[['memPick', I.image, 'Galerie (plusieurs)'], ['memCam', CI.photo, 'Photo'], ['memVid', CI.video, 'Vidéo']].map(([a, ic, l]) => `<button type="button" data-act="${a}">${ic}<span>${l}</span></button>`).join('')}</div></div>`, 'Ajouter un souvenir');
+  },
+  // Plusieurs photos et vidéos choisies d'un coup dans la galerie : un seul réglage pour toutes.
+  composeMany(files) {
+    const ok = [], big = [];
+    for (const f of files) { if (!/^(image|video)\//.test(f.type)) continue; if (f.size > 40_000_000) { big.push(f.name); continue; } ok.push({kind: /^video/.test(f.type) ? 'video' : 'photo', blob: f, mime: f.type, dur: 0, url: URL.createObjectURL(f), date: new Date(f.lastModified || Date.now()).toISOString().slice(0, 10)}); }
+    if (big.length) toast(`${big.length} fichier${big.length > 1 ? 's' : ''} de plus de 40 Mo ignoré${big.length > 1 ? 's' : ''}.`);
+    if (!ok.length) return;
+    if (ok.length === 1) { const r = ok[0]; URL.revokeObjectURL(r.url); return r.kind === 'video' ? Edit.videoFile(r.blob, this.opts()) : Edit.photoFile(r.blob, this.opts()); }
+    this.pend = {many: ok.slice(0, 30), aud: null, to: [], cap: '', lock: false, once: false};
+    if (ok.length > 30) toast('30 souvenirs au maximum à la fois : les 30 premiers sont gardés.');
+    this.composeRender();
   },
   compose(r) {
-    this.pend = {...r, url: URL.createObjectURL(r.blob), aud: 'private', to: [], date: new Date().toISOString().slice(0, 10)};
+    this.pend = {...r, url: URL.createObjectURL(r.blob), aud: null, to: [], lock: false, once: false, date: new Date().toISOString().slice(0, 10)};
     this.composeRender();
   },
   composeRender() {
     const p = this.pend, cs = S.contacts.contacts || [];
-    sheet(`${head('Nouveau souvenir')}<form data-form="memSave"><div class="sheet-body">
-      <div class="mem-prev">${p.kind === 'video' ? `<video src="${p.url}" class="${p.mirror ? 'mirror' : ''}" autoplay loop muted playsinline></video>` : `<img src="${p.url}" alt="Aperçu">`}</div>
+    const many = p.many, n = many ? many.length : 1;
+    sheet(`${head(many ? `${n} nouveaux souvenirs` : 'Nouveau souvenir')}<form data-form="memSave"><div class="sheet-body">
+      ${many ? `<div class="mem-strip">${many.map(x => x.kind === 'video' ? `<video src="${x.url}" muted playsinline preload="metadata"></video>` : `<img src="${x.url}" alt="">`).join('')}</div><p class="hint">Chaque souvenir garde la date de sa photo ou de sa vidéo.</p>`
+        : `<div class="mem-prev">${p.kind === 'video' ? `<video src="${p.url}" class="${p.mirror ? 'mirror' : ''}" autoplay loop muted playsinline></video>` : `<img src="${p.url}" alt="Aperçu">`}</div>`}
       <div class="field"><label for="memCap">Légende</label><div class="mem-capw">${Emoji.btn('#memCap')}<input id="memCap" maxlength="500" value="${esc(p.cap || '')}" placeholder="Ce moment en quelques mots…" autocomplete="off"></div></div>
-      <div class="field"><label for="memDate">Date du souvenir</label><input id="memDate" type="date" value="${p.date}" max="${new Date().toISOString().slice(0, 10)}"><small class="hint">Pour une ancienne photo, mettez sa vraie date : Tam-Tam vous la rappellera chaque année ce jour-là.</small></div>
-      <span class="lbl">Qui peut le voir ?</span>
+      ${many ? '' : `<div class="field"><label for="memDate">Date du souvenir</label><input id="memDate" type="date" value="${p.date}" max="${new Date().toISOString().slice(0, 10)}"><small class="hint">Pour une ancienne photo, mettez sa vraie date : Tam-Tam vous la rappellera chaque année ce jour-là.</small></div>`}
+      <span class="lbl">Qui peut ${many ? 'les' : 'le'} voir ? <small>(à choisir)</small></span>
       <div class="seg mem-aud">${Object.entries(MEM_AUD).map(([k, [l, ic]]) => `<button type="button" data-act="memAud" data-a="${k}" aria-pressed="${p.aud === k}">${ic}${l}</button>`).join('')}</div>
-      <p class="hint">${{public: 'Visible par tous les membres sur votre profil.', private: 'Vous seul pouvez le voir. Il est chiffré pour vous seul.', restricted: 'Seules les personnes cochées pourront le voir. Il est chiffré pour elles seulement.'}[p.aud]}</p>
-      ${p.aud === 'restricted' ? `<div class="grp-box"><div class="cg-tools"><label class="pick cg-all"><input type="checkbox" id="memAll"${cs.length && p.to.length === cs.length ? ' checked' : ''}><span><b>Tout cocher</b></span></label><span class="hint">${p.to.length} sur ${cs.length}</span></div>
+      <p class="hint">${{public: 'Visible par tous les membres sur votre profil.', private: 'Vous seul. Chiffré pour vous seul, et rangé dans le dossier Privé ouvert avec votre code à 4 chiffres.', friends: 'Envoyé aux amis cochés, chiffré pour eux seulement. Ils sont prévenus.'}[p.aud] || 'Touchez Public, Privé ou Amis Tam-Tam.'}</p>
+      ${p.aud === 'friends' ? `<div class="mem-opts"><label class="pick chk"><input type="checkbox" id="memLock"${p.lock ? ' checked' : ''}><span><b>${I.lock} Privé</b> · chaque ami l’ouvre avec son propre code à 4 chiffres</span></label><label class="pick chk"><input type="checkbox" id="memOnce"${p.once ? ' checked' : ''}><span><b>① Vue unique</b> · il ne pourra l’ouvrir qu’une seule fois</span></label></div>` : ''}
+      ${p.aud === 'friends' ? `<div class="grp-box"><div class="cg-tools"><label class="pick cg-all"><input type="checkbox" id="memAll"${cs.length && p.to.length === cs.length ? ' checked' : ''}><span><b>Tout cocher</b></span></label><span class="hint">${p.to.length} sur ${cs.length}</span></div>
         <div class="picks">${cs.slice().sort((a, b) => a.name.localeCompare(b.name, 'fr')).map(u => `<label class="pick"><input type="checkbox" name="memTo" value="${u.id}"${p.to.includes(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('') || '<p class="hint">Ajoutez d’abord des amis.</p>'}</div></div>` : ''}
       <p class="err" id="memErr" role="alert" hidden></p>
-      <div class="actions"><button class="btn ghost" type="button" data-act="memCancel">Annuler</button><button class="btn" type="submit" id="memSaveBtn">Enregistrer</button></div>
+      <div class="actions"><button class="btn ghost" type="button" data-act="memCancel">Annuler</button><button class="btn" type="submit" id="memSaveBtn"${p.aud ? '' : ' disabled'}>${p.aud === 'friends' ? 'Envoyer' : 'Enregistrer'}${n > 1 ? ` (${n})` : ''}</button></div>
     </div></form>`, 'Nouveau souvenir');
   },
-  keepForm() { const p = this.pend; if (!p) return; const c = $('#memCap'), d = $('#memDate'); if (c) p.cap = c.value; if (d && d.value) p.date = d.value; p.to = [...document.querySelectorAll('input[name="memTo"]:checked')].map(i => +i.value); },
+  keepForm() { const p = this.pend; if (!p) return; const c = $('#memCap'), d = $('#memDate'), l = $('#memLock'), o = $('#memOnce'); if (c) p.cap = c.value; if (d && d.value) p.date = d.value; if (l) p.lock = l.checked; if (o) p.once = o.checked; if ($('.grp-box')) p.to = [...document.querySelectorAll('input[name="memTo"]:checked')].map(i => +i.value); },
   async thumbOf(r) {
     // petite image (≈ 480 px) pour la grille : vite chargée, même pour une vidéo
     const src = await new Promise((ok, ko) => {
@@ -117,38 +182,67 @@ const Mem = {
     const g = cv.getContext('2d'); if (r.mirror) { g.translate(cv.width, 0); g.scale(-1, 1); } g.drawImage(src, 0, 0, cv.width, cv.height);
     return new Promise(ok => cv.toBlob(ok, 'image/jpeg', .8));
   },
+  async saveOne(r, p, cap, date) {
+    let thumb = null; try { thumb = await this.thumbOf(r); } catch {}
+    const payload = {t: (cap || '').trim()}; if (r.kind === 'video') Object.assign(payload, {mime: r.mime, dur: r.dur || 0});
+    const bytes = await r.blob.arrayBuffer(), tb = thumb ? await thumb.arrayBuffer() : undefined;
+    let sealed;
+    if (p.aud === 'public') sealed = await this.sealPublic(payload, bytes, tb);
+    else { const rc = [[S.me.id, E2E.pubJwk]]; if (p.aud === 'friends') for (const u of S.contacts.contacts) if (p.to.includes(u.id) && u.pubkey) rc.push([u.id, u.pubkey]); sealed = await E2E.seal(payload, rc, bytes, tb); }
+    const media = (await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'})).id;
+    const th = sealed.blob2 ? (await api('/api/media', sealed.blob2, {raw: true, type: 'application/octet-stream'})).id : null;
+    const res = await api('/api/memories', {media, thumb: th, env: sealed.env, aud: p.aud, kind: r.kind === 'video' ? 'video' : 'image', taken: new Date(date + 'T12:00:00').getTime(), to: p.to, lock: p.lock, once: p.once});
+    const it = await this.open(res.item); it.to = p.aud === 'friends' ? p.to.slice() : undefined; if (thumb) this.thumbs.set(it.id, Promise.resolve(URL.createObjectURL(thumb)));
+    (this.items = this.items || []).push(it);
+  },
   async save() {
     this.keepForm(); const p = this.pend, er = $('#memErr'), btn = $('#memSaveBtn');
-    if (p.aud === 'restricted' && !p.to.length) { er.textContent = 'Cochez au moins une personne, ou choisissez Privé.'; er.hidden = false; return; }
-    btn.disabled = true; btn.textContent = 'Enregistrement…';
+    if (!p.aud) { er.textContent = 'Choisissez qui peut voir : Public, Privé ou Amis Tam-Tam.'; er.hidden = false; return; }
+    if (p.aud === 'friends' && !p.to.length) { er.textContent = 'Cochez au moins un ami.'; er.hidden = false; return; }
+    const list = p.many || [p]; btn.disabled = true;
     try {
-      let thumb = null; try { thumb = await this.thumbOf(p); } catch {}
-      const payload = {t: (p.cap || '').trim()}; if (p.kind === 'video') Object.assign(payload, {mime: p.mime, dur: p.dur});
-      const bytes = await p.blob.arrayBuffer(), tb = thumb ? await thumb.arrayBuffer() : undefined;
-      let sealed;
-      if (p.aud === 'public') sealed = await this.sealPublic(payload, bytes, tb);
-      else { const rc = [[S.me.id, E2E.pubJwk]]; if (p.aud === 'restricted') for (const u of S.contacts.contacts) if (p.to.includes(u.id) && u.pubkey) rc.push([u.id, u.pubkey]); sealed = await E2E.seal(payload, rc, bytes, tb); }
-      const media = (await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'})).id;
-      const th = sealed.blob2 ? (await api('/api/media', sealed.blob2, {raw: true, type: 'application/octet-stream'})).id : null;
-      const taken = new Date(p.date + 'T12:00:00').getTime();
-      const r = await api('/api/memories', {media, thumb: th, env: sealed.env, aud: p.aud, kind: p.kind === 'video' ? 'video' : 'image', taken, to: p.to});
-      const it = await this.open(r.item); if (thumb) this.thumbs.set(it.id, Promise.resolve(URL.createObjectURL(thumb)));
-      (this.items = this.items || []).push(it); this.items.sort((a, b) => b.takenAt - a.takenAt);
-      URL.revokeObjectURL(p.url); this.pend = null; closeLayer(); if (S.tab !== 'souvenirs') { S.tab = 'souvenirs'; renderAll(); } else renderBody(); toast('Souvenir enregistré');
-    } catch (e) { btn.disabled = false; btn.textContent = 'Enregistrer'; er.textContent = e.message; er.hidden = false; }
+      for (let i = 0; i < list.length; i++) { btn.textContent = list.length > 1 ? `Envoi ${i + 1} / ${list.length}…` : 'Enregistrement…'; await this.saveOne(list[i], p, p.cap, list[i].date || p.date); }
+      this.items.sort((a, b) => b.takenAt - a.takenAt);
+      list.forEach(x => x.url && URL.revokeObjectURL(x.url)); this.pend = null; closeLayer();
+      this.filt = p.aud === 'friends' ? 'friends' : p.aud === 'private' ? 'private' : 'all'; if (p.aud === 'private') this.unlocked = true;
+      if (S.tab !== 'souvenirs') { S.tab = 'souvenirs'; renderAll(); } else renderBody();
+      toast(p.aud === 'friends' ? (list.length > 1 ? `${list.length} souvenirs envoyés` : 'Souvenir envoyé') : list.length > 1 ? `${list.length} souvenirs enregistrés` : 'Souvenir enregistré');
+    } catch (e) { btn.disabled = false; btn.textContent = 'Réessayer'; er.textContent = e.message; er.hidden = false; renderBody(); }
+  },
+  // Envoyer à des amis un souvenir déjà gardé : il est rechiffré pour eux.
+  shareSheet(id) {
+    const it = this.find(id); if (!it) return; const cs = (S.contacts.contacts || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+    this.shareId = id;
+    sheet(`${head('Envoyer à des amis Tam-Tam')}<form data-form="memShare"><div class="sheet-body">
+      <div class="mem-opts"><label class="pick chk"><input type="checkbox" id="shLock"${it.aud === 'private' ? ' checked' : ''}><span><b>${I.lock} Privé</b> · chaque ami l’ouvre avec son propre code à 4 chiffres</span></label><label class="pick chk"><input type="checkbox" id="shOnce"><span><b>① Vue unique</b> · une seule ouverture</span></label></div>
+      <div class="grp-box"><div class="picks">${cs.map(u => `<label class="pick"><input type="checkbox" name="shTo" value="${u.id}">${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('') || '<p class="hint">Ajoutez d’abord des amis.</p>'}</div></div>
+      <p class="err" id="shErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="submit" id="shBtn">Envoyer</button></div></div></form>`, 'Envoyer');
+  },
+  async share() {
+    const it = this.find(this.shareId), to = [...document.querySelectorAll('input[name="shTo"]:checked')].map(i => +i.value), er = $('#shErr'), btn = $('#shBtn');
+    if (!to.length) { er.textContent = 'Cochez au moins un ami.'; er.hidden = false; return; }
+    btn.disabled = true; btn.textContent = 'Envoi…';
+    try { const b = await this.full(it); await this.saveOne({kind: it.kind === 'video' ? 'video' : 'photo', blob: b, mime: it.vmime || 'video/mp4', dur: it.dur || 0}, {aud: 'friends', to, lock: $('#shLock').checked, once: $('#shOnce').checked}, it.cap, new Date(it.takenAt).toISOString().slice(0, 10));
+      this.items.sort((a, b) => b.takenAt - a.takenAt); closeLayer(); renderBody(); toast(to.length > 1 ? `Envoyé à ${to.length} amis` : 'Souvenir envoyé'); }
+    catch (e) { btn.disabled = false; btn.textContent = 'Envoyer'; er.textContent = e.message; er.hidden = false; }
   },
   /* ---- regarder ---- */
   async view(id, uid) {
     const it = this.find(id, uid); if (!it) return; if (it.locked) return toast('Ce souvenir ne peut pas être ouvert sur cet appareil.');
-    const mine = !uid, [l, ic] = MEM_AUD[it.aud] || MEM_AUD.private, prot = it.aud !== 'public';
+    if (this.hidden(it)) return this.unlockThen(() => { renderBody(); this.view(id, uid); });
+    const recv = !uid && !this.mine(it);
+    if (recv && it.once && it.opened) return toast('Souvenir à vue unique déjà ouvert.');
+    if (recv && !it.seen) { it.seen = true; this.unseen = Math.max(0, this.unseen - 1); renderTabs(); api('/api/memories/received/seen', {}).catch(() => {}); }
+    const mine = !uid && !recv, [l, ic] = MEM_AUD[it.aud] || MEM_AUD.private, prot = it.aud !== 'public';
     layer.innerHTML = `<div class="mem-view${prot ? ' nocopy' : ''}" role="dialog" aria-modal="true" aria-label="Souvenir"><div class="mv-top"><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button>
-      <div class="grow"><b>${new Date(it.takenAt).toLocaleDateString('fr-FR', {day: 'numeric', month: 'long', year: 'numeric'})}</b><small>${ic}${l}</small></div></div>
+      <div class="grow"><b>${new Date(it.takenAt).toLocaleDateString('fr-FR', {day: 'numeric', month: 'long', year: 'numeric'})}</b><small>${recv ? `Envoyé par ${esc(uOf(it.from).name)}` : `${ic}${l}`}${it.lock ? ' · privé' : ''}${it.once ? ' · vue unique' : ''}</small></div></div>
       <div class="mv-stage"><div class="lk-spin"></div></div>${it.cap ? `<p class="mv-cap">${esc(it.cap)}</p>` : ''}
-      ${mine ? `<div class="mv-foot"><button class="btn sm" type="button" data-act="memRepost" data-id="${it.id}">Reposter en statut</button><button class="btn sm ghost danger" type="button" data-act="memDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}${prot && !mine ? watermark() : ''}</div>`;
+      ${mine ? `<div class="mv-foot"><button class="btn sm" type="button" data-act="memShare" data-id="${it.id}">${I.users}Envoyer à des amis</button>${it.aud === 'public' ? `<button class="btn sm ghost" type="button" data-act="memRepost" data-id="${it.id}">Reposter en statut</button>` : ''}<button class="btn sm ghost danger" type="button" data-act="memDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}${prot && !mine ? watermark() : ''}</div>`;
     try {
       const b = await this.full(it), u = URL.createObjectURL(b), st = layer.querySelector('.mv-stage'); if (!st) return URL.revokeObjectURL(u);
       st.innerHTML = it.kind === 'video' ? `<video src="${u}" playsinline autoplay controls controlslist="nodownload" disablepictureinpicture></video>` : `<img src="${u}" alt="" draggable="false">`;
-    } catch (e) { toast(e.message); }
+      if (recv && it.once) { it.opened = true; }
+    } catch (e) { toast(recv && it.once ? 'Souvenir à vue unique déjà ouvert.' : e.message); }
   },
   async repost(id) {
     const it = this.find(id); if (!it) return;
@@ -169,26 +263,33 @@ const Mem = {
   },
 };
 Object.assign(ACT, {
-  memFilt(d) { Mem.filt = d.f; renderBody(); },
+  memFilt(d) { if (d.f === 'private' && !Mem.unlocked) { Mem.filt = 'private'; renderBody(); return Mem.unlockThen(() => renderBody()); } Mem.filt = d.f; renderBody(); if (d.f === 'friends') Mem.markSeen(); },
+  memVault() { Mem.unlockThen(() => { Mem.filt = 'private'; renderBody(); }); },
+  memRelock() { Mem.unlocked = false; Mem.filt = 'all'; renderBody(); },
+  memForgot() { Mem.codeSheet('forgot'); },
+  memShare(d) { Mem.shareSheet(+d.id); },
   memLater() { try { localStorage.setItem(Mem.laterKey(), '1'); } catch {} renderBody(); },
   memAdd() { Mem.addSheet(); },
   memPick() { $('#memIn').click(); },
   memCam() { closeLayer(); Cam.open({...Mem.opts(), mode: 'photo'}); },
   memVid() { closeLayer(); Cam.open({...Mem.opts(), mode: 'video'}); },
   memAud(d) { Mem.keepForm(); Mem.pend.aud = d.a; Mem.composeRender(); },
-  memCancel() { if (Mem.pend) URL.revokeObjectURL(Mem.pend.url); Mem.pend = null; closeLayer(); },
+  memCancel() { const p = Mem.pend; if (p) (p.many || [p]).forEach(x => x.url && URL.revokeObjectURL(x.url)); Mem.pend = null; closeLayer(); },
   memView(d) { Mem.view(+d.id, d.u ? +d.u : 0); },
   memRepost(d) { Mem.repost(+d.id); },
   memDelAsk(d) { confirmSheet('Supprimer ce souvenir ?', 'La photo ou la vidéo sera effacée définitivement de Tam-Tam.', 'Supprimer', 'memDelYes', d.id); },
   async memDelYes(d) { closeLayer(); try { await api(`/api/memories/${d.id}/delete`, {}); Mem.items = (Mem.items || []).filter(x => x.id !== +d.id); renderBody(); toast('Souvenir supprimé'); } catch (e) { toast(e.message); } },
 });
 FORMS.memSave = () => Mem.save();
+FORMS.memCode = () => Mem.codeSubmit();
+FORMS.memShare = () => Mem.share();
 document.addEventListener('change', e => {
   const t = e.target;
-  if (t.id === 'memIn' || t.id === 'memCamIn') { const f = t.files[0]; t.value = ''; if (!f) return; closeLayer(); if (/^video\//.test(f.type)) Edit.videoFile(f, Mem.opts()); else Edit.photoFile(f, Mem.opts()); }
+  if (t.id === 'memIn') { const fs = [...t.files]; t.value = ''; if (!fs.length) return; closeLayer(); Mem.composeMany(fs); }
+  else if (t.id === 'memCamIn') { const f = t.files[0]; t.value = ''; if (!f) return; closeLayer(); Edit.photoFile(f, Mem.opts()); }
   else if (t.id === 'memAll') { document.querySelectorAll('input[name="memTo"]').forEach(i => { i.checked = t.checked; }); Mem.keepForm(); const h = t.closest('.grp-box').querySelector('.hint'); if (h) h.textContent = `${Mem.pend.to.length} sur ${(S.contacts.contacts || []).length}`; }
   else if (t.name === 'memTo') { Mem.keepForm(); const box = t.closest('.grp-box'), all = box.querySelector('#memAll'), h = box.querySelector('.cg-tools .hint'), n = (S.contacts.contacts || []).length; if (all) all.checked = Mem.pend.to.length === n; if (h) h.textContent = `${Mem.pend.to.length} sur ${n}`; }
 });
 
 // Champs de fichiers des souvenirs, toujours présents dans la page.
-document.body.insertAdjacentHTML('beforeend', '<input type="file" id="memIn" accept="image/*,video/*" hidden><input type="file" id="memCamIn" accept="image/*" capture="environment" hidden>');
+document.body.insertAdjacentHTML('beforeend', '<input type="file" id="memIn" accept="image/*,video/*" multiple hidden><input type="file" id="memCamIn" accept="image/*" capture="environment" hidden>');
