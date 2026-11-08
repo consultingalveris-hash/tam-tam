@@ -256,7 +256,7 @@ function renderAll() { renderTabs(); renderHead(); renderBody(); }
 /* ---------- liste ---------- */
 const TABS = [['chats', 'Discussions', I.chats], ['contacts', 'Contacts', I.users], ['souvenirs', 'Souvenirs', I.image], ['calls', 'Appels', I.dialpad]];
 function renderTabs() {
-  const unread = [...S.chats.values()].filter(c => c.unread > 0 && !c.archived && (!c.hidden || S.showHidden)).length, inc = S.contacts.incoming.length;
+  const unread = [...S.chats.values()].filter(c => (c.unread > 0 || c.marked) && !c.archived && (!c.hidden || S.showHidden)).length, inc = S.contacts.incoming.length;
   $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${id === 'chats' && unread ? `<span class="badge" aria-label="${unread} non lues">${unread}</span>` : ''}${id === 'contacts' && inc ? `<span class="badge" aria-label="${inc} demande${inc > 1 ? 's' : ''} d’ami">${inc}</span>` : ''}</button>`).join('');
   $('#fab').hidden = S.tab !== 'chats'; Device.badge(); const fc = $('#filts'); if (fc) fc.innerHTML = filtChips(); const ac = $('.arch-chip'); if (ac) ac.outerHTML = archChip();
   const n = [...S.chats.values()].reduce((a, c) => a + (c.unread || 0), 0); document.title = n ? `(${n}) tam-tam` : 'tam-tam';
@@ -267,7 +267,7 @@ function archChip() {
   return `<button class="chip arch-chip" type="button" data-act="filt" data-f="arch" aria-pressed="${S.filt === 'arch'}" title="Discussions archivées">${ARCH_IC}Archives${nu ? ` <span class="cnt">${nu}</span>` : na.length ? ` <small>${na.length}</small>` : ''}</button>`;
 }
 function filtChips() {
-  const n = [...S.chats.values()].filter(c => c.unread > 0 && !c.archived && (!c.hidden || S.showHidden)).length;
+  const n = [...S.chats.values()].filter(c => (c.unread > 0 || c.marked) && !c.archived && (!c.hidden || S.showHidden)).length;
   return [['all', 'Toutes'], ['unread', 'Non lues'], ['group', 'Groupes'], ['me', 'Mon profil']].map(([k, l]) => `<button class="chip" type="button" data-act="filt" data-f="${k}" aria-pressed="${(S.filt || 'all') === k || (k === 'all' && S.filt === 'arch')}">${l}${k === 'unread' && n ? ` <span class="cnt">${n}</span>` : ''}</button>`).join('');
 }
 function renderHead() {
@@ -323,7 +323,7 @@ function chatRows() {
   const fl = S.filt || 'all';
   if (fl === 'me') return profileEditor();
   list = list.filter(c => fl === 'arch' ? c.archived : !c.archived);
-  if (fl === 'unread') list = list.filter(c => c.unread > 0); else if (fl === 'group') list = list.filter(c => c.type === 'group');
+  if (fl === 'unread') list = list.filter(c => c.unread > 0 || c.marked); else if (fl === 'group') list = list.filter(c => c.type === 'group');
   const hitMsg = {};
   if (q && !(S.showHidden && Priv.isCode(q))) {
     Find.preload(q);
@@ -591,7 +591,7 @@ function onMsgIn(m, update) {
 let readT;
 function markRead() {
   const c = S.chats.get(S.chatId), list = S.msgs.get(S.chatId); if (!c || !list || !list.length) return;
-  const last = list[list.length - 1].id; c.unread = 0; const me = c.members.find(x => x.id === S.me.id); if (me) me.lastRead = Math.max(me.lastRead, last);
+  const last = list[list.length - 1].id; c.unread = 0; c.marked = false; const me = c.members.find(x => x.id === S.me.id); if (me) me.lastRead = Math.max(me.lastRead, last);
   clearTimeout(readT); readT = setTimeout(() => api(`/api/chats/${c.id}/read`, {upTo: last}).catch(() => {}), 300);
   renderTabs(); if (S.tab === 'chats') renderBody();
 }
