@@ -131,16 +131,79 @@ const Cam = {
 
 /* ---------- vidéos longues ou lourdes : découpées en parties d'une minute (et allégées) ---------- */
 const VID_MAX_TOTAL = 5 * 60;
+const VFast = {
+  ok: () => !!(window.VideoEncoder && window.VideoDecoder && window.AudioEncoder),
+  lib: null,
+  load() { return this.lib || (this.lib = import('/mb.js').catch(e => { this.lib = null; throw e; })); },
+  // Coupe en parties d'une minute (ou allège une seule partie). Image : 720 px sur le petit côté au maximum.
+  async cut(file, prog, job) {
+    const M = await this.load();
+    const probe = new M.Input({source: new M.BlobSource(file), formats: M.ALL_FORMATS});
+    const total = await probe.computeDuration(), vt = await probe.getPrimaryVideoTrack();
+    if (!vt || !total) throw new Error('vidéo illisible');
+    const dw = vt.displayWidth, dh = vt.displayHeight, k = Math.min(1, 720 / Math.min(dw, dh));
+    const w = Math.round(dw * k / 2) * 2, h = Math.round(dh * k / 2) * 2;
+    const vbr = 1_600_000, abr = 96_000;
+    const vc = await M.getFirstEncodableVideoCodec(['avc', 'vp9', 'vp8'], {width: w, height: h, bitrate: vbr});
+    if (!vc) throw new Error('aucun encodeur vidéo');
+    const mp4 = vc === 'avc', ac = await M.getFirstEncodableAudioCodec(mp4 ? ['aac', 'opus'] : ['opus'], {numberOfChannels: 2, sampleRate: 48000, bitrate: abr});
+    const n = Math.max(1, Math.ceil((total - 1) / VID_MAX_S)), parts = [];
+    for (let i = 0; i < n; i++) {
+      if (job.stop) throw new Error('annulé');
+      const s = i * VID_MAX_S, e = i === n - 1 ? total : (i + 1) * VID_MAX_S;
+      const input = new M.Input({source: new M.BlobSource(file), formats: M.ALL_FORMATS});
+      const output = new M.Output({format: mp4 ? new M.Mp4OutputFormat({fastStart: 'in-memory'}) : new M.WebMOutputFormat(), target: new M.BufferTarget()});
+      const conv = await M.Conversion.init({input, output, trim: {start: s, end: e}, showWarnings: false,
+        video: {width: w, height: h, fit: 'fill', codec: vc, bitrate: vbr, forceTranscode: true},
+        audio: ac ? {codec: ac, bitrate: abr, numberOfChannels: 2} : {discard: true}});
+      if (!conv.isValid) throw new Error('conversion impossible');
+      job.conv = conv; conv.onProgress = f => prog((i + f) / n, i, n);
+      await conv.execute(); job.conv = null;
+      const mime = mp4 ? 'video/mp4' : 'video/webm';
+      parts.push({blob: new Blob([output.target.buffer], {type: mime}), dur: Math.max(1, Math.round(e - s)), mime});
+    }
+    prog(1, n - 1, n); return parts;
+  },
+};
 const VCut = {
+  // Vidéo courte mais lourde : allégée tout de suite (envoi plus rapide) ; si l'appareil n'y arrive pas, on garde l'originale.
+  auto(file, dur, done, keep) {
+    const el = document.createElement('div'); el.className = 'vprep'; el.innerHTML = '<div class="vp-card" role="dialog" aria-modal="true" aria-label="Préparation de la vidéo"></div>'; document.body.appendChild(el);
+    const card = el.firstChild;
+    card.innerHTML = `<h2>Préparation de la vidéo…</h2><div class="vp-bar"><i style="width:0%"></i></div><p class="vp-t">0 %</p><div class="vp-act"><button class="btn ghost" type="button">Annuler</button></div>`;
+    const job = {stop: false}; card.querySelector('button').onclick = () => { job.stop = true; if (job.conv) job.conv.cancel().catch(() => {}); };
+    VFast.cut(file, f => { const bar = card.querySelector('.vp-bar i'), tt = card.querySelector('.vp-t'); if (bar) bar.style.width = Math.round(f * 100) + '%'; if (tt) tt.textContent = Math.round(f * 100) + ' %'; }, job)
+      .then(parts => { el.remove(); parts[0].blob.size < file.size ? done(parts) : keep(); })
+      .catch(e => { el.remove(); if (job.stop) return toast('Préparation annulée.'); console.warn(e); file.size > VID_MAX_BYTES ? toast('Cette vidéo est trop lourde pour être envoyée.') : keep(); });
+  },
   // Propose de couper : une seule fenêtre au-dessus de tout (statut ou discussion).
   ask(file, dur, done) {
     const n = Math.max(1, Math.ceil(dur / VID_MAX_S)), el = document.createElement('div'); el.className = 'vprep';
     el.innerHTML = `<div class="vp-card" role="dialog" aria-modal="true" aria-label="Vidéo longue"><h2>${n > 1 ? 'Vidéo longue' : 'Vidéo lourde'}</h2>
       <p>${n > 1 ? `Cette vidéo dure <b>${fmtT(dur)}</b>. Une vidéo dure 1 minute au maximum : Tam-Tam peut la couper en <b>${n} parties</b> qui se suivront.` : 'Cette vidéo est trop lourde pour être envoyée telle quelle : Tam-Tam peut l’alléger.'}</p>
-      <p class="hint">La préparation prend à peu près la durée de la vidéo (${fmtT(dur)}). Gardez l’écran allumé et Tam-Tam ouvert.</p>
+      <p class="hint">${VFast.ok() ? 'La préparation prend quelques secondes.' : `La préparation prend à peu près la durée de la vidéo (${fmtT(dur)}).`} Gardez l’écran allumé et Tam-Tam ouvert.</p>
       <div class="vp-act"><button class="btn ghost" type="button" data-vp="no">Annuler</button><button class="btn" type="button" data-vp="yes">${n > 1 ? `Couper en ${n} parties` : 'Alléger la vidéo'}</button></div></div>`;
     document.body.appendChild(el);
-    el.addEventListener('click', e => { const b = e.target.closest('[data-vp]'); if (!b) return; if (b.dataset.vp === 'no') { el.remove(); return; } this.run(file, dur, el, done); });
+    el.addEventListener('click', e => { const b = e.target.closest('[data-vp]'); if (!b) return; if (b.dataset.vp === 'no') { el.remove(); return; } VFast.ok() ? this.fast(file, dur, el, done) : this.run(file, dur, el, done); });
+  },
+  // Méthode rapide : la puce vidéo de l'appareil compresse et coupe directement le fichier (comme WhatsApp), sans le rejouer.
+  async fast(file, dur, el, done) {
+    const card = el.querySelector('.vp-card');
+    card.innerHTML = `<h2>Préparation de la vidéo…</h2><div class="vp-bar"><i style="width:0%"></i></div><p class="vp-t">0 %</p><p class="hint">Gardez l’écran allumé.</p><div class="vp-act"><button class="btn ghost" type="button" data-vp2="stop">Annuler</button></div>`;
+    const job = {stop: false}; card.querySelector('[data-vp2]').onclick = () => { job.stop = true; if (job.conv) job.conv.cancel().catch(() => {}); };
+    try {
+      const parts = await VFast.cut(file, (f, i, n) => { const bar = card.querySelector('.vp-bar i'), tt = card.querySelector('.vp-t'); if (bar) bar.style.width = Math.round(f * 100) + '%'; if (tt) tt.textContent = `${Math.round(f * 100)} %${n > 1 ? ` · partie ${i + 1} sur ${n}` : ''}`; }, job);
+      el.remove();
+      if (parts.some(p => p.blob.size > VID_MAX_BYTES)) return toast('Une des parties est trop lourde pour être envoyée. Essayez avec une vidéo moins longue.');
+      done(parts);
+    } catch (e) {
+      if (job.stop) { el.remove(); return toast('Préparation annulée.'); }
+      console.warn('préparation rapide impossible', e);
+      // Repli : l'ancienne méthode (plus lente) a besoin d'un nouveau toucher pour lancer la lecture.
+      card.innerHTML = `<h2>Préparation de la vidéo</h2><p>Cet appareil ne peut pas préparer cette vidéo rapidement. Tam-Tam peut utiliser la méthode lente : elle prend à peu près la durée de la vidéo (${fmtT(dur)}).</p><div class="vp-act"><button class="btn ghost" type="button" data-vp3="no">Annuler</button><button class="btn" type="button" data-vp3="yes">Continuer</button></div>`;
+      card.querySelector('[data-vp3="no"]').onclick = () => el.remove();
+      card.querySelector('[data-vp3="yes"]').onclick = () => this.run(file, dur, el, done);
+    }
   },
   async run(file, dur, el, done) {
     // Tout ce qui demande un geste de l'utilisateur (lecture avec le son, audio) est lancé tout de suite, dans le clic :
@@ -212,6 +275,7 @@ const Edit = {
     v.onloadedmetadata = () => { const d = Math.round(v.duration || 0); URL.revokeObjectURL(u);
       if (d > VID_MAX_TOTAL) return toast(`Vidéo trop longue (${fmtT(d)}). Maximum : ${fmtT(VID_MAX_TOTAL)}, coupée en parties d’une minute.`);
       if (d > VID_MAX_S + 2 || file.size > VID_MAX_BYTES) return VCut.ask(file, d, parts => this.video(parts[0].blob, parts[0].mime, parts[0].dur, false, 'gal', opts, parts));
+      if (file.size > 12_000_000 && VFast.ok()) return VCut.auto(file, d, parts => this.video(parts[0].blob, parts[0].mime, parts[0].dur, false, 'gal', opts, parts), () => this.video(file, file.type, d, false, 'gal', opts));
       this.video(file, file.type, d, false, 'gal', opts); };
     v.onerror = () => { URL.revokeObjectURL(u); this.video(file, file.type, 0, false, 'gal', opts); };
     v.src = u;
