@@ -222,10 +222,10 @@ const Mem = {
     } catch (e) { btn.disabled = false; btn.textContent = 'Réessayer'; er.textContent = e.message; er.hidden = false; renderBody(); }
   },
   // Envoyer à mon Tam-Tam un souvenir déjà gardé : il est rechiffré pour eux.
-  shareSheet(id) {
-    const it = this.find(id); if (!it) return; const cs = (S.contacts.contacts || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  shareSheet(id, ids) {
+    const it = this.find(id); if (!it) return; this.shareIds = ids && ids.length > 1 ? ids : null; const cs = (S.contacts.contacts || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'fr'));
     this.shareId = id;
-    sheet(`${head('Envoyer')}<form data-form="memShare"><div class="sheet-body">
+    sheet(`${head(this.shareIds ? `Envoyer ${this.shareIds.length} documents` : 'Envoyer')}<form data-form="memShare"><div class="sheet-body">${this.shareIds ? `<p class="hint">${this.shareIds.map(i => esc((this.find(i) || {}).fname || 'Document')).join(' · ')}</p>` : ''}
       <div class="mem-opts"><label class="pick chk"><input type="checkbox" id="shLock"${it.aud === 'private' ? ' checked' : ''}><span><b>${I.lock} Privé</b> · chaque ami l’ouvre avec son propre code à 4 chiffres</span></label><label class="pick chk"><input type="checkbox" id="shOnce"><span><b>① Vue unique</b> · une seule ouverture</span></label></div>
       <div class="grp-box"><div class="picks">${cs.map(u => `<label class="pick"><input type="checkbox" name="shTo" value="${u.id}">${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('') || '<p class="hint">Ajoutez d’abord des amis.</p>'}</div></div>
       <p class="err" id="shErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="submit" id="shBtn">Envoyer</button></div></div></form>`, 'Envoyer');
@@ -234,7 +234,8 @@ const Mem = {
     const it = this.find(this.shareId), to = [...document.querySelectorAll('input[name="shTo"]:checked')].map(i => +i.value), er = $('#shErr'), btn = $('#shBtn');
     if (!to.length) { er.textContent = 'Cochez au moins un ami.'; er.hidden = false; return; }
     btn.disabled = true; btn.textContent = 'Envoi…';
-    try { const b = await this.full(it); await this.saveOne({kind: it.kind === 'video' ? 'video' : 'photo', blob: b, mime: it.vmime || 'video/mp4', dur: it.dur || 0}, {aud: 'friends', to, lock: $('#shLock').checked, once: $('#shOnce').checked}, it.cap, dayISO(new Date(it.takenAt)));
+    try { const lock = $('#shLock').checked, once = $('#shOnce').checked;
+      for (const one of (this.shareIds || [this.shareId]).map(i => this.find(i)).filter(Boolean)) { const b = await this.full(one); await this.saveOne({kind: one.kind === 'video' ? 'video' : one.kind === 'doc' ? 'doc' : 'photo', blob: b, mime: one.vmime || (one.kind === 'video' ? 'video/mp4' : 'application/octet-stream'), name: one.fname, size: one.fsize, dur: one.dur || 0}, {aud: 'friends', to, lock, once}, one.cap, dayISO(new Date(one.takenAt))); }
       this.items.sort((a, b) => b.takenAt - a.takenAt); closeLayer(); renderBody(); toast(to.length > 1 ? `Envoyé à ${to.length} amis` : 'Souvenir envoyé'); }
     catch (e) { btn.disabled = false; btn.textContent = 'Envoyer'; er.textContent = e.message; er.hidden = false; }
   },
@@ -299,8 +300,10 @@ Object.assign(ACT, {
   memFilt(d) { if (d.f !== 'private') Mem.unlocked = false; if (d.f === 'private' && !Mem.unlocked) { Mem.filt = 'private'; renderBody(); return Mem.unlockThen(() => renderBody()); } Mem.filt = d.f; renderBody(); if (d.f === 'friends') Mem.markSeen(); },
   memDocsMenu() {
     const docs = [...(Mem.items || []), ...(Mem.recv || [])].filter(x => x.kind === 'doc' && x.aud !== 'private');
-    sheet(`${head('Dossier Documents')}<div class="menu"><button type="button" data-act="memDocs">${I.eye}Ouvrir le dossier</button>${docs.length ? `<button type="button" class="danger" data-act="memDocsDel">${I.trash}Supprimer les ${docs.length} document${docs.length > 1 ? 's' : ''}</button>` : ''}</div>`, 'Dossier Documents');
+    const sendable = docs.filter(x => !x.lock && !x.once);
+    sheet(`${head('Dossier Documents')}<div class="menu"><button type="button" data-act="memDocs">${I.eye}Ouvrir le dossier</button>${sendable.length ? `<button type="button" data-act="memDocsSend">${I.users}Envoyer les documents</button>` : ''}${docs.length ? `<button type="button" class="danger" data-act="memDocsDel">${I.trash}Supprimer les ${docs.length} document${docs.length > 1 ? 's' : ''}</button>` : ''}</div>`, 'Dossier Documents');
   },
+  memDocsSend() { const ids = [...(Mem.items || []), ...(Mem.recv || [])].filter(x => x.kind === 'doc' && x.aud !== 'private' && !x.lock && !x.once).map(x => x.id); Mem.shareSheet(ids[0], ids); },
   memDocsDel() { confirmSheet('Supprimer tous les documents ?', 'Vos documents sont effacés définitivement. Ceux reçus d’amis sont seulement retirés de votre liste.', 'Tout supprimer', 'memDocsDelYes', ''); },
   async memDocsDelYes() { closeLayer(); await Mem.del([...(Mem.items || []), ...(Mem.recv || [])].filter(x => x.kind === 'doc' && x.aud !== 'private').map(x => x.id)); },
   memDocs() { closeLayer(); Mem.docFrom = Mem.filt === 'docs' ? 'all' : Mem.filt; Mem.filt = 'docs'; renderBody(); },

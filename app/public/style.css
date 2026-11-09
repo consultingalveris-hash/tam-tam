@@ -1058,3 +1058,11 @@ body.in-cam{overflow:hidden}
 .sv-recbar{position:absolute;inset:4px 8px calc(8px + env(safe-area-inset-bottom,0px));border-radius:26px;background:#1b2a30;color:#fff;z-index:2}
 .sv-recbar .ib{color:#fff}.sv-recbar .hint{color:rgb(255 255 255/.7)}.sv-recbar .rec-t{font-weight:700}
 .st-q{cursor:pointer}
+.sv-reply .emo-panel{position:absolute;left:8px;right:8px;bottom:calc(100% + 6px);margin:0 auto;z-index:5;background:#151a1d;color:#fff;border-color:#2a3236}
+
+/* flammes qui s'envolent */
+.fly-flame{position:fixed;z-index:200;pointer-events:none;animation:flyflame 1.4s ease-out forwards;opacity:0}
+@keyframes flyflame{0%{opacity:0;transform:translate(0,0) scale(.6)}15%{opacity:1}100%{opacity:0;transform:translate(var(--dx),-140px) scale(1.25) rotate(8deg)}}
+/* message modifié */
+.meta .edited{font-style:italic;opacity:.75}
+.editbar .quote{border-left-color:var(--accent)}

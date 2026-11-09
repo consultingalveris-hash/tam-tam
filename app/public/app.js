@@ -566,7 +566,7 @@ function renderMessages(keep) {
     else if (m.kind === 'audio') body = stQuote(m, out, c) + `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
     else body = stQuote(m, out, c) + (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? Tr.txt(m) : '');
     h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble">
-      ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${m.fwd ? `<span class="fwd">${FWD_IC}Transféré</span>` : ''}${body}<span class="meta">${hm(m.at)}${out && !m.deleted ? tick(readState(c, m)) : ''}</span>
+      ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${m.fwd ? `<span class="fwd">${FWD_IC}Transféré</span>` : ''}${body}<span class="meta">${m.edited ? '<i class="edited">modifié</i> ' : ''}${hm(m.at)}${out && !m.deleted ? tick(readState(c, m)) : ''}</span>
       ${m.deleted ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message" title="Options : réagir, répondre, transférer, épingler…">${I.chev}</button>`}</div>${reactsHtml(m)}</div>`;
   }
   const tu = typingIn(c.id); if (tu) h += `<div class="msg in first typing-b"><div class="bubble" aria-label="En train d’écrire"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
@@ -658,6 +658,11 @@ function recipients(c) {
 }
 async function sendText() {
   const i = $('#msgIn'), t = i.value.trim(), c = S.chats.get(S.chatId); if (!t || !c) return;
+  if (S.editId) {
+    const id = S.editId; S.editId = null; i.value = ''; autoGrow(i); syncSend(); renderReplyBar();
+    try { const sealed = await E2E.seal({t}, recipients(c)); await api(`/api/messages/${id}/edit`, {enc: sealed.env}); } catch (e) { toast(e.message); }
+    return;
+  }
   i.value = ''; autoGrow(i); syncSend(); const reply = S.replyTo; S.replyTo = null; renderReplyBar();
   try {
     let payload = {t}; const out = Tr.outL(c.id);
@@ -677,6 +682,7 @@ async function sendText() {
 function autoGrow(t) { const desk = matchMedia('(min-width:821px)').matches, h0 = desk ? 42 : 46; t.style.height = h0 + 'px'; t.style.height = Math.min(desk ? 130 : Math.round(innerHeight * 0.32), Math.max(h0, t.scrollHeight)) + 'px'; }
 function renderReplyBar() {
   const c = S.chats.get(S.chatId), el = $('#replyBar'); if (!el || !c) return;
+  if (S.editId) { el.innerHTML = `<div class="replybar editbar"><span class="quote"><b>✎ Modification du message</b><span>Vous avez 2 minutes après l’envoi pour le modifier.</span></span><button class="ib" type="button" data-act="editCancel" aria-label="Annuler la modification">${I.close}</button></div>`; return; }
   el.innerHTML = S.replyTo ? `<div class="replybar">${quoteHtml(c, S.replyTo)}<button class="ib" type="button" data-act="replyCancel" aria-label="Annuler la réponse">${I.close}</button></div>` : '';
 }
 
@@ -823,7 +829,7 @@ function reportSheet(userId, chatId) {
     ${userId ? '<label class="pick chk"><input type="checkbox" id="rrBlock" checked><span>Bloquer aussi cette personne</span></label>' : ''}
     <p class="err" id="rrErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="submit">Signaler</button></div></div></form>`, 'Signaler');
 }
-const DEL_ALL_MAX = 3600_000;
+const DEL_ALL_MAX = 3600_000, EDIT_MAX = 2 * 60_000;
 const FWD_IC = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l6 6-6 6"/><path d="M21 11H10a6 6 0 0 0-6 6v2"/></svg>';
 const QUICK = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 function reactsHtml(m) {
@@ -994,6 +1000,7 @@ function msgMenu(id) {
   const c = S.chats.get(S.chatId) || {}, modo = c.type === 'group' && c.admin && m.from !== S.me.id && (c.gset || {}).del === 'admins', canAll = (m.from === S.me.id && Date.now() - m.at < DEL_ALL_MAX) || modo, myR = (m.reacts || []).find(r => r.u === S.me.id);
   const canFwd = !m.once && !m.locked && !c.hidden && m.kind !== 'sys', pinned = c.pinMsg && c.pinMsg.id === m.id;
   sheet(`<div class="react-bar" role="group" aria-label="Réagir">${QUICK.map(e => `<button type="button" data-act="react" data-id="${id}" data-e="${e}" aria-pressed="${!!myR && myR.e === e}">${e}</button>`).join('')}<button type="button" class="more" data-act="reactMore" data-id="${id}" aria-label="Plus d’émoticônes">${I.plus}</button></div><div class="menu" style="padding-top:4px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once && !m.locked && m.from !== S.me.id && Tr.st && Tr.st.on && S.me.trConsent ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}${Tr.shown.has(id) ? 'Voir la traduction' : 'Traduire'}</button>` : ''}${m.text && !m.once && !(S.chats.get(S.chatId) || {}).hidden ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
+    ${m.from === S.me.id && m.kind === 'text' && !m.media && !m.once && !m.locked && !m.fl && Date.now() - m.at < EDIT_MAX ? `<button type="button" data-act="editMsg" data-id="${id}"><span class="pin-ic" aria-hidden="true">✎</span>Modifier mon message</button>` : ''}
     ${canFwd ? `<button type="button" data-act="fwd" data-id="${id}">${FWD_IC}Transférer</button>` : ''}${!m.once ? `<button type="button" data-act="${pinned ? 'pinMsgOff' : 'pinMsg'}" data-id="${id}"><span class="pin-ic" aria-hidden="true">📌</span>${pinned ? 'Retirer l’épingle' : 'Épingler en haut de la discussion'}</button>` : ''}
     <button type="button" class="danger" data-act="hideAsk" data-id="${id}">${I.trash}Supprimer pour moi</button>
     ${canAll ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde${modo ? ' (administrateur)' : ''}</button>` : m.from === S.me.id ? '<p class="hint" style="padding:4px 16px 10px">Plus d’une heure après l’envoi, un message ne peut plus être supprimé pour tout le monde.</p>' : ''}</div>`, 'Message');
@@ -1074,6 +1081,15 @@ let svT;
 const SV_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
 const SV_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>';
 // Pause / reprise de la lecture d'un statut : le temps restant, la barre, la vidéo et la musique s'arrêtent ensemble.
+// Trois petites flammes s'envolent et se dissipent au-dessus du bouton.
+function flameBurst(el) {
+  const r = el.getBoundingClientRect();
+  [[-26, 0], [0, 120], [24, 240]].forEach(([dx, delay], k) => {
+    const f = document.createElement('span'); f.className = 'fly-flame'; f.textContent = '🔥';
+    f.style.left = (r.left + r.width / 2 - 12) + 'px'; f.style.top = (r.top - 4) + 'px'; f.style.setProperty('--dx', dx + 'px'); f.style.animationDelay = delay + 'ms'; f.style.fontSize = (20 + k * 3) + 'px';
+    document.body.appendChild(f); setTimeout(() => f.remove(), 1600 + delay);
+  });
+}
 async function directWith(uid) {
   let c = [...S.chats.values()].find(x => x.type === 'direct' && x.peer === uid); if (c) return c;
   const r = await api('/api/chats/direct', {userId: uid}); keepUsers(Object.values(r.chat.users)); S.chats.set(r.chat.id, r.chat); return r.chat;
@@ -1123,7 +1139,8 @@ function renderSV() {
   if (ri) {
     ri.addEventListener('focus', () => { rf.classList.add('on'); svPause(true); });
     ri.addEventListener('input', () => rf.classList.toggle('typed', !!ri.value.trim()));
-    ri.addEventListener('blur', () => setTimeout(() => { if (!layer.contains(ri) || document.activeElement === ri || Emoji.el || ri.value.trim() || S.svRec) return; rf.classList.remove('on'); svPause(false); }, 250));
+    rf.addEventListener('pointerdown', e => { if (e.target.closest('button,.emo-panel')) rf._keep = Date.now(); });
+    ri.addEventListener('blur', () => setTimeout(() => { if (!layer.contains(ri) || document.activeElement === ri || Emoji.el || ri.value.trim() || S.svRec || Date.now() - (rf._keep || 0) < 4000) return; rf.classList.remove('on'); svPause(false); }, 250));
   }
   // Doigt posé sur le statut (ou clic maintenu) : pause le temps de lire, reprise au relâchement.
   const stg = layer.querySelector('.sv-stage'); let holdT = 0, held = false;
@@ -1481,7 +1498,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.56</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.57</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1690,6 +1707,13 @@ const ACT = {
   zoom(d, el) { layer.innerHTML = `<div class="zoom" data-act="close"><img src="${esc(el.src)}" alt="Photo"><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>`; },
   older() { loadOlder(); },
   msgMenu(d) { msgMenu(+d.id); },
+  editMsg(d) {
+    const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +d.id); closeLayer(); if (!m) return;
+    if (Date.now() - m.at >= EDIT_MAX) return toast('Un message ne peut plus être modifié 2 minutes après son envoi.');
+    S.editId = m.id; S.replyTo = null; renderReplyBar(); const i = $('#msgIn'); if (i) { i.value = m.orig != null ? m.orig : m.text; autoGrow(i); syncSend(); i.focus(); }
+    setTimeout(() => { if (S.editId === m.id) { S.editId = null; renderReplyBar(); toast('Le délai de 2 minutes pour modifier ce message est passé.'); } }, Math.max(0, EDIT_MAX - (Date.now() - m.at)));
+  },
+  editCancel() { S.editId = null; renderReplyBar(); const i = $('#msgIn'); if (i) { i.value = ''; autoGrow(i); syncSend(); } },
   reply(d) { S.replyTo = +d.id; closeLayer(); renderReplyBar(); const i = $('#msgIn'); if (i) i.focus(); },
   replyCancel() { S.replyTo = null; renderReplyBar(); },
   jump(d) { const el = document.querySelector(`.msg[data-mid="${d.id}"]`); if (el) el.scrollIntoView({block: 'center', behavior: 'smooth'}); },
@@ -1727,12 +1751,13 @@ const ACT = {
   async svCall(d) { const cur = svCur(); if (!cur) return; try { const c = await directWith(cur.g.user.id); closeLayer(); S.tab = 'chats'; renderAll(); await openChat(c.id); Call.start(!!d.v); } catch (e) { toast(e.message); } },
   async svFlame(d, el) {
     const cur = svCur(); if (!cur) return; const on = !cur.it.flamed; cur.it.flamed = on;
-    if (el) { el.classList.toggle('on', on); el.setAttribute('aria-pressed', on); if (on) { el.classList.add('pop'); setTimeout(() => el.classList.remove('pop'), 700); } }
+    if (el) { el.classList.toggle('on', on); el.setAttribute('aria-pressed', on); if (on) { el.classList.add('pop'); setTimeout(() => el.classList.remove('pop'), 700); flameBurst(el); } }
     try { await api(`/api/statuses/${cur.it.id}/flame`, {on}); } catch (e) { cur.it.flamed = !on; if (el) el.classList.toggle('on', !on); toast(e.message); }
   },
   svrCancel() { svRecStop(false); svPause(false); },
   async svrMic() {
     if (S.svRec) return svRecStop(true);
+    svPause(true);
     if (!navigator.mediaDevices || !window.MediaRecorder) return toast('Ce navigateur ne permet pas d’enregistrer la voix.');
     let stream; try { stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}}); } catch { return toast('Autorisez le micro pour envoyer un message vocal.'); }
     const mime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported(t)) || '';

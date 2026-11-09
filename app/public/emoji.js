@@ -22,7 +22,7 @@ const Emoji = {
     if (this.el && this.target === sel) return this.close();
     this.close(); this.target = sel; if (!this.recent().length && this.cat === 0) this.cat = 1;
     this.el = document.createElement('div'); this.el.className = 'emo-panel'; this.el.setAttribute('role', 'dialog'); this.el.setAttribute('aria-label', 'Émoticônes');
-    const host = anchor.closest('.edit, .st-comp, #compose') || document.body;
+    const host = anchor.closest('.edit, .st-comp, #compose, .sv-reply') || document.body;
     (host.id === 'compose' ? host : host).appendChild(this.el);
     if (host === document.body || host.id === 'compose') this.el.classList.add('emo-float');
     this.render();
