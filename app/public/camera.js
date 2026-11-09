@@ -148,18 +148,22 @@ const VFast = {
     if (!vc) throw new Error('aucun encodeur vidéo');
     const mp4 = vc === 'avc', ac = await M.getFirstEncodableAudioCodec(mp4 ? ['aac', 'opus'] : ['opus'], {numberOfChannels: 2, sampleRate: 48000, bitrate: abr});
     const n = Math.max(1, Math.ceil((total - 1) / VID_MAX_S)), parts = [];
+    // Vidéo déjà légère (ex. reçue sur WhatsApp) : on coupe sans recompresser, c'est presque instantané.
+    const light = file.size / total * Math.min(total, VID_MAX_S) < 14_000_000 && Math.min(dw, dh) <= 1080 && ['avc', 'vp8', 'vp9'].includes(vt.codec) && !!(await vt.canDecode());
+    const srcMp4 = vt.codec === 'avc' || /mp4|quicktime/.test(file.type);
     for (let i = 0; i < n; i++) {
       if (job.stop) throw new Error('annulé');
       const s = i * VID_MAX_S, e = i === n - 1 ? total : (i + 1) * VID_MAX_S;
       const input = new M.Input({source: new M.BlobSource(file), formats: M.ALL_FORMATS});
-      const output = new M.Output({format: mp4 ? new M.Mp4OutputFormat({fastStart: 'in-memory'}) : new M.WebMOutputFormat(), target: new M.BufferTarget()});
+      const asMp4 = light ? srcMp4 : mp4;
+      const output = new M.Output({format: asMp4 ? new M.Mp4OutputFormat({fastStart: 'in-memory'}) : new M.WebMOutputFormat(), target: new M.BufferTarget()});
       const conv = await M.Conversion.init({input, output, trim: {start: s, end: e}, showWarnings: false,
-        video: {width: w, height: h, fit: 'fill', codec: vc, bitrate: vbr, forceTranscode: true},
-        audio: ac ? {codec: ac, bitrate: abr, numberOfChannels: 2} : {discard: true}});
+        video: light ? {} : {width: w, height: h, fit: 'fill', codec: vc, bitrate: vbr, forceTranscode: true},
+        audio: light ? {} : ac ? {codec: ac, bitrate: abr, numberOfChannels: 2} : {discard: true}});
       if (!conv.isValid) throw new Error('conversion impossible');
       job.conv = conv; conv.onProgress = f => prog((i + f) / n, i, n);
       await conv.execute(); job.conv = null;
-      const mime = mp4 ? 'video/mp4' : 'video/webm';
+      const mime = asMp4 ? 'video/mp4' : 'video/webm';
       parts.push({blob: new Blob([output.target.buffer], {type: mime}), dur: Math.max(1, Math.round(e - s)), mime});
     }
     prog(1, n - 1, n); return parts;
@@ -181,7 +185,7 @@ const VCut = {
     const n = Math.max(1, Math.ceil(dur / VID_MAX_S)), el = document.createElement('div'); el.className = 'vprep';
     el.innerHTML = `<div class="vp-card" role="dialog" aria-modal="true" aria-label="Vidéo longue"><h2>${n > 1 ? 'Vidéo longue' : 'Vidéo lourde'}</h2>
       <p>${n > 1 ? `Cette vidéo dure <b>${fmtT(dur)}</b>. Une vidéo dure 1 minute au maximum : Tam-Tam peut la couper en <b>${n} parties</b> qui se suivront.` : 'Cette vidéo est trop lourde pour être envoyée telle quelle : Tam-Tam peut l’alléger.'}</p>
-      <p class="hint">${VFast.ok() ? 'La préparation prend quelques secondes.' : `La préparation prend à peu près la durée de la vidéo (${fmtT(dur)}).`} Gardez l’écran allumé et Tam-Tam ouvert.</p>
+      <p class="hint">${VFast.ok() ? `Préparation rapide : environ ${fmtT(Math.max(5, Math.ceil(dur / 2.5)))} au plus.` : `La préparation prend à peu près la durée de la vidéo (${fmtT(dur)}).`} Gardez l’écran allumé et Tam-Tam ouvert.</p>
       <div class="vp-act"><button class="btn ghost" type="button" data-vp="no">Annuler</button><button class="btn" type="button" data-vp="yes">${n > 1 ? `Couper en ${n} parties` : 'Alléger la vidéo'}</button></div></div>`;
     document.body.appendChild(el);
     el.addEventListener('click', e => { const b = e.target.closest('[data-vp]'); if (!b) return; if (b.dataset.vp === 'no') { el.remove(); return; } VFast.ok() ? this.fast(file, dur, el, done) : this.run(file, dur, el, done); });
