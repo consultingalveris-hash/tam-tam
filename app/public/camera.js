@@ -143,15 +143,23 @@ const VCut = {
     el.addEventListener('click', e => { const b = e.target.closest('[data-vp]'); if (!b) return; if (b.dataset.vp === 'no') { el.remove(); return; } this.run(file, dur, el, done); });
   },
   async run(file, dur, el, done) {
+    // Tout ce qui demande un geste de l'utilisateur (lecture avec le son, audio) est lancé tout de suite, dans le clic :
+    // certains navigateurs (Brave notamment) bloquent sinon la lecture et la préparation reste à 0:00.
+    const url = URL.createObjectURL(file), v = document.createElement('video'); v.src = url; v.playsInline = true; v.preload = 'auto';
+    v.style.cssText = 'position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none'; document.body.appendChild(v);
+    let ac = null, at = null; try { ac = new (window.AudioContext || window.webkitAudioContext)(); ac.resume().catch(() => {}); const src = ac.createMediaElementSource(v), dst = ac.createMediaStreamDestination(); src.connect(dst); at = dst.stream.getAudioTracks()[0]; this.ac = ac; } catch {}
+    const first = v.play(); first && first.catch(() => {});
     const card = el.querySelector('.vp-card');
     card.innerHTML = `<h2>Préparation de la vidéo…</h2><div class="vp-bar"><i style="width:0%"></i></div><p class="vp-t">0:00 / ${fmtT(dur)}</p><p class="hint">Gardez l’écran allumé.</p><div class="vp-act"><button class="btn ghost" type="button" data-vp2="stop">Annuler</button></div>`;
-    const url = URL.createObjectURL(file), v = document.createElement('video'); v.src = url; v.playsInline = true; v.preload = 'auto';
     let stopped = false; card.querySelector('[data-vp2]').onclick = () => { stopped = true; v.pause(); };
     try {
-      await new Promise((ok, ko) => { v.onloadedmetadata = ok; v.onerror = () => ko(new Error('Vidéo illisible sur ce téléphone.')); });
+      if (v.readyState < 1) await new Promise((ok, ko) => { v.onloadedmetadata = ok; v.onerror = () => ko(new Error('Vidéo illisible sur cet appareil.')); });
+      // attendre que la lecture démarre vraiment, puis revenir au début
+      const started = await Promise.race([first ? first.then(() => true, () => false) : Promise.resolve(true), new Promise(r => setTimeout(() => r(false), 6000))]);
+      if (!started) throw new Error('Le navigateur bloque la lecture de la vidéo. Sur ordinateur avec Brave : cliquez sur le lion à droite de l’adresse et autorisez la lecture automatique pour Tam-Tam, ou faites-le depuis le téléphone.');
+      v.pause(); v.currentTime = 0; await new Promise(r => { v.onseeked = r; setTimeout(r, 1500); });
       const k = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight)), cv = document.createElement('canvas'); cv.width = Math.round(v.videoWidth * k / 2) * 2; cv.height = Math.round(v.videoHeight * k / 2) * 2;
       const g = cv.getContext('2d'), vs = cv.captureStream(30);
-      let at = null; try { const ac = new (window.AudioContext || window.webkitAudioContext)(), src = ac.createMediaElementSource(v), dst = ac.createMediaStreamDestination(); src.connect(dst); at = dst.stream.getAudioTracks()[0]; this.ac = ac; } catch {}
       const ms = new MediaStream([...vs.getVideoTracks(), ...(at ? [at] : [])]);
       const mime = ['video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm'].find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
       const parts = []; let rec = null, chunks = [], t0 = 0;
@@ -159,21 +167,22 @@ const VCut = {
       const stopRec = () => new Promise(ok => { const r = rec, c = chunks, d = Math.max(1, Math.round(v.currentTime - t0)); r.onstop = () => { parts.push({blob: new Blob(c, {type: (r.mimeType || mime || 'video/webm').split(';')[0]}), dur: d, mime: (r.mimeType || mime || 'video/webm').split(';')[0]}); ok(); }; r.stop(); });
       const draw = () => { if (!v.paused && !v.ended) g.drawImage(v, 0, 0, cv.width, cv.height); };
       let raf = 0; const loop = () => { draw(); raf = requestAnimationFrame(loop); };
-      g.drawImage(v, 0, 0, cv.width, cv.height); startRec(); await v.play(); loop();
+      g.drawImage(v, 0, 0, cv.width, cv.height); startRec(); this.lastAt = Date.now(); this.lastT = -1; await v.play(); loop();
       await new Promise(ok => {
         const tick = setInterval(async () => {
           const bar = card.querySelector('.vp-bar i'), tt = card.querySelector('.vp-t'); if (bar) bar.style.width = Math.min(100, v.currentTime / dur * 100) + '%'; if (tt) tt.textContent = `${fmtT(Math.floor(v.currentTime))} / ${fmtT(dur)}${parts.length ? ` · partie ${parts.length + 1}` : ''}`;
           if (stopped || v.ended) { clearInterval(tick); ok(); return; }
+          if (v.currentTime !== this.lastT) { this.lastT = v.currentTime; this.lastAt = Date.now(); } else if (!v.paused && Date.now() - (this.lastAt || Date.now()) > 8000) { clearInterval(tick); stopped = true; this.blocked = true; ok(); return; }
           if (v.currentTime - t0 >= VID_MAX_S) { v.pause(); await stopRec(); startRec(); await v.play(); }
         }, 200);
       });
       cancelAnimationFrame(raf); if (rec && rec.state !== 'inactive') await stopRec();
       ms.getTracks().forEach(t => t.stop()); if (this.ac) this.ac.close().catch(() => {});
-      URL.revokeObjectURL(url); el.remove();
-      if (stopped) return toast('Préparation annulée.');
+      URL.revokeObjectURL(url); v.remove(); el.remove();
+      if (stopped) { const b = this.blocked; this.blocked = false; return toast(b ? 'La vidéo s’est bloquée pendant la préparation. Réessayez, ou faites-le depuis le téléphone.' : 'Préparation annulée.'); }
       const good = parts.filter(p => p.blob.size > 1000); if (!good.length) return toast('Cette vidéo n’a pas pu être préparée.');
       done(good);
-    } catch (e) { URL.revokeObjectURL(url); el.remove(); toast(e.message || 'Cette vidéo n’a pas pu être préparée.'); }
+    } catch (e) { try { v.pause(); } catch {} URL.revokeObjectURL(url); v.remove(); if (this.ac) this.ac.close().catch(() => {}); el.remove(); toast(e.message || 'Cette vidéo n’a pas pu être préparée.'); }
   },
 };
 

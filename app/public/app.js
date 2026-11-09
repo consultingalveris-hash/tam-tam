@@ -26,6 +26,8 @@ const S = {me: null, chats: new Map(), msgs: new Map(), more: new Map(), contact
   statuses: {mine: {items: []}, others: []}, users: new Map(), tab: 'chats', chatId: null, q: '', typing: new Map(), lastFrom: new Map(), replyTo: null, invite: null};
 const URL_RE = /\b(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+\.[a-z]{2,}[^\s<>"']*)/gi;
 const escL = t => esc(t).replace(URL_RE, u => { const href = /^https?:/i.test(u) ? u : 'https://' + u; return `<a href="${href.replace(/"/g, '&quot;')}" target="_blank" rel="noopener nofollow">${u}</a>`; });
+const hasStatus = uid => !!(S.statuses && S.statuses.others && S.statuses.others.some(g => g.user.id === uid && g.items.length));
+const stRing = (u, html) => u && hasStatus(u.id) ? `<span class="st-ring${S.statuses.others.find(g => g.user.id === u.id).allSeen ? ' seen' : ''}" role="button" tabindex="0" data-act="stOpenU" data-u="${u.id}" aria-label="Voir le statut de ${esc(u.name)}">${html}</span>` : html;
 const subH = u => u && u.name && !String(u.name).startsWith('@') ? '@' + u.handle : '';
 const uOf = id => S.users.get(id) || {id, name: 'Membre', handle: '', avatar: {d: 'm2', c: 'turq'}};
 function keepUsers(list) { for (const u of list || []) if (u) S.users.set(u.id, Object.assign(S.users.get(u.id) || {}, u)); }
@@ -226,7 +228,7 @@ function onEvent(ev) {
   else if (ev.t === 'contacts') { loadContacts().then(() => { renderTabs(); if (S.tab !== 'chats') renderBody(); if (document.getElementById('addSheet') && typeof Add !== 'undefined') Add.loadPeople(); }); loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }); }
   else if (ev.t === 'mem') { if (typeof Mem !== 'undefined') Mem.loadRecv(true); }
   else if (ev.t === 'chats') loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) { renderPin(); renderMessages(true); } });
-  else if (ev.t === 'statuses') loadStatuses().then(renderStories);
+  else if (ev.t === 'statuses') loadStatuses().then(() => { renderStories(); if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); });
   else if (ev.t === 'presence') { const u = S.users.get(ev.id); if (u) { u.online = ev.online; u.busy = ev.busy; u.lastSeen = ev.lastSeen; } if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }
   else if (ev.t === 'read' && ev.user === S.me.id) Device.badge();
   else if (ev.t === 'gcall') GCall.onEvent(ev).catch(e => { console.error(e); toast('Problème pendant l’appel de groupe.'); });
@@ -361,7 +363,7 @@ function chatRows() {
     const mine = m && m.from === S.me.id && !m.deleted && m.kind !== 'sys';
     const sel = S.sel && S.sel.has(c.id);
     return `<button class="row chat-row${c.id === S.chatId && !S.sel ? ' active' : ''}${sel ? ' sel' : ''}" type="button" data-act="open" data-id="${c.id}"${S.sel ? ` aria-pressed="${!!sel}"` : ''}>
-      ${S.sel ? `<span class="selmark" aria-hidden="true">${sel ? '✓' : ''}</span>` : ''}${c.type === 'group' ? grpAv(c) : avOn(u)}
+      ${S.sel ? `<span class="selmark" aria-hidden="true">${sel ? '✓' : ''}</span>` : ''}${c.type === 'group' ? grpAv(c) : stRing(u, avOn(u))}
       <span class="row-name">${esc(chatTitle(c))}</span><span class="row-time${c.unread || c.marked ? ' new' : ''}">${m ? listTime(m.at) : ''}</span>
       <span class="row-prev">${mine && !tu ? tick(readState(c, m)) : ''}<span>${prev}</span><span class="row-flags">${c.pinned ? '<span class="pin-f" title="Épinglée">📌</span>' : ''}${c.unread ? `<span class="badge">${c.unread}</span>` : c.marked ? '<span class="badge dot" title="Marquée comme non lue"></span>' : ''}</span></span>
       ${S.sel ? '' : `<span class="row-more" role="button" tabindex="-1" data-act="chatRowMenu" data-id="${c.id}" aria-label="Options de la discussion" title="Options">${I.chev}</span>`}</button>`;
@@ -474,7 +476,7 @@ function renderChatHead() {
   if (c.type === 'group') sub = tu ? `<small class="on">${esc(first(uOf(tu).name))} écrit…</small>` : `<small>${c.members.map(m => m.id === S.me.id ? 'Vous' : first(uOf(m.id).name)).join(', ')}</small>`;
   else { const u = uOf(c.peer); sub = tu ? '<small class="on">écrit…</small>' : `<small class="${u.busy ? 'busy' : u.online ? 'on' : ''}">${presLabel(u)}</small>`; }
   h.innerHTML = `<button class="ib back" type="button" data-act="back" aria-label="Retour">${I.back}</button>
-    <button class="chat-id" type="button" data-act="chatInfo">${c.type === 'group' ? grpAv(c, 'sm') : avatar(uOf(c.peer), 'sm')}<span style="min-width:0"><b>${esc(chatTitle(c))}</b>${sub}</span></button>
+    <button class="chat-id" type="button" data-act="chatInfo">${c.type === 'group' ? grpAv(c, 'sm') : stRing(uOf(c.peer), avatar(uOf(c.peer), 'sm'))}<span style="min-width:0"><b>${esc(chatTitle(c))}</b>${sub}</span></button>
     ${c.type === 'direct' && !c.blocked ? `<button class="ib" type="button" data-act="callVideo" aria-label="Appel vidéo">${I.video}</button><button class="ib" type="button" data-act="callAudio" aria-label="Appel vocal">${I.phone}</button>` : ''}
     ${c.type === 'group' ? (GCall.active(c.id) && !(GCall.c && GCall.c.chatId === c.id) ? `<button class="btn sm gjoin" type="button" data-act="gcallJoin" data-id="${GCall.active(c.id).callId}">${I.phone}Rejoindre</button>` : `<button class="ib" type="button" data-act="gcallVideo" aria-label="Appel vidéo de groupe">${I.video}</button><button class="ib" type="button" data-act="gcallAudio" aria-label="Appel vocal de groupe">${I.phone}</button>`) : ''}
     <button class="ib" type="button" data-act="chatMenu" aria-label="Options de la discussion">${I.more}</button>`;
@@ -501,7 +503,7 @@ function syncSend() {
 const Rec = {
   async start() {
     if (!navigator.mediaDevices || !window.MediaRecorder) return toast('Ce navigateur ne permet pas d’enregistrer la voix.');
-    let stream; try { stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}}); } catch { return toast('Autorisez le micro pour envoyer un message vocal.'); }
+    let stream; try { stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}}); } catch (e) { return micErr(e); }
     const mime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported(t)) || '';
     const mr = new MediaRecorder(stream, mime ? {mimeType: mime, audioBitsPerSecond: 32000} : undefined), chunks = [];
     mr.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
@@ -829,6 +831,7 @@ function reportSheet(userId, chatId) {
     ${userId ? '<label class="pick chk"><input type="checkbox" id="rrBlock" checked><span>Bloquer aussi cette personne</span></label>' : ''}
     <p class="err" id="rrErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="submit">Signaler</button></div></div></form>`, 'Signaler');
 }
+const micErr = e => toast(e && e.name === 'NotFoundError' ? 'Aucun micro détecté sur cet appareil. Branchez un micro ou un casque, puis réessayez.' : e && e.name === 'NotReadableError' ? 'Le micro est déjà utilisé par une autre application. Fermez-la, puis réessayez.' : 'Le micro est bloqué pour Tam-Tam. Sur ordinateur : cliquez sur le cadenas à gauche de l’adresse, puis Micro → Autoriser. Sur téléphone : autorisez le micro dans les réglages de l’application.');
 const DEL_ALL_MAX = 3600_000, EDIT_MAX = 2 * 60_000;
 const FWD_IC = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l6 6-6 6"/><path d="M21 11H10a6 6 0 0 0-6 6v2"/></svg>';
 const QUICK = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -1498,7 +1501,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.57</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.58</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1747,6 +1750,7 @@ const ACT = {
     if (i < 0) return toast('Ce statut n’est plus disponible : un statut disparaît au bout de 24 heures.');
     S.sv = {uid, i}; renderSV();
   },
+  stOpenU(d) { stOpen(+d.u); },
   svNext() { svStep(1); }, svPrev() { svStep(-1); }, svPause() { svPause(); },
   async svCall(d) { const cur = svCur(); if (!cur) return; try { const c = await directWith(cur.g.user.id); closeLayer(); S.tab = 'chats'; renderAll(); await openChat(c.id); Call.start(!!d.v); } catch (e) { toast(e.message); } },
   async svFlame(d, el) {
@@ -1759,7 +1763,7 @@ const ACT = {
     if (S.svRec) return svRecStop(true);
     svPause(true);
     if (!navigator.mediaDevices || !window.MediaRecorder) return toast('Ce navigateur ne permet pas d’enregistrer la voix.');
-    let stream; try { stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}}); } catch { return toast('Autorisez le micro pour envoyer un message vocal.'); }
+    let stream; try { stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}}); } catch (e) { return micErr(e); }
     const mime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported(t)) || '';
     const mr = new MediaRecorder(stream, mime ? {mimeType: mime, audioBitsPerSecond: 32000} : undefined), chunks = [];
     mr.ondataavailable = e => { if (e.data.size) chunks.push(e.data); }; mr.start(500);
@@ -1827,7 +1831,7 @@ const ACT = {
 function keepSt() { const t = ($('#stText') || $('#stCap') || {}).value; if (t != null && S.sc) S.sc.text = t; }
 
 const FORMS = {
-  async svReply() { const i = $('#svrIn'), t = (i && i.value || '').trim(); if (!t) return; i.value = ''; i.blur(); try { await svSend({t}); toast('Réponse envoyée'); } catch (e) { toast(e.message); } },
+  async svReply() { const i = $('#svrIn'), t = (i && i.value || '').trim(); if (!t) return; i.value = ''; const rf = i.closest('.sv-reply'); if (rf) rf.classList.remove('typed'); i.blur(); try { await svSend({t}); toast('Réponse envoyée'); } catch (e) { toast(e.message); } },
   async lockPass(f) { const i = $('#lkPass'), b = f.querySelector('button'); if (!i.value) return; b.disabled = true; try { await api('/api/me/unlock', {pass: i.value}); unlock(); } catch (e) { b.disabled = false; i.value = ''; const er = $('#lkErr'); er.textContent = e.message; er.hidden = false; } },
   auth: submitAuth,
   keys: submitKeys,

@@ -28,9 +28,8 @@ const Emoji = {
     this.render();
   },
   render() {
-    const list = this.cat === 0 ? this.recent() : EMO[this.cat][2];
-    this.el.innerHTML = `<div class="emo-tabs">${EMO.map(([n, ic], i) => `<button type="button" data-emocat="${i}" aria-pressed="${this.cat === i}" aria-label="${n}" title="${n}">${ic}</button>`).join('')}<button type="button" class="emo-x" data-emox="1" aria-label="Fermer les émoticônes">${I.close}</button></div>
-      <div class="emo-grid">${list.length ? list.map(e => `<button type="button" data-emoi="${e}">${e}</button>`).join('') : '<p class="hint">Vos émoticônes récentes apparaîtront ici.</p>'}</div>`;
+    const rec = this.recent(), all = [...rec, ...EMO.slice(1).flatMap(c => c[2]).filter(e => !rec.includes(e))];
+    this.el.innerHTML = `<div class="emo-grid">${all.map(e => `<button type="button" data-emoi="${e}">${e}</button>`).join('')}</div>`;
   },
   insert(e) {
     const f = document.querySelector(this.target); if (!f) return this.close();
