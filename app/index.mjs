@@ -936,9 +936,12 @@ R('POST', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, body }) => {
     : { title: nameFor(me, uid), body: body.flame ? '🔥 t’a envoyé une flamme' : body.stReply ? '💬 a répondu à ton statut' : body.kind === 'loc' ? '📍 Position' : body.kind === 'doc' ? '📄 Document' : media ? (body.kind === 'video' ? '🎥 Vidéo' : body.kind === 'audio' ? '🎤 Vocal' : '📷 Photo') : 'Nouveau message', tag: 'chat-' + c.id, url: '/?chat=' + c.id });
   return { msg };
 });
-R('POST', /^\/api\/statuses\/(\d+)\/flame$/, async ({ me, m }) => {
+R('POST', /^\/api\/statuses\/(\d+)\/flame$/, async ({ me, m, body }) => {
   const st = q1(`SELECT * FROM statuses WHERE id=?`, +m[1]); if (!st || st.user_id === me.id || !statusVisible(st, me.id)) E(404, 'Statut introuvable.');
-  run(`INSERT OR IGNORE INTO status_flames(status_id,user_id,at) VALUES(?,?,?)`, st.id, me.id, now()); push(st.user_id, { t: 'statuses' }); return { ok: true };
+  // Flamme : rien dans la discussion, seulement une notification ; re-toucher l'enlève.
+  if (body.on === false) run(`DELETE FROM status_flames WHERE status_id=? AND user_id=?`, st.id, me.id);
+  else if (run(`INSERT OR IGNORE INTO status_flames(status_id,user_id,at) VALUES(?,?,?)`, st.id, me.id, now()).changes) webPush(st.user_id, { title: nameFor(me, st.user_id), body: '🔥 t’a envoyé une flamme', tag: 'flame-' + st.id, url: '/' });
+  push(st.user_id, { t: 'statuses' }); return { ok: true };
 });
 R('POST', /^\/api\/chats\/(\d+)\/read$/, async ({ me, m, body }) => {
   const c = chatFor(me, +m[1]), up = Math.max(0, +body.upTo || 0);

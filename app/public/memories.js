@@ -99,7 +99,7 @@ const Mem = {
     // le dossier privé : turquoise, logo Tam-Tam en noir, « Privé » et un cadenas
     const vault = `<button class="mem-vault" type="button" data-act="memVault"><span class="mv-logo">${BRAND()}</span><span class="mv-lbl">${I.lock}Privé</span><small>${priv.length} souvenir${priv.length > 1 ? 's' : ''}</small><span class="mem-more" role="button" tabindex="0" data-act="memVaultMenu" aria-label="Options du dossier Privé" title="Options"><i></i></span></button>`;
     const isDoc = it => it.kind === 'doc', docsOf = list => list.filter(isDoc), noDoc = list => list.filter(x => !isDoc(x));
-    const docFolder = list => { const n = docsOf(list).length; return `<button class="mem-vault mem-docs" type="button" data-act="memDocs"><span class="mv-ic">${I.clip}</span><span class="mv-lbl">Documents</span><small>${n} document${n > 1 ? 's' : ''}</small></button>`; };
+    const docFolder = list => { const n = docsOf(list).length; return `<button class="mem-vault mem-docs" type="button" data-act="memDocs"><span class="mv-ic">${I.clip}</span><span class="mv-lbl">Documents</span><small>${n} document${n > 1 ? 's' : ''}</small><span class="mem-more" role="button" tabindex="0" data-act="memDocsMenu" aria-label="Options du dossier Documents" title="Options"><i></i></span></button>`; };
     const empty = (title, txt) => `<div class="empty"><p><b>${title}</b></p>${txt ? `<p>${txt}</p>` : ''}<button class="btn" type="button" data-act="memAdd">${I.plus}Ajouter des souvenirs</button></div>`;
     let main;
     if (f === 'docs') { const all = docsOf([...pub, ...sent, ...recv]).sort((a, b) => b.at - a.at);
@@ -240,10 +240,10 @@ const Mem = {
   },
   /* ---- appui long : supprimer, envoyer, sélectionner ---- */
   menu(id) {
-    const it = this.find(id); if (!it) return; const mine = this.mine(it);
+    const it = this.find(id); if (!it) return; const mine = this.mine(it), canSend = mine ? !it.once : !it.lock && !it.once;
     sheet(`${head(mine ? 'Souvenir' : `Souvenir de ${esc(first(uOf(it.from).name))}`)}<div class="menu">
       <button type="button" data-act="memView" data-id="${id}">${I.eye}Ouvrir</button>
-      ${mine && !it.once ? `<button type="button" data-act="memShare" data-id="${id}">${I.users}Envoyer</button>` : ''}
+      ${canSend ? `<button type="button" data-act="memShare" data-id="${id}">${I.users}Envoyer</button>` : ''}
       <button type="button" data-act="memSelStart" data-id="${id}">${I.check}Sélectionner plusieurs</button>
       <button type="button" class="danger" data-act="memDelAsk" data-id="${id}">${I.trash}${mine ? 'Supprimer' : 'Retirer de mes souvenirs'}</button></div>`, 'Souvenir');
   },
@@ -269,7 +269,7 @@ const Mem = {
     layer.innerHTML = `<div class="mem-view${prot ? ' nocopy' : ''}" role="dialog" aria-modal="true" aria-label="Souvenir"><div class="mv-top"><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button>
       <div class="grow"><b>${new Date(it.takenAt).toLocaleDateString('fr-FR', {day: 'numeric', month: 'long', year: 'numeric'})}</b><small>${recv ? `Envoyé par ${esc(uOf(it.from).name)}` : `${ic}${l}`}${it.lock ? ' · privé' : ''}${it.once ? ' · vue unique' : ''}</small></div></div>
       <div class="mv-stage"><div class="lk-spin"></div></div>${it.cap ? `<p class="mv-cap">${esc(it.cap)}</p>` : ''}
-      ${mine ? `<div class="mv-foot"><button class="btn sm" type="button" data-act="memShare" data-id="${it.id}">${I.users}Envoyer</button>${it.aud === 'public' ? `<button class="btn sm ghost" type="button" data-act="memRepost" data-id="${it.id}">Reposter en statut</button>` : ''}<button class="btn sm ghost danger" type="button" data-act="memDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}${prot && !mine ? watermark() : ''}</div>`;
+      ${recv ? `<div class="mv-foot">${!it.lock && !it.once ? `<button class="btn sm" type="button" data-act="memShare" data-id="${it.id}">${I.users}Envoyer</button>` : ''}<button class="btn sm ghost danger" type="button" data-act="memDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}${mine ? `<div class="mv-foot"><button class="btn sm" type="button" data-act="memShare" data-id="${it.id}">${I.users}Envoyer</button>${it.aud === 'public' ? `<button class="btn sm ghost" type="button" data-act="memRepost" data-id="${it.id}">Reposter en statut</button>` : ''}<button class="btn sm ghost danger" type="button" data-act="memDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}${prot && !mine ? watermark() : ''}</div>`;
     try {
       const b = await this.full(it), u = URL.createObjectURL(b), st = layer.querySelector('.mv-stage'); if (!st) return URL.revokeObjectURL(u);
       if (it.kind === 'doc') { st.innerHTML = `<div class="mv-docbox"><span class="mem-doc big"><b>${esc(((it.fname || '').split('.').pop() || 'DOC').slice(0, 4).toUpperCase())}</b><small>${esc(it.fname || 'Document')}</small></span><button class="btn" type="button" id="mvDocOpen">Ouvrir le document</button></div>`; $('#mvDocOpen').onclick = () => { const a = document.createElement('a'); a.href = u; a.download = it.fname || 'document'; if (/pdf|image|text/.test(b.type)) a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove(); }; return; }
@@ -297,7 +297,13 @@ const Mem = {
 };
 Object.assign(ACT, {
   memFilt(d) { if (d.f !== 'private') Mem.unlocked = false; if (d.f === 'private' && !Mem.unlocked) { Mem.filt = 'private'; renderBody(); return Mem.unlockThen(() => renderBody()); } Mem.filt = d.f; renderBody(); if (d.f === 'friends') Mem.markSeen(); },
-  memDocs() { Mem.docFrom = Mem.filt === 'docs' ? 'all' : Mem.filt; Mem.filt = 'docs'; renderBody(); },
+  memDocsMenu() {
+    const docs = [...(Mem.items || []), ...(Mem.recv || [])].filter(x => x.kind === 'doc' && x.aud !== 'private');
+    sheet(`${head('Dossier Documents')}<div class="menu"><button type="button" data-act="memDocs">${I.eye}Ouvrir le dossier</button>${docs.length ? `<button type="button" class="danger" data-act="memDocsDel">${I.trash}Supprimer les ${docs.length} document${docs.length > 1 ? 's' : ''}</button>` : ''}</div>`, 'Dossier Documents');
+  },
+  memDocsDel() { confirmSheet('Supprimer tous les documents ?', 'Vos documents sont effacés définitivement. Ceux reçus d’amis sont seulement retirés de votre liste.', 'Tout supprimer', 'memDocsDelYes', ''); },
+  async memDocsDelYes() { closeLayer(); await Mem.del([...(Mem.items || []), ...(Mem.recv || [])].filter(x => x.kind === 'doc' && x.aud !== 'private').map(x => x.id)); },
+  memDocs() { closeLayer(); Mem.docFrom = Mem.filt === 'docs' ? 'all' : Mem.filt; Mem.filt = 'docs'; renderBody(); },
   memVault() { Mem.unlockThen(() => { Mem.filt = 'private'; renderBody(); }); },
   memRelock() { Mem.unlocked = false; Mem.filt = 'all'; renderBody(); },
   memForgot() { Mem.codeSheet('forgot'); },

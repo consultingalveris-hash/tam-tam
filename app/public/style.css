@@ -1050,3 +1050,11 @@ body.in-cam{overflow:hidden}
 .ldots{display:inline-flex;gap:3px;margin-left:2px}.ldots i{width:5px;height:5px;border-radius:50%;background:var(--accent);animation:ldot 1.2s infinite ease-in-out}
 .ldots i:nth-child(2){animation-delay:.2s}.ldots i:nth-child(3){animation-delay:.4s}
 @keyframes ldot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+/* flamme blanche au départ, couleur feu une fois envoyée */
+.svr-fire,.svr-fire:hover{filter:grayscale(1) brightness(2.6)}
+.svr-fire.on,.svr-fire.on:hover{filter:none;background:rgb(255 120 40/.22)}
+/* vocal du statut, comme dans les discussions */
+.sv-reply{position:relative}
+.sv-recbar{position:absolute;inset:4px 8px calc(8px + env(safe-area-inset-bottom,0px));border-radius:26px;background:#1b2a30;color:#fff;z-index:2}
+.sv-recbar .ib{color:#fff}.sv-recbar .hint{color:rgb(255 255 255/.7)}.sv-recbar .rec-t{font-weight:700}
+.st-q{cursor:pointer}

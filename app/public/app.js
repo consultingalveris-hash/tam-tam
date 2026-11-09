@@ -925,12 +925,13 @@ async function joinPreview(code) {
 function stQuote(m, out, c) {
   const r = m.sr; if (!r) return '';
   const who = out ? `Statut de ${esc(first(chatTitle(c)))}` : 'Votre statut';
-  return `<span class="quote st-q"><b>↩ ${who}</b><span>${r.k === 'video' ? '🎥 Vidéo' : r.k === 'image' ? '📷 Photo' : ''}${r.t ? (r.k === 'text' ? '' : ' · ') + esc(r.t) : ''}</span></span>`;
+  const owner = out ? c.peer : S.me.id;
+  return `<span class="quote st-q" data-act="stQuoteOpen" data-id="${r.id || ''}" data-u="${owner}" role="button" tabindex="0"><b>↩ ${who}</b><span>${r.k === 'video' ? '🎥 Vidéo' : r.k === 'image' ? '📷 Photo' : ''}${r.t ? (r.k === 'text' ? '' : ' · ') + esc(r.t) : ''}</span></span>`;
 }
 function locHtml(m) {
   const l = m.loc || {}; if (l.la == null) return '<span class="txt gone">📍 Position illisible</span>';
   const q = `${(+l.la).toFixed(6)},${(+l.lo).toFixed(6)}`;
-  return `<a class="locb" href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener"><span class="loc-pin" aria-hidden="true">📍</span><span><b>Position${m.from === S.me.id ? ' envoyée' : ''}</b><small>${l.acc ? `Précision : environ ${Math.round(l.acc)} m · ` : ''}Touchez pour ouvrir la carte</small></span></a>`;
+  return `<a class="locb" href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener"><span class="loc-pin" aria-hidden="true">📍</span><span><b>Position${m.from === S.me.id ? ' envoyée' : ''}</b><small>Touchez pour ouvrir la carte</small></span></a>`;
 }
 async function msgBytes(m) {
   const map = m.kind === 'video' ? E2E.vids : m.kind === 'audio' ? E2E.auds : E2E.imgs;
@@ -973,13 +974,18 @@ function locBusy(txt) {
 }
 async function sendLoc() {
   if (!navigator.geolocation) return toast('Cet appareil ne permet pas de partager la position.');
+  const c = S.chats.get(S.chatId); if (!c) return;
   closeLayer(); locBusy('Recherche de votre position');
-  navigator.geolocation.getCurrentPosition(p => {
-    locBusy(null); S.locNow = {la: +p.coords.latitude.toFixed(6), lo: +p.coords.longitude.toFixed(6), acc: Math.round(p.coords.accuracy || 0)};
-    const c = S.chats.get(S.chatId); if (!c) return;
-    confirmSheet('Envoyer votre position actuelle ?', `${esc(chatTitle(c))} verra l’endroit où vous êtes en ce moment${S.locNow.acc ? ` (précision : environ ${S.locNow.acc} m)` : ''}. La position est chiffrée de bout en bout et n’est pas suivie après l’envoi.`, 'Envoyer', 'locGo', c.id);
-  }, err => { locBusy(null); toast(err.code === 1 ? 'Tam-Tam n’a pas accès à votre position. Autorisez la localisation dans les réglages de votre téléphone ou de votre navigateur.' : 'Position introuvable pour l’instant. Vérifiez que la localisation (GPS) est activée, puis réessayez.'); },
-  {enableHighAccuracy: true, timeout: 20000, maximumAge: 30000});
+  // On écoute le GPS jusqu'à 10 secondes et on garde la position la plus précise (on s'arrête dès 15 m).
+  let best = null, done = false, wid = null;
+  const finish = async err => {
+    if (done) return; done = true; if (wid != null) navigator.geolocation.clearWatch(wid); clearTimeout(tm);
+    if (!best) { locBusy(null); return toast(err && err.code === 1 ? 'Tam-Tam n’a pas accès à votre position. Autorisez la localisation dans les réglages de votre téléphone ou de votre navigateur.' : 'Position introuvable pour l’instant. Vérifiez que la localisation (GPS) est activée, puis réessayez.'); }
+    const l = {la: +best.latitude.toFixed(6), lo: +best.longitude.toFixed(6), acc: Math.round(best.accuracy || 0)};
+    try { const sealed = await E2E.seal({t: '', loc: l}, recipients(c)); const r = await api(`/api/chats/${c.id}/messages`, {enc: sealed.env, kind: 'loc'}); locBusy(null); onMsg(r.msg); } catch (e) { locBusy(null); toast(e.message); }
+  };
+  const tm = setTimeout(() => finish(), 10000);
+  wid = navigator.geolocation.watchPosition(p => { if (!best || p.coords.accuracy < best.accuracy) best = p.coords; if (best.accuracy <= 15) finish(); }, err => { if (err.code === 1 || !best) finish(err); }, {enableHighAccuracy: true, timeout: 10000, maximumAge: 0});
 }
 function msgHide(chatId, id) { const l = S.msgs.get(chatId); if (l) { const i = l.findIndex(x => x.id === id); if (i >= 0) l.splice(i, 1); } if (S.chatId === chatId) renderMessages(true); loadChats().then(() => { if (S.tab === 'chats') renderBody(); }).catch(() => {}); }
 function msgMenu(id) {
@@ -1081,7 +1087,7 @@ async function svSend(extra, bytes, kind) {
   const r = await api(`/api/chats/${c.id}/messages`, {enc: sealed.env, media, kind, stReply: !extra.fl, flame: !!extra.fl}); onMsg(r.msg);
 }
 async function svRecStop(send) {
-  const c = S.svRec; S.svRec = null; if (!c) return;
+  const c = S.svRec; S.svRec = null; if (!c) return; clearInterval(c.tick); const rb = layer.querySelector('.sv-recbar'); if (rb) rb.remove();
   await new Promise(res => { c.mr.onstop = res; try { c.mr.stop(); } catch { res(); } }); c.stream.getTracks().forEach(t => t.stop());
   const rf = layer.querySelector('.sv-reply'); if (rf) rf.classList.remove('rec');
   const dur = Math.round((Date.now() - c.t0) / 1000); if (!send || dur < 1 || !c.chunks.length) return;
@@ -1475,7 +1481,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.55</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.56</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1711,13 +1717,20 @@ const ACT = {
   stNoPhoto() { keepSt(); if (S.sc.url) URL.revokeObjectURL(S.sc.url); Object.assign(S.sc, {kind: 'text', blob: null, url: null}); stComposer(); },
   stPublish() { stPublish(); },
   closeEdit() { keepSt(); S.sc = S.sc; closeLayer(); if (isDesk()) pmOpen('settings'); else { S.tab = 'settings'; renderAll(); } setTimeout(() => { const el = document.querySelector('input[name="close"]'); if (el) el.scrollIntoView({block: 'center'}); }, 50); toast('Cochez les personnes de votre groupe privé, puis revenez publier votre statut.'); },
+  async stQuoteOpen(d) {
+    await loadStatuses().catch(() => {}); const uid = +d.u, id = +d.id;
+    const g = uid === S.me.id ? {items: S.statuses.mine.items} : S.statuses.others.find(x => x.user.id === uid), i = g ? g.items.findIndex(x => x.id === id) : -1;
+    if (i < 0) return toast('Ce statut n’est plus disponible : un statut disparaît au bout de 24 heures.');
+    S.sv = {uid, i}; renderSV();
+  },
   svNext() { svStep(1); }, svPrev() { svStep(-1); }, svPause() { svPause(); },
   async svCall(d) { const cur = svCur(); if (!cur) return; try { const c = await directWith(cur.g.user.id); closeLayer(); S.tab = 'chats'; renderAll(); await openChat(c.id); Call.start(!!d.v); } catch (e) { toast(e.message); } },
   async svFlame(d, el) {
-    const cur = svCur(); if (!cur) return; if (cur.it.flamed) return toast('Vous avez déjà envoyé une flamme pour ce statut.');
-    cur.it.flamed = true; if (el) { el.classList.add('on', 'pop'); setTimeout(() => el.classList.remove('pop'), 700); }
-    try { await api(`/api/statuses/${cur.it.id}/flame`, {}); await svSend({t: '🔥', fl: 1}); toast(`🔥 Flamme envoyée à ${first(cur.g.user.name)}`); } catch (e) { cur.it.flamed = false; toast(e.message); }
+    const cur = svCur(); if (!cur) return; const on = !cur.it.flamed; cur.it.flamed = on;
+    if (el) { el.classList.toggle('on', on); el.setAttribute('aria-pressed', on); if (on) { el.classList.add('pop'); setTimeout(() => el.classList.remove('pop'), 700); } }
+    try { await api(`/api/statuses/${cur.it.id}/flame`, {on}); } catch (e) { cur.it.flamed = !on; if (el) el.classList.toggle('on', !on); toast(e.message); }
   },
+  svrCancel() { svRecStop(false); svPause(false); },
   async svrMic() {
     if (S.svRec) return svRecStop(true);
     if (!navigator.mediaDevices || !window.MediaRecorder) return toast('Ce navigateur ne permet pas d’enregistrer la voix.');
@@ -1726,7 +1739,9 @@ const ACT = {
     const mr = new MediaRecorder(stream, mime ? {mimeType: mime, audioBitsPerSecond: 32000} : undefined), chunks = [];
     mr.ondataavailable = e => { if (e.data.size) chunks.push(e.data); }; mr.start(500);
     S.svRec = {mr, stream, chunks, t0: Date.now(), mime: mr.mimeType || mime || 'audio/webm'}; svPause(true);
-    const rf = layer.querySelector('.sv-reply'); if (rf) { rf.classList.add('rec'); const i = rf.querySelector('#svrIn'); i.value = ''; i.placeholder = '● Enregistrement… touchez le micro pour envoyer'; }
+    const rf = layer.querySelector('.sv-reply'); if (!rf) return;
+    rf.classList.add('rec'); rf.insertAdjacentHTML('beforeend', `<div class="recbar sv-recbar" role="group" aria-label="Enregistrement d’un message vocal"><button class="ib" type="button" data-act="svrCancel" aria-label="Annuler l’enregistrement">${I.trash}</button><span class="rec-dot" aria-hidden="true"></span><span class="rec-t" id="svRecT">0:00</span><span class="grow hint">Enregistrement…</span><button class="send" type="button" data-act="svrMic" aria-label="Envoyer le message vocal">${I.send}</button></div>`);
+    S.svRec.tick = setInterval(() => { const c = S.svRec; if (!c) return; const s = Math.floor((Date.now() - c.t0) / 1000), t = $('#svRecT'); if (t) t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; if (s >= 300) svRecStop(true); }, 250);
   },
   svViews() {
     const it = S.statuses.mine.items[S.sv.i]; clearTimeout(svT);
