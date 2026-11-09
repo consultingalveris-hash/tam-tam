@@ -1108,3 +1108,39 @@ body.in-cam{overflow:hidden}
 .mg-v{position:absolute;left:6px;bottom:4px;color:#fff;text-shadow:0 1px 3px #000}
 .mg-x{position:absolute;top:3px;right:3px;width:26px;height:26px;border-radius:50%;background:rgb(0 0 0/.5);color:#fff}
 #multiCap{width:100%}
+/* anneau des statuts : plein (non vu) / à moitié, sans lueur (déjà vu) */
+.story .ring{background:var(--accent);box-shadow:0 0 10px rgb(20 184 201/.55)}
+.story .ring.seen{background:conic-gradient(var(--accent) 0 180deg,rgb(20 184 201/.18) 180deg 360deg);box-shadow:none}
+.st-ring{background:var(--accent);box-shadow:0 0 10px rgb(20 184 201/.55)}
+.st-ring.seen{background:conic-gradient(var(--accent) 0 180deg,rgb(20 184 201/.18) 180deg 360deg);box-shadow:none}
+/* le point unique */
+.dot1{display:block;width:7px;height:7px;border-radius:50%;background:#fff;box-shadow:0 0 0 7px rgb(0 0 0/.38)}
+.dot1.priv{background:var(--accent)}
+.ib.dotb{display:grid;place-items:center}
+:root:not([data-theme="dark"]) .head .dot1,:root:not([data-theme="dark"]) #chatHead .dot1{box-shadow:0 0 0 7px rgb(15 36 48/.55)}
+#chatHead .grow,.selbar .grow{flex:1 1 auto}
+/* petite fenêtre du point (au lieu du volet en bas) */
+.pop-scrim{position:fixed;inset:0;z-index:80;background:transparent}
+.pop{position:fixed;overflow:auto;border-radius:14px;background:var(--surface);color:var(--fg);box-shadow:0 12px 40px rgb(0 0 0/.35);border:1px solid var(--line);animation:popin .12s ease-out}
+@keyframes popin{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+.pop .menu{padding:4px 0}.pop .menu button{padding:11px 16px;font-size:15px;gap:12px}
+.pop .react-bar{padding:8px 8px 4px;gap:2px;justify-content:space-between}.pop .react-bar button{font-size:22px;width:36px;height:36px}
+.pop .hint{padding:2px 16px 8px;margin:0}
+.pop.priv{border-color:rgb(20 184 201/.5)}
+/* bannière de sélection des discussions : glisse depuis le haut, sans pousser la liste */
+.selbar{position:absolute!important;top:0;left:0;right:0;z-index:20;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 10px;background:var(--surface);box-shadow:0 4px 16px rgb(0 0 0/.18);border-bottom:0;animation:seldown .18s ease-out}
+@keyframes seldown{from{transform:translateY(-100%)}to{transform:none}}
+.selbar b{font-size:16px}
+/* bulles photo / vidéo : contour fin */
+.bubble.mb{padding:3px 3px 4px}
+.bubble.mb .photo{margin:0 0 2px;border-radius:12px}
+.bubble.mb .vidb video.vid{border-radius:12px}
+.bubble.mb .txt,.bubble.mb .meta{padding:0 6px}
+/* vidéo dans la discussion : une vignette, un toucher l'ouvre en grand */
+.vid-play{position:absolute;inset:0;display:grid;place-items:center;border:0;background:transparent;cursor:pointer}
+.vid-play span{display:grid;place-items:center;width:52px;height:52px;border-radius:50%;background:rgb(0 0 0/.5);color:#fff;font-size:20px;padding-left:4px}
+.vid-x{display:none}
+/* visionneuse : l'image tient toujours dans l'écran */
+.zm-stage{position:relative}
+.zm-stage img,.zm-stage video{position:absolute;inset:0;width:100%;height:100%;max-width:none;max-height:none;object-fit:contain}
+.locb.live{margin:4px 0 10px}

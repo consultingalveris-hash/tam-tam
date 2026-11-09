@@ -178,7 +178,7 @@ async function startApp() {
   await PP.init().catch(() => {});
   api('/api/translate/status').then(r => { Tr.st = r; renderComposer(); }).catch(() => {});
   renderAll(); connect(); if (S.locked) showLock(); if (!S.me.handleSet) HPick.open();
-  GCall.loadActive(); Call.checkPending(); Device.badge();
+  GCall.loadActive(); Call.checkPending(); Device.badge(); LocShare.sync();
   if (S.lock.type === 'off') return requireLock();
   if (S.pendingChat && S.chats.has(S.pendingChat)) openChat(S.pendingChat); S.pendingChat = 0;
   if (S.pendingTab) { S.tab = S.pendingTab; S.pendingTab = null; history.replaceState(null, '', '/'); renderAll(); }
@@ -346,7 +346,7 @@ function chatRows() {
   if (S.showHidden) list.sort((a, b) => (b.hidden ? 1 : 0) - (a.hidden ? 1 : 0));
   list.sort((a, b) => (b.last?.at || b.createdAt) - (a.last?.at || a.createdAt));
   list.sort((a, b) => (b.pinned || 0) - (a.pinned || 0));
-  const selBar = S.sel ? `<div class="selbar"><button class="ib" type="button" data-act="selOff" aria-label="Annuler la sélection">${I.close}</button><b>${S.sel.size} sélectionnée${S.sel.size > 1 ? 's' : ''}</b><span class="grow"></span><button class="ib" type="button" data-act="selMenu" aria-label="Actions" title="Actions">${I.more}</button></div>` : '';
+  const selBar = S.sel ? `<div class="selbar"><button class="ib" type="button" data-act="selOff" aria-label="Annuler la sélection">${I.close}</button><b>${S.sel.size} sélectionnée${S.sel.size > 1 ? 's' : ''}</b><span class="grow"></span><button class="ib dotb" type="button" data-act="selMenu" aria-label="Actions" title="Actions">${DOT(S.showHidden)}</button></div>` : '';
   const privBar = S.showHidden ? `<div class="privbar">${I.lock}<span>Discussions privées affichées</span><button class="btn sm ghost" type="button" data-act="privHide">Masquer</button></div>` : '';
   const archHead = fl === 'arch' ? `<div class="arch-head"><button class="ib" type="button" data-act="filt" data-f="all" aria-label="Retour aux discussions">${I.back}</button><b>${ARCH_IC}Discussions archivées</b></div><p class="hint arch-note">Elles restent ici même si un nouveau message arrive. Appui long sur une discussion, puis « Désarchiver », pour la remettre dans la liste.</p>` : '';
   if (!list.length && fl === 'arch') return archHead + '<p class="empty">Aucune discussion archivée. Pour en ranger une, appuyez longtemps dessus dans la liste, puis touchez « Archiver ».</p>';
@@ -457,7 +457,7 @@ function renderPin() {
 }
 function renderChatHead() {
   const c = S.chats.get(S.chatId), h = $('#chatHead'); if (!c || !h) return;
-  if (S.msel && S.msel.size) { h.innerHTML = `<button class="ib back" type="button" data-act="mselOff" aria-label="Annuler la sélection">${I.close}</button><b class="msel-n">${S.msel.size} sélectionné${S.msel.size > 1 ? 's' : ''}</b><span class="grow"></span><button class="ib" type="button" data-act="mselMenu" aria-label="Actions" title="Actions">${I.more}</button>`; h.classList.add('msel-head'); return; }
+  if (S.msel && S.msel.size) { h.innerHTML = `<button class="ib back" type="button" data-act="mselOff" aria-label="Annuler la sélection">${I.close}</button><b class="msel-n">${S.msel.size} sélectionné${S.msel.size > 1 ? 's' : ''}</b><span class="grow"></span><button class="ib dotb" type="button" data-act="mselMenu" aria-label="Actions" title="Actions">${DOT((S.chats.get(S.chatId) || {}).hidden)}</button>`; h.classList.add('msel-head'); return; }
   h.classList.remove('msel-head');
   const tu = typingIn(c.id); let sub;
   if (c.type === 'group') sub = tu ? `<small class="on">${esc(first(uOf(tu).name))} écrit…</small>` : `<small>${c.members.map(m => m.id === S.me.id ? 'Vous' : first(uOf(m.id).name)).join(', ')}</small>`;
@@ -466,7 +466,7 @@ function renderChatHead() {
     <button class="chat-id" type="button" data-act="chatInfo">${c.type === 'group' ? grpAv(c, 'sm') : stRing(uOf(c.peer), avatar(uOf(c.peer), 'sm'))}<span style="min-width:0"><b>${esc(chatTitle(c))}</b>${sub}</span></button>
     ${c.type === 'direct' && !c.blocked ? `<button class="ib" type="button" data-act="callVideo" aria-label="Appel vidéo">${I.video}</button><button class="ib" type="button" data-act="callAudio" aria-label="Appel vocal">${I.phone}</button>` : ''}
     ${c.type === 'group' ? (GCall.active(c.id) && !(GCall.c && GCall.c.chatId === c.id) ? `<button class="btn sm gjoin" type="button" data-act="gcallJoin" data-id="${GCall.active(c.id).callId}">${I.phone}Rejoindre</button>` : `<button class="ib" type="button" data-act="gcallVideo" aria-label="Appel vidéo de groupe">${I.video}</button><button class="ib" type="button" data-act="gcallAudio" aria-label="Appel vocal de groupe">${I.phone}</button>`) : ''}
-    <button class="ib" type="button" data-act="chatMenu" aria-label="Options de la discussion">${I.more}</button>`;
+    <button class="ib dotb" type="button" data-act="chatMenu" aria-label="Options de la discussion" title="Options">${DOT(c.hidden)}</button>`;
 }
 function renderComposer() {
   const c = S.chats.get(S.chatId), el = $('#compose'); if (!c || !el) return;
@@ -548,13 +548,13 @@ function renderMessages(keep) {
     let body;
     if (m.deleted) body = `<span class="txt gone">${m.delBy ? (m.delBy === S.me.id ? 'Vous avez supprimé ce message (administrateur)' : 'Supprimé par un administrateur') : out ? 'Vous avez supprimé ce message' : 'Ce message a été supprimé'}</span>`;
     else if (m.once) body = onceBubble(m, out);
-    else if (m.kind === 'video') body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + `<div class="vidb"><button class="ib vid-x" type="button" data-act="zoomVid" data-id="${m.id}" aria-label="Plein écran" title="Plein écran">${I.expand || '⤢'}</button><video class="photo vid" data-vid="${m.id}" playsinline controls preload="metadata" controlslist="nodownload"${E2E.vids.has(m.id) ? ` src="${E2E.vids.get(m.id)}"` : ''}></video>${m.dur ? `<small class="vid-d">${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>` + (m.text ? Tr.txt(m) : '');
+    else if (m.kind === 'video') body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + `<div class="vidb"><video class="photo vid" data-vid="${m.id}" playsinline muted preload="metadata" disablepictureinpicture controlslist="nodownload"${E2E.vids.has(m.id) ? ` src="${E2E.vids.get(m.id)}"` : ''}></video><button class="vid-play" type="button" data-act="zoomVid" data-id="${m.id}" aria-label="Lire la vidéo en grand"><span>▶</span></button>${m.dur ? `<small class="vid-d">${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>` + (m.text ? Tr.txt(m) : '');
     else if (m.fl) body = `<span class="flame-msg"><span class="fl-ic">🔥</span><b>${out ? 'Vous avez envoyé une flamme' : `${esc(first(u.name))} t’a envoyé une flamme`}</b></span>` + stQuote(m, out, c);
     else if (m.kind === 'loc') body = locHtml(m);
     else if (m.kind === 'doc') body = docHtml(m) + (m.text ? Tr.txt(m) : '');
     else if (m.kind === 'audio') body = stQuote(m, out, c) + `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
     else body = stQuote(m, out, c) + (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? Tr.txt(m) : '');
-    h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble">
+    h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble${!m.deleted && !m.once && (m.kind === 'video' || (m.media && m.kind !== 'audio' && m.kind !== 'doc' && m.kind !== 'loc')) ? ' mb' : ''}">
       ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${m.fwd ? `<span class="fwd">${FWD_IC}Transféré</span>` : ''}${body}<span class="meta">${m.edited ? '<i class="edited">modifié</i> ' : ''}${hm(m.at)}${out && !m.deleted ? tick(readState(c, m)) : ''}</span>
       ${m.deleted ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message" title="Options : réagir, répondre, transférer, épingler…">${I.chev}</button>`}</div>${reactsHtml(m)}</div>`;
   }
@@ -631,6 +631,7 @@ function paintCrop(ctx, size, mask) {
 }
 function drawCrop() { const cv = $('#cropCv'); if (cv && S.crop) paintCrop(cv.getContext('2d'), cv.width, true); }
 function notify(c, m) {
+  if (c.muted) return;   // son coupé pour cette discussion
   Sound.msg();
   if (c.hidden) { if (!document.hidden) toast('Nouveau message'); return; }
   const who = m.from ? uOf(m.from).name : '', t = c.type === 'group' ? `${c.name} · ${first(who)}` : who;
@@ -718,7 +719,26 @@ async function sendPhoto() {
 
 /* ---------- feuilles ---------- */
 const head = t => `<div class="sheet-head"><h2>${t}</h2><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>`;
+// Le point unique de Tam-Tam (au lieu des trois points) : blanc, turquoise pour tout ce qui est privé.
+const DOT = (priv, cls = '') => `<span class="dot1${priv ? ' priv' : ''}${cls ? ' ' + cls : ''}" aria-hidden="true"></span>`;
+// Les menus ouverts depuis ce point s'affichent dans une petite fenêtre près du point (pas en bas de l'écran),
+// et ne ferment pas ce qui est derrière (une photo ou une vidéo en grand continue de s'afficher).
+let popFrom = null, popAt = 0, popRect = null;
+function popClose() { const p = document.getElementById('pop'); if (p) p.remove(); }
+function popOpen(html, label, a) {
+  popClose();
+  const el = document.createElement('div'); el.id = 'pop'; el.className = 'pop-scrim';
+  el.innerHTML = `<div class="pop${a.classList.contains('priv') || a.querySelector('.dot1.priv') ? ' priv' : ''}" role="dialog" aria-label="${esc(label || 'Options')}">${html.replace(/<div class="sheet-head">[\s\S]*?<\/button><\/div>/, '')}</div>`;
+  document.body.appendChild(el);
+  const box = el.firstChild, r = (a.isConnected ? a.getBoundingClientRect() : popRect) || a.getBoundingClientRect(), W = innerWidth, H = innerHeight, w = Math.min(300, W - 24);
+  box.style.width = w + 'px'; box.style.left = Math.max(12, Math.min(W - w - 12, r.right - w)) + 'px';
+  const h = Math.min(box.scrollHeight, H * .6), below = H - r.bottom - 12;
+  if (below >= h || below > r.top) { box.style.top = (r.bottom + 6) + 'px'; box.style.maxHeight = Math.max(160, below - 6) + 'px'; } else { box.style.bottom = (H - r.top + 6) + 'px'; box.style.maxHeight = Math.max(160, r.top - 18) + 'px'; }
+  el.addEventListener('click', e => { if (e.target === el) popClose(); });
+}
 function sheet(html, label, focus) {
+  if (popFrom && Date.now() - popAt < 900 && /class="(menu|react-bar)/.test(html) && !/<(input|textarea|select|form)\b/.test(html)) { const f = popFrom; popFrom = null; return popOpen(html, label, f); }
+  popClose();
   layer.innerHTML = `<div class="layer" data-act="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(label)}">${html}</div></div>`;
   const f = layer.querySelector(focus || '.sheet button, .sheet input'); if (f) f.focus({preventScroll: true});
 }
@@ -744,7 +764,7 @@ if (window.TamTamAndroid) {
 }
 document.addEventListener('keyup', e => { if (e.key === 'PrintScreen' && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
 document.addEventListener('keydown', e => { if (e.metaKey && e.shiftKey && ['3', '4', '5', 's', 'S'].includes(e.key) && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
-function closeLayer() { if (S.svRec) svRecStop(false); if (S.onceMsg) return onceDone(); clearTimeout(svT); if (S.sv) setTimeout(svCacheClear, 500); layer.innerHTML = ''; S.sv = null; if (S.pend) { URL.revokeObjectURL(S.pend.url); S.pend = null; } }
+function closeLayer() { popClose(); if (S.svRec) svRecStop(false); if (S.onceMsg) return onceDone(); clearTimeout(svT); if (S.sv) setTimeout(svCacheClear, 500); layer.innerHTML = ''; S.sv = null; if (S.pend) { URL.revokeObjectURL(S.pend.url); S.pend = null; } }
 function confirmSheet(title, text, yes, act, id) {
   sheet(`${head(title)}<div class="sheet-body"><p>${text}</p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="button" data-act="${act}" data-id="${id || ''}">${yes}</button></div></div>`, title);
 }
@@ -767,6 +787,9 @@ function chatMenu() {
     ${c.type === 'group' ? `<button type="button" data-act="chatInfo">${I.info}Infos et réglages du groupe</button>${can(c, 'add') ? `<button type="button" data-act="groupAddOpen">${I.userplus}Ajouter des membres</button>` : ''}`
     : `<button type="button" data-act="prof" data-id="${u.id}">${I.info}Voir le profil</button>`}
     <button type="button" data-act="mediaOpen">${I.image || I.clip}Médias, liens et documents</button>
+    ${u && u.locMe ? `<button type="button" data-act="locFollow" data-id="${u.id}"><span class="pin-ic" aria-hidden="true">📍</span>Suivre la localisation de ${esc(first(u.name))}</button>` : ''}
+    <button type="button" data-act="chatMute"><span class="pin-ic" aria-hidden="true">${c.muted ? '🔔' : '🔕'}</span>${c.muted ? 'Réactiver le son' : 'Couper le son'}</button>
+    ${c.hidden ? '' : '<button type="button" data-act="exportAsk"><span class="pin-ic" aria-hidden="true">🗜</span>Exporter la discussion</button>'}
     ${c.type === 'group' ? `<button type="button" class="danger" data-act="leaveAsk">${I.back}Quitter le groupe</button>` : ''}
     <button type="button" data-act="privToggle">${I.lock}${c.hidden ? 'Ne plus rendre privée' : 'Rendre la discussion privée'}</button>
     <button type="button" class="danger" data-act="reportAsk" data-id="${u ? u.id : ''}" data-chat="${c.id}">${I.flag}Signaler</button>
@@ -955,6 +978,28 @@ function fwdSheet(id) {
     <div class="sheet-scroll">${list.map(c => `<label class="row fwd-row">${c.type === 'group' ? grpAv(c, 'sm') : avOn(uOf(c.peer))}<span class="row-name">${esc(chatTitle(c))}</span><input type="checkbox" data-fwd="${c.id}" aria-label="Choisir ${esc(chatTitle(c))}"></label>`).join('')}</div>
     <div class="sheet-body"><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="button" data-act="fwdGo" id="fwdGo" disabled>Transférer</button></div></div>`, 'Transférer');
 }
+document.addEventListener('change', async e => {
+  if (e.target.name !== 'locTo') return;
+  const to = [...document.querySelectorAll('input[name="locTo"]:checked')].map(i => +i.value);
+  try { const r = await api('/api/loc/settings', {to}); S.me.locTo = r.locTo; LocShare.sync(); toast(r.locTo.length ? `Position partagée avec ${r.locTo.length} personne${r.locTo.length > 1 ? 's' : ''}` : 'Partage de position désactivé'); } catch (er) { toast(er.message); }
+});
+/* Envoi de ma position aux personnes choisies : chiffrée pour elles seules, à chaque déplacement de plus de 25 m ou toutes les 2 minutes. */
+const LocShare = {
+  w: null, last: null, lastAt: 0, busy: false,
+  sync() { const on = (S.me && S.me.locTo || []).length && 'geolocation' in navigator; if (on && this.w == null) this.start(); else if (!on && this.w != null) this.stop(); },
+  start() { try { this.w = navigator.geolocation.watchPosition(p => this.got(p), () => {}, {enableHighAccuracy: true, maximumAge: 30000, timeout: 60000}); } catch { this.w = null; } this.tick = setInterval(() => { if (this.last && Date.now() - this.lastAt > 120000) this.send(this.last); }, 60000); },
+  stop() { try { navigator.geolocation.clearWatch(this.w); } catch {} this.w = null; clearInterval(this.tick); },
+  dist(a, b) { const R = 6371e3, t = x => x * Math.PI / 180, dl = t(b.lat - a.lat), dg = t(b.lng - a.lng); const h = Math.sin(dl / 2) ** 2 + Math.cos(t(a.lat)) * Math.cos(t(b.lat)) * Math.sin(dg / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); },
+  got(p) { const c = {lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6), acc: Math.round(p.coords.accuracy || 0)}; const moved = !this.sent || this.dist(this.sent, c) > 25; this.last = c; if (moved || Date.now() - this.lastAt > 120000) this.send(c); },
+  async send(c) {
+    if (this.busy || !E2E.ready()) return; this.busy = true;
+    try {
+      const to = (S.me.locTo || []).map(id => S.contacts.contacts.find(u => u.id === id)).filter(u => u && u.pubkey);
+      const sealed = await E2E.seal({...c, t: Date.now()}, [[S.me.id, E2E.pubJwk], ...to.map(u => [u.id, u.pubkey])]);
+      await api('/api/loc', {env: sealed.env}); this.sent = c; this.lastAt = Date.now();
+    } catch {} finally { this.busy = false; }
+  },
+};
 document.addEventListener('change', e => {
   const b = e.target.closest && e.target.closest('[data-fwd]'); if (!b || !S.fwd) return;
   const id = +b.dataset.fwd; if (b.checked) { if (S.fwd.sel.size >= 5) { b.checked = false; return toast('5 discussions au maximum.'); } S.fwd.sel.add(id); } else S.fwd.sel.delete(id);
@@ -990,8 +1035,74 @@ function msgHide(chatId, id) { const l = S.msgs.get(chatId); if (l) { const i = 
 function zoomOpen(kind, src, mid) {
   const m = mid && (S.msgs.get(S.chatId) || []).find(x => x.id === mid), u = m && uOf(m.from);
   const who = m ? `<span class="zm-who"><b>${esc(m.from === S.me.id ? 'Vous' : u.name)}</b><small>${new Date(m.at).toLocaleString('fr-FR', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'})}</small></span>` : '<span class="grow"></span>';
-  layer.innerHTML = `<div class="zoom${m && S.chats.get(S.chatId)?.hidden ? ' nocopy' : ''}" role="dialog" aria-modal="true" aria-label="${kind === 'video' ? 'Vidéo' : 'Photo'}"><div class="zm-top"><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.back}</button>${who}${m && !m.once ? `<button class="ib" type="button" data-act="zoomMenu" data-id="${mid}" aria-label="Actions" title="Actions">${I.more}</button>` : ''}</div>
+  layer.innerHTML = `<div class="zoom${m && S.chats.get(S.chatId)?.hidden ? ' nocopy' : ''}" role="dialog" aria-modal="true" aria-label="${kind === 'video' ? 'Vidéo' : 'Photo'}"><div class="zm-top"><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.back}</button>${who}${m && !m.once ? `<button class="ib dotb" type="button" data-act="zoomMenu" data-id="${mid}" aria-label="Actions" title="Actions">${DOT(S.chats.get(S.chatId)?.hidden)}</button>` : ''}</div>
     <div class="zm-stage">${kind === 'video' ? `<video src="${esc(src)}" controls autoplay playsinline controlslist="nodownload" disablepictureinpicture></video>` : `<img src="${esc(src)}" alt="Photo" draggable="false">`}</div>${m && m.text ? `<p class="zm-cap">${esc(m.text)}</p>` : ''}</div>`;
+}
+/* Export d'une discussion en fichier ZIP (texte, et si demandé les photos, vidéos, documents déchiffrés). */
+const Zip = {
+  crcT: (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })(),
+  crc(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = Zip.crcT[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; },
+  make(files) {   // fichiers stockés sans compression (photos et vidéos sont déjà compressées)
+    const enc = new TextEncoder(), parts = [], cent = []; let off = 0;
+    const d = new Date(), dt = ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)) & 0xFFFF, dd = (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()) & 0xFFFF;
+    for (const f of files) {
+      const name = enc.encode(f.name), data = f.data, crc = Zip.crc(data), h = new DataView(new ArrayBuffer(30));
+      h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(10, dt, true); h.setUint16(12, dd, true); h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, name.length, true);
+      parts.push(h.buffer, name, data);
+      const c = new DataView(new ArrayBuffer(46)); c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(12, dt, true); c.setUint16(14, dd, true); c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, name.length, true); c.setUint32(42, off, true);
+      cent.push(c.buffer, name); off += 30 + name.length + data.length;
+    }
+    const csize = cent.reduce((s, x) => s + (x.byteLength || x.length), 0), e = new DataView(new ArrayBuffer(22));
+    e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, csize, true); e.setUint32(16, off, true);
+    return new Blob([...parts, ...cent, e.buffer], {type: 'application/zip'});
+  },
+};
+async function exportChat(id, withMedia) {
+  const c = S.chats.get(id); if (!c || c.hidden) return toast('Les discussions privées ne peuvent pas être exportées.');
+  toast('Préparation de l’export…');
+  try {
+    let list = S.msgs.get(id) || [];
+    while (S.more.get(id) && list.length) { const r = await api(`/api/chats/${id}/messages?before=${list[0].id}`); for (const m of r.messages) await reveal(m); list = r.messages.concat(list); S.msgs.set(id, list); S.more.set(id, r.more); }
+    const files = [], lines = [], enc = new TextEncoder(); let n = 0, size = 0;
+    const ext = m => m.kind === 'video' ? ((m.amime || '').includes('webm') ? 'webm' : 'mp4') : m.kind === 'audio' ? ((m.amime || '').includes('ogg') ? 'ogg' : (m.amime || '').includes('mp4') ? 'm4a' : 'webm') : 'jpg';
+    for (const m of list) {
+      if (m.kind === 'sys') { lines.push(`— ${m.text}`); continue; }
+      const when = new Date(m.at).toLocaleString('fr-FR'), who = m.from === S.me.id ? S.me.name : uOf(m.from).name;
+      if (m.deleted) { lines.push(`[${when}] ${who} : (message supprimé)`); continue; }
+      if (m.once) { lines.push(`[${when}] ${who} : (vue unique, non exportée)`); continue; }
+      let att = '';
+      if (m.media && m.kind !== 'loc') {
+        const fname = m.kind === 'doc' && m.fname ? `${String(++n).padStart(4, '0')}-${m.fname.replace(/[\\/:*?"<>|]/g, '_')}` : `${m.kind === 'video' ? 'VID' : m.kind === 'audio' ? 'AUD' : 'IMG'}-${String(++n).padStart(4, '0')}.${ext(m)}`;
+        att = ` <pièce jointe : ${fname}>`;
+        if (withMedia && m._key && m.miv && size < 400e6) { try { const r = await fetch(m.media, {credentials: 'same-origin'}); if (r.ok) { const b = new Uint8Array(await E2E.decBytes(m._key, m.miv, await r.arrayBuffer())); size += b.length; files.push({name: 'pieces-jointes/' + fname, data: b}); } } catch {} }
+      }
+      lines.push(`[${when}] ${who} : ${m.kind === 'loc' ? '(position partagée)' : (m.text || '')}${att}`);
+    }
+    const title = chatTitle(c), head = `Discussion Tam-Tam : ${title}\nExportée le ${new Date().toLocaleString('fr-FR')} par ${S.me.name}\n\n`;
+    files.unshift({name: 'discussion.txt', data: enc.encode(head + lines.join('\n'))});
+    const zip = Zip.make(files), safe = title.replace(/[^\p{L}\p{N} _-]/gu, '').trim().slice(0, 40) || 'discussion', name = `Tam-Tam - ${safe}.zip`;
+    const file = new File([zip], name, {type: 'application/zip'});
+    if (navigator.canShare && navigator.canShare({files: [file]})) { try { await navigator.share({files: [file], title: name}); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+    const u = URL.createObjectURL(zip), lk = document.createElement('a'); lk.href = u; lk.download = name; document.body.appendChild(lk); lk.click(); lk.remove(); setTimeout(() => URL.revokeObjectURL(u), 60_000);
+    toast(`Export prêt : ${name}`);
+  } catch (e) { toast(e.message || 'Export impossible.'); }
+}
+/* Suivre la position d'un proche qui la partage avec moi (il l'a choisi dans ses réglages). */
+let locT = null;
+async function locFollow(uid) {
+  const u = uOf(uid); clearInterval(locT);
+  const draw = async () => {
+    const box = $('#locBox'); if (!box) { clearInterval(locT); return; }
+    try {
+      const r = await api('/api/loc/' + uid); const o = r.env ? await E2E.open(r.env, S.me.id) : null, p = o && o.payload;
+      if (!p) { box.innerHTML = `<p class="hint">${esc(first(u.name))} partage sa position avec vous, mais aucune position n’a encore été reçue. Elle arrive dès que Tam-Tam est ouvert sur son téléphone.</p>`; return; }
+      const ago = Math.max(0, Math.round((Date.now() - p.t) / 60000)), q = `${p.lat},${p.lng}`;
+      box.innerHTML = `<a class="locb live" href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener"><span class="loc-pin" aria-hidden="true">📍</span><span><b>Ouvrir sur la carte</b><small>${ago < 1 ? 'À l’instant' : ago < 60 ? `Il y a ${ago} min` : `Il y a ${Math.round(ago / 60)} h`}${p.acc ? ` · précision ${p.acc < 1000 ? Math.round(p.acc) + ' m' : (p.acc / 1000).toFixed(1) + ' km'}` : ''}</small></span></a>
+        <p class="hint">Mise à jour automatique toutes les 20 secondes, tant que cette fenêtre est ouverte.</p>`;
+    } catch (e) { box.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  };
+  sheet(`${head('Position de ' + esc(first(u.name)))}<div class="sheet-body" id="locBox"><p class="hint">Recherche de la position…</p></div>`, 'Position');
+  await draw(); locT = setInterval(draw, 20000);
 }
 function msgMenu(id) {
   const list = S.msgs.get(S.chatId) || [], m = list.find(x => x.id === id); if (!m) return;
@@ -1539,6 +1650,9 @@ function settingsBody() {
     <div class="set-block"><h2>${I.shield} Chiffrement de bout en bout</h2><p class="hint">Vos messages et vos photos sont chiffrés sur votre appareil : seules les personnes de la discussion peuvent les lire, pas même le serveur.</p>
       <p>Votre code de sécurité : <b class="fp" id="myFp">…</b></p><p class="hint">Comparez-le avec celui qu’un proche voit sur votre profil pour vérifier que personne ne s’est glissé entre vous.</p>
       <div><button class="btn sm ghost" type="button" data-act="keyCode">${I.key}Changer le code de sauvegarde</button></div></div>
+    <div class="set-block" id="locSet"><h2>📍 Partager ma localisation</h2><p class="hint">Les personnes que vous cochez peuvent voir où vous êtes, en permanence : dans votre discussion, le point en haut à droite, puis « Suivre la localisation ». Pratique entre conjoints, ou pour des parents avec leurs enfants. Votre position est chiffrée : même le serveur ne peut pas la lire.</p>
+      ${(S.contacts.contacts || []).length ? `<div class="picks">${S.contacts.contacts.slice().sort((x, y) => x.name.localeCompare(y.name, 'fr')).map(u => `<label class="pick"><input type="checkbox" name="locTo" value="${u.id}"${(me.locTo || []).includes(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint">Ajoutez d’abord des contacts.</p>'}
+      <p class="hint">${(me.locTo || []).length ? `✅ Partagée avec ${(me.locTo || []).length} personne${(me.locTo || []).length > 1 ? 's' : ''}. Sur ordinateur et dans le navigateur, la position est envoyée tant que Tam-Tam est ouvert.` : 'Partage désactivé : cochez une personne pour l’activer.'}</p></div>
     <div class="set-block"><h2>${I.download || ''} Économie de données</h2><p class="hint">Pour les petits forfaits : photos et vidéos envoyées plus légères, et Tam-Tam ne télécharge rien à l’avance (le statut suivant se charge quand vous y arrivez).</p>
       <label class="pick chk"><input type="checkbox" data-act="saverTog"${dataSaver() ? ' checked' : ''}><span>Activer l’économie de données sur cet appareil</span></label></div>
     ${lockSettingsHtml()}
@@ -1554,7 +1668,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.65</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.66</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1623,15 +1737,20 @@ const ACT = {
       <button type="button" data-act="selDo" data-k="unread"><span class="pin-ic" aria-hidden="true">●</span>Marquer comme non lu</button>
       <button type="button" data-act="selDo" data-k="pin"><span class="pin-ic" aria-hidden="true">📌</span>${allPinned ? 'Retirer l’épingle' : 'Épingler en haut'}</button>
       <button type="button" data-act="selDo" data-k="arch">${ARCH_IC}${arch ? 'Désarchiver' : 'Archiver'}</button>
+      <button type="button" data-act="selDo" data-k="mute"><span class="pin-ic" aria-hidden="true">${ids.every(i => S.chats.get(i)?.muted) ? '🔔' : '🔕'}</span>${ids.every(i => S.chats.get(i)?.muted) ? 'Réactiver le son' : 'Couper le son'}</button>
+      ${ids.some(i => S.chats.get(i)?.type === 'group') ? `<button type="button" class="danger" data-act="selLeaveAsk">${I.back}Quitter ${ids.filter(i => S.chats.get(i)?.type === 'group').length > 1 ? 'les groupes' : 'le groupe'}</button>` : ''}
       <button type="button" class="danger" data-act="selDo" data-k="clear">${I.trash}Supprimer ${n > 1 ? `les ${n} discussions` : 'la discussion'}</button></div>`, 'Actions');
   },
   async selDo(d) {
     const ids = [...(S.sel || [])]; if (!ids.length) return; if (d.k !== 'clear') closeLayer();
     if (d.k === 'clear') return confirmSheet(`Supprimer ${ids.length > 1 ? `ces ${ids.length} discussions` : 'cette discussion'} ?`, 'Les messages disparaîtront de votre côté seulement.', 'Supprimer', 'selClearYes', '');
     const allPinned = ids.every(i => S.chats.get(i)?.pinned);
-    try { for (const i of ids) await chatMine(i, d.k === 'pin' ? {pin: !allPinned} : d.k === 'arch' ? {archive: S.filt !== 'arch'} : {unread: d.k === 'unread'}, true); if (d.k === 'arch') toast(S.filt === 'arch' ? 'Remises dans la liste' : `${ids.length > 1 ? 'Discussions rangées' : 'Discussion rangée'} dans Archives`); } catch (e) { toast(e.message); }
+    const allMuted = ids.every(i => S.chats.get(i)?.muted);
+    try { for (const i of ids) await chatMine(i, d.k === 'pin' ? {pin: !allPinned} : d.k === 'arch' ? {archive: S.filt !== 'arch'} : d.k === 'mute' ? {mute: !allMuted} : {unread: d.k === 'unread'}, true); if (d.k === 'mute') toast(allMuted ? 'Son réactivé' : 'Son coupé : plus de sonnerie ni de notification pour ces discussions'); if (d.k === 'arch') toast(S.filt === 'arch' ? 'Remises dans la liste' : `${ids.length > 1 ? 'Discussions rangées' : 'Discussion rangée'} dans Archives`); } catch (e) { toast(e.message); }
     S.sel = null; renderTabs(); renderBody();
   },
+  selLeaveAsk() { confirmSheet('Quitter ?', 'Vous ne recevrez plus les messages de ces groupes.', 'Quitter', 'selLeaveYes', ''); },
+  async selLeaveYes() { closeLayer(); const ids = [...(S.sel || [])].filter(i => S.chats.get(i)?.type === 'group'); try { for (const i of ids) { await api(`/api/chats/${i}/leave`, {}); S.chats.delete(i); if (S.chatId === i) ACT.back(); } toast(ids.length > 1 ? 'Groupes quittés' : 'Groupe quitté'); } catch (e) { toast(e.message); } S.sel = null; renderTabs(); renderBody(); },
   async selClearYes() { closeLayer(); const ids = [...(S.sel || [])]; try { for (const i of ids) { await chatMine(i, {clear: true}, true); S.msgs.delete(i); if (S.chatId === i) ACT.back(); } toast('Discussions supprimées de votre côté'); } catch (e) { toast(e.message); } S.sel = null; renderTabs(); renderBody(); },
   async react(d) { closeLayer(); try { await api(`/api/messages/${d.id}/react`, {emo: d.e}); } catch (e) { toast(e.message); } },
   reactMore(d) { moreEmoji(+d.id); },
@@ -1711,6 +1830,11 @@ const ACT = {
   async unblock(d) { closeLayer(); try { const r = await api('/api/block', {id: +d.id, on: false}); S.me = r.me; await Promise.all([loadChats(), loadContacts()]); renderAll(); if (S.chatId) renderMain(); toast('Personne débloquée'); } catch (e) { toast(e.message); } },
   reportAsk(d) { reportSheet(d.id ? +d.id : null, d.chat ? +d.chat : null); },
   chatMenu() { chatMenu(); },
+  async chatMute() { const c = S.chats.get(S.chatId); if (!c) return; closeLayer(); try { await chatMine(c.id, {mute: !c.muted}, true); toast(c.muted ? 'Son coupé pour cette discussion' : 'Son réactivé'); } catch (e) { toast(e.message); } },
+  exportAsk() { sheet(`${head('Exporter la discussion')}<div class="sheet-body"><p class="hint">Tam-Tam prépare un fichier ZIP avec toute la discussion, que vous pouvez envoyer dans une autre application ou par e-mail. Les messages à vue unique ne sont jamais exportés.</p>
+    <div class="menu"><button type="button" data-act="exportGo" data-m="">${I.clip}Sans les pièces jointes (texte seulement)</button><button type="button" data-act="exportGo" data-m="1">${I.image || I.clip}Avec les pièces jointes (photos, vidéos, documents)</button></div></div>`, 'Exporter'); },
+  exportGo(d) { closeLayer(); exportChat(S.chatId, !!d.m); },
+  locFollow(d) { locFollow(+d.id); },
   chatInfo() { const c = S.chats.get(S.chatId); if (!c) return; if (c.type === 'group') groupInfo(); else profSheet(c.peer); },
   groupNew() { groupSheet(); },
   groupAddOpen() { groupSheet(S.chats.get(S.chatId)); },
@@ -1800,7 +1924,7 @@ const ACT = {
   async mselHideYes() { const ids = [...(S.msel || [])]; closeLayer(); ACT.mselOff(); try { for (const id of ids) { await api(`/api/messages/${id}/hide`, {}); msgHide(S.chatId, id); } toast(ids.length > 1 ? 'Messages supprimés pour vous' : 'Message supprimé pour vous'); } catch (e) { toast(e.message); } },
   mselDelAsk() { confirmSheet('Supprimer pour tout le monde ?', 'Les messages seront remplacés par « Ce message a été supprimé » chez tous les membres.', 'Supprimer', 'mselDelYes', ''); },
   async mselDelYes() { const ids = [...(S.msel || [])]; closeLayer(); ACT.mselOff(); try { for (const id of ids) await api(`/api/messages/${id}/delete`, {}); } catch (e) { toast(e.message); } },
-  zoomMenu(d) { closeLayer(); msgMenu(+d.id); },
+  zoomMenu(d) { msgMenu(+d.id); },
   zoomVid(d) { const u = E2E.vids.get(+d.id); if (!u) return toast('Vidéo en cours de chargement…'); zoomOpen('video', u, +d.id); },
   reply(d) { S.replyTo = +d.id; closeLayer(); renderReplyBar(); const i = $('#msgIn'); if (i) i.focus(); },
   replyCancel() { S.replyTo = null; renderReplyBar(); },
@@ -1987,7 +2111,10 @@ document.addEventListener('click', e => {
   if ((el.dataset.act === 'stGrpBg' || el.dataset.act === 'pmScrim') && e.target !== el) return;
   if (el.dataset.act !== 'scrim') e.preventDefault();
   if (el.dataset.act === 'scrim' && e.target !== el) return;
+  if (el.classList.contains('dotb')) { popFrom = el; popAt = Date.now(); popRect = el.getBoundingClientRect(); }
+  const pop = el.closest('#pop');
   fn(el.dataset, el, e);
+  if (pop && document.getElementById('pop') === pop) popClose();
 });
 document.addEventListener('submit', e => { const f = e.target.closest('form[data-form]'); if (!f) return; e.preventDefault(); const fn = FORMS[f.dataset.form]; if (fn) fn(f); });
 document.addEventListener('input', e => {
@@ -2018,15 +2145,18 @@ document.addEventListener('change', async e => {
   else if (t.tagName === 'SELECT' && t.dataset.set) queueSave({[t.dataset.set]: {[t.dataset.k]: t.value}});
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && layer.firstChild) closeLayer();
+  if (e.key === 'Escape' && document.getElementById('pop')) popClose(); else if (e.key === 'Escape' && layer.firstChild) closeLayer();
   else if (e.key === 'Enter' && !e.shiftKey && e.target.id === 'msgIn' && !e.isComposing && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); sendText(); }
   else if (S.sv && e.key === 'ArrowRight') svStep(1); else if (S.sv && e.key === 'ArrowLeft') svStep(-1);
 });
 document.addEventListener('contextmenu', e => {
-  if (!S.me) return; const m = e.target.closest('.msg[data-mid] .bubble'); if (m) { e.preventDefault(); return msgMenu(+m.parentNode.dataset.mid); }
-  const r = e.target.closest('#body .chat-row'); if (r && !S.sel) { e.preventDefault(); chatListMenu(+r.dataset.id); }
+  if (!S.me) return; const m = e.target.closest('.msg[data-mid] .bubble'), r = e.target.closest('#body .chat-row');
+  // au doigt, l'appui long sélectionne : le menu du navigateur ne doit pas s'ouvrir par-dessus
+  if ((m || r) && Date.now() - lastTouch < 2000) { e.preventDefault(); return; }
+  if (m) { e.preventDefault(); return msgMenu(+m.parentNode.dataset.mid); }
+  if (r && !S.sel) { e.preventDefault(); chatListMenu(+r.dataset.id); }
 });
-let pressT, pressXY = [0, 0], pressFired = 0, pressDone = true, swipe = null;
+let pressT, pressXY = [0, 0], pressFired = 0, pressDone = true, swipe = null, lastTouch = 0;
 // Sélection de messages : appui long sur un message, puis toucher les autres pour les ajouter ; le point en haut à droite donne les actions.
 function mselToggle(id) {
   const m = (S.msgs.get(S.chatId) || []).find(x => x.id === id); if (!m || m.kind === 'sys') return;
@@ -2050,12 +2180,12 @@ document.addEventListener('pointermove', e => {
   if (s.dx >= 64) { pressFired = Date.now(); const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +s.el.dataset.mid); if (m && !m.once && !m.deleted && m.kind !== 'sys') ACT.reply({id: m.id}); }
 }, true));
 document.addEventListener('pointerdown', e => {
-  if (e.pointerType === 'mouse') return;
+  if (e.pointerType === 'mouse') return; lastTouch = Date.now();
   const b = e.target.closest('.msg[data-mid] .bubble'), r = !b && e.target.closest('#body .chat-row');
-  if (b && !e.target.closest('button,a,video,audio')) { pressXY = [e.clientX, e.clientY]; clearTimeout(pressT); pressT = setTimeout(() => { pressFired = Date.now(); pressDone = false; if (navigator.vibrate) navigator.vibrate(15); mselToggle(+b.parentNode.dataset.mid); }, 480); }
+  if (b && !e.target.closest('button:not(.vid-play),a,audio,input')) { pressXY = [e.clientX, e.clientY]; clearTimeout(pressT); pressT = setTimeout(() => { pressFired = Date.now(); pressDone = false; if (navigator.vibrate) navigator.vibrate(15); mselToggle(+b.parentNode.dataset.mid); }, 480); }
   else if (r && !S.sel && !e.target.closest('.row-more')) { pressXY = [e.clientX, e.clientY]; clearTimeout(pressT); pressT = setTimeout(() => { pressFired = Date.now(); pressDone = false; if (navigator.vibrate) navigator.vibrate(15); ACT.selStart({id: r.dataset.id}); }, 480); }
   // glisser un message vers la droite = y répondre (comme WhatsApp)
-  const sm = e.target.closest('#msgs .msg[data-mid]'); swipe = sm && !S.msel && !e.target.closest('button,a,input,video,audio') ? {el: sm, x: e.clientX, y: e.clientY, dx: 0, on: false} : null;
+  const sm = e.target.closest('#msgs .msg[data-mid]'); swipe = sm && !S.msel && !e.target.closest('button:not(.vid-play),a,input,audio') ? {el: sm, x: e.clientX, y: e.clientY, dx: 0, on: false} : null;
 });
 // Après un appui long, le doigt relâché ne doit pas ouvrir la discussion ni la photo.
 document.addEventListener('click', e => { if (Date.now() - pressFired < 600) { e.preventDefault(); e.stopPropagation(); } }, true);
