@@ -315,8 +315,8 @@ button.row:hover,.row.active{background:var(--surface-2)}
 .bubble{border-radius:16px}
 .msg.in.first .bubble{border-top-left-radius:6px}
 .msg.out.first .bubble{border-top-right-radius:6px}
-.story .ring{border:0;padding:2.5px;background:conic-gradient(var(--accent),var(--brand-2),var(--accent))}
-.story .ring.seen{background:var(--line)}
+.story .ring{border:0;padding:2.5px;background:conic-gradient(var(--accent),#7fe6f0,var(--accent));box-shadow:0 0 10px rgb(20 184 201/.45)}
+.story .ring.seen{background:rgb(20 184 201/.45);box-shadow:none}
 .story .ring.empty{background:none;border:1.5px dashed var(--line);padding:1px}
 .story .ring>.av{box-shadow:0 0 0 2px var(--surface)}
 .av{background:var(--av-bg)}
@@ -1078,3 +1078,9 @@ body.in-cam{overflow:hidden}
 .st-ring{display:inline-grid;place-items:center;border-radius:50%;padding:2px;background:conic-gradient(var(--accent),#7fe6f0,var(--accent));box-shadow:0 0 10px rgb(20 184 201/.55);cursor:pointer;line-height:0}
 .st-ring>.av,.st-ring>span{border:2px solid var(--surface);border-radius:50%}
 .st-ring.seen{background:rgb(20 184 201/.45);box-shadow:none}
+
+/* statuts : flèches précédent / suivant, attente du chargement */
+.sv-arrow{position:absolute;top:50%;z-index:4;width:44px;height:44px;margin-top:-22px;border:0;border-radius:50%;background:rgb(0 0 0/.28);color:rgb(255 255 255/.9);display:grid;place-items:center;cursor:pointer}
+.sv-arrow svg{width:22px;height:22px}.sv-arrow.l{left:max(8px,calc(50% - 300px))}.sv-arrow.r{right:max(8px,calc(50% - 300px))}.sv-arrow.r svg{transform:scaleX(-1)}
+@media (max-width:820px){ .sv-arrow{width:36px;height:36px;margin-top:-18px;background:rgb(0 0 0/.22)} .sv-arrow.l{left:6px} .sv-arrow.r{right:6px} }
+.sv-wait{position:absolute;left:50%;top:50%;margin:-17px 0 0 -17px;z-index:3}

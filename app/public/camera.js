@@ -158,12 +158,13 @@ const VCut = {
       const started = await Promise.race([first ? first.then(() => true, () => false) : Promise.resolve(true), new Promise(r => setTimeout(() => r(false), 6000))]);
       if (!started) throw new Error('Le navigateur bloque la lecture de la vidéo. Sur ordinateur avec Brave : cliquez sur le lion à droite de l’adresse et autorisez la lecture automatique pour Tam-Tam, ou faites-le depuis le téléphone.');
       v.pause(); v.currentTime = 0; await new Promise(r => { v.onseeked = r; setTimeout(r, 1500); });
-      const k = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight)), cv = document.createElement('canvas'); cv.width = Math.round(v.videoWidth * k / 2) * 2; cv.height = Math.round(v.videoHeight * k / 2) * 2;
+      const k = Math.min(1, 960 / Math.max(v.videoWidth, v.videoHeight)), cv = document.createElement('canvas'); cv.width = Math.round(v.videoWidth * k / 2) * 2; cv.height = Math.round(v.videoHeight * k / 2) * 2;
       const g = cv.getContext('2d'), vs = cv.captureStream(30);
       const ms = new MediaStream([...vs.getVideoTracks(), ...(at ? [at] : [])]);
-      const mime = ['video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm'].find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+      // WebM d'abord (le débit demandé y est respecté : parties légères) ; MP4 seulement si le navigateur ne sait pas faire de WebM (iPhone).
+      const mime = ['video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4;codecs=avc1,mp4a', 'video/mp4'].find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
       const parts = []; let rec = null, chunks = [], t0 = 0;
-      const startRec = () => { chunks = []; t0 = v.currentTime; rec = new MediaRecorder(ms, {...(mime ? {mimeType: mime} : {}), videoBitsPerSecond: 1_400_000, audioBitsPerSecond: 64_000}); rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); }; rec.start(1000); };
+      const startRec = () => { chunks = []; t0 = v.currentTime; rec = new MediaRecorder(ms, {...(mime ? {mimeType: mime} : {}), videoBitsPerSecond: 1_100_000, audioBitsPerSecond: 64_000}); rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); }; rec.start(1000); };
       const stopRec = () => new Promise(ok => { const r = rec, c = chunks, d = Math.max(1, Math.round(v.currentTime - t0)); r.onstop = () => { parts.push({blob: new Blob(c, {type: (r.mimeType || mime || 'video/webm').split(';')[0]}), dur: d, mime: (r.mimeType || mime || 'video/webm').split(';')[0]}); ok(); }; r.stop(); });
       const draw = () => { if (!v.paused && !v.ended) g.drawImage(v, 0, 0, cv.width, cv.height); };
       let raf = 0; const loop = () => { draw(); raf = requestAnimationFrame(loop); };
@@ -181,6 +182,7 @@ const VCut = {
       URL.revokeObjectURL(url); v.remove(); el.remove();
       if (stopped) { const b = this.blocked; this.blocked = false; return toast(b ? 'La vidéo s’est bloquée pendant la préparation. Réessayez, ou faites-le depuis le téléphone.' : 'Préparation annulée.'); }
       const good = parts.filter(p => p.blob.size > 1000); if (!good.length) return toast('Cette vidéo n’a pas pu être préparée.');
+      if (good.some(p => p.blob.size > VID_MAX_BYTES)) return toast('Une des parties est trop lourde pour être envoyée. Essayez avec une vidéo moins longue ou de moins bonne qualité.');
       done(good);
     } catch (e) { try { v.pause(); } catch {} URL.revokeObjectURL(url); v.remove(); if (this.ac) this.ac.close().catch(() => {}); el.remove(); toast(e.message || 'Cette vidéo n’a pas pu être préparée.'); }
   },
