@@ -1010,13 +1010,13 @@ R('POST', /^\/api\/messages\/(\d+)\/hide$/, async ({ me, m }) => {
   push(me.id, { t: 'hide', chatId: msg.chat_id, id: msg.id }); return { ok: true };
 });
 // Supprimer pour tout le monde : seulement ses propres messages, et dans l'heure qui suit l'envoi.
-const DEL_ALL_MAX = 3600_000;
+const DEL_ALL_MAX = 2 * 60_000; // supprimer pour tout le monde : 2 minutes, comme pour modifier
 R('POST', /^\/api\/messages\/(\d+)\/delete$/, async ({ me, m }) => {
   const msg = q1(`SELECT * FROM messages WHERE id=?`, +m[1]); if (!msg) E(404, 'Message introuvable.');
   const gc = msg.sender !== me.id ? q1(`SELECT * FROM chats WHERE id=? AND type='group'`, msg.chat_id) : null;
   if (msg.sender !== me.id && !(gc && isMember(gc.id, me.id) && isAdmin(gc, me.id) && gsetOf(gc).del === 'admins' && msg.kind !== 'sys')) E(404, 'Message introuvable.');
   if (gc) { if (msg.media) dropMedia(msg.media); run(`UPDATE messages SET deleted=1, text=NULL, media=NULL, del_by=? WHERE id=?`, me.id, msg.id); pushMany(memberIds(msg.chat_id), { t: 'msg', msg: msgOut(q1(`SELECT * FROM messages WHERE id=?`, msg.id)), update: true }); return { ok: true }; }
-  if (now() - msg.created_at > DEL_ALL_MAX) E(403, 'Ce message a plus d’une heure : il ne peut plus être supprimé pour tout le monde. Vous pouvez le supprimer pour vous seul.');
+  if (now() - msg.created_at > DEL_ALL_MAX) E(403, 'Ce message a été envoyé il y a plus de 2 minutes : il ne peut plus être supprimé pour tout le monde. Vous pouvez le supprimer pour vous seul.');
   if (msg.media) dropMedia(msg.media);
   run(`UPDATE messages SET deleted=1, text=NULL, media=NULL WHERE id=?`, msg.id);
   pushMany(memberIds(msg.chat_id), { t: 'msg', msg: msgOut(q1(`SELECT * FROM messages WHERE id=?`, msg.id)), update: true });

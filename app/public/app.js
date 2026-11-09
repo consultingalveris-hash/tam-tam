@@ -346,7 +346,7 @@ function chatRows() {
   if (S.showHidden) list.sort((a, b) => (b.hidden ? 1 : 0) - (a.hidden ? 1 : 0));
   list.sort((a, b) => (b.last?.at || b.createdAt) - (a.last?.at || a.createdAt));
   list.sort((a, b) => (b.pinned || 0) - (a.pinned || 0));
-  const selBar = S.sel ? `<div class="selbar"><button class="ib" type="button" data-act="selOff" aria-label="Annuler la sélection">${I.close}</button><b>${S.sel.size} sélectionnée${S.sel.size > 1 ? 's' : ''}</b><span class="grow"></span><button class="btn sm ghost" type="button" data-act="selDo" data-k="pin" title="Épingler" aria-label="Épingler">📌</button><button class="btn sm ghost" type="button" data-act="selDo" data-k="read">Lu</button><button class="btn sm ghost" type="button" data-act="selDo" data-k="unread">Non lu</button><button class=\"ib\" type=\"button\" data-act=\"selDo\" data-k=\"arch\" title=\"${S.filt === 'arch' ? 'Désarchiver' : 'Archiver'}\" aria-label=\"${S.filt === 'arch' ? 'Désarchiver' : 'Archiver'}\">${ARCH_IC}</button><button class="ib sel-del" type="button" data-act="selDo" data-k="clear" aria-label="Supprimer" title="Supprimer">${I.trash}</button></div>` : '';
+  const selBar = S.sel ? `<div class="selbar"><button class="ib" type="button" data-act="selOff" aria-label="Annuler la sélection">${I.close}</button><b>${S.sel.size} sélectionnée${S.sel.size > 1 ? 's' : ''}</b><span class="grow"></span><button class="ib" type="button" data-act="selMenu" aria-label="Actions" title="Actions">${I.more}</button></div>` : '';
   const privBar = S.showHidden ? `<div class="privbar">${I.lock}<span>Discussions privées affichées</span><button class="btn sm ghost" type="button" data-act="privHide">Masquer</button></div>` : '';
   const archHead = fl === 'arch' ? `<div class="arch-head"><button class="ib" type="button" data-act="filt" data-f="all" aria-label="Retour aux discussions">${I.back}</button><b>${ARCH_IC}Discussions archivées</b></div><p class="hint arch-note">Elles restent ici même si un nouveau message arrive. Appui long sur une discussion, puis « Désarchiver », pour la remettre dans la liste.</p>` : '';
   if (!list.length && fl === 'arch') return archHead + '<p class="empty">Aucune discussion archivée. Pour en ranger une, appuyez longtemps dessus dans la liste, puis touchez « Archiver ».</p>';
@@ -426,6 +426,7 @@ async function profSheet(id, back) {
 
 /* ---------- discussion ---------- */
 async function openChat(id) {
+  S.msel = null;
   S.chatId = id; S.replyTo = null;
   $('.app').dataset.view = 'chat'; renderMain(); if (S.tab === 'chats') renderBody();
   await loadMessages(id);
@@ -456,6 +457,8 @@ function renderPin() {
 }
 function renderChatHead() {
   const c = S.chats.get(S.chatId), h = $('#chatHead'); if (!c || !h) return;
+  if (S.msel && S.msel.size) { h.innerHTML = `<button class="ib back" type="button" data-act="mselOff" aria-label="Annuler la sélection">${I.close}</button><b class="msel-n">${S.msel.size} sélectionné${S.msel.size > 1 ? 's' : ''}</b><span class="grow"></span><button class="ib" type="button" data-act="mselMenu" aria-label="Actions" title="Actions">${I.more}</button>`; h.classList.add('msel-head'); return; }
+  h.classList.remove('msel-head');
   const tu = typingIn(c.id); let sub;
   if (c.type === 'group') sub = tu ? `<small class="on">${esc(first(uOf(tu).name))} écrit…</small>` : `<small>${c.members.map(m => m.id === S.me.id ? 'Vous' : first(uOf(m.id).name)).join(', ')}</small>`;
   else { const u = uOf(c.peer); sub = tu ? '<small class="on">écrit…</small>' : `<small class="${u.busy ? 'busy' : u.online ? 'on' : ''}">${presLabel(u)}</small>`; }
@@ -474,7 +477,7 @@ function renderComposer() {
   const trOn = !!(Tr.inL(c.id) || Tr.outL(c.id));
   el.innerHTML = `<form class="composer" data-form="send" autocomplete="off"><div class="inwrap">${Tr.st && Tr.st.on ? `<button class="ib tr-tog" type="button" data-act="trAuto" aria-pressed="${trOn}" aria-label="Langues de cette discussion" title="Langues de traduction de cette discussion">${I.translate}${Tr.label(c.id)}</button>` : ''}${Emoji.btn('#msgIn')}<textarea id="msgIn" rows="1" placeholder="${S.once ? 'Message à vue unique' : 'Message'}" aria-label="Écrire un message" maxlength="4000"></textarea>
     <button class="ib" type="button" data-act="attach" aria-label="Joindre une photo, une vidéo ou ma position">${I.clip}</button><button class="ib" type="button" data-act="camera" aria-label="Prendre une photo ou une vidéo">${I.camera}</button><button class="ib once-tog" type="button" data-act="onceTog" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique : le message ne peut être ouvert qu’une fois"><span class="one" aria-hidden="true">1</span></button></div>
-    <input type="file" id="fileIn" accept="image/*,video/*" hidden><input type="file" id="camIn" accept="image/*" capture="environment" hidden>
+    <input type="file" id="fileIn" accept="image/*,video/*" multiple hidden><input type="file" id="camIn" accept="image/*" capture="environment" hidden>
     <button class="send" id="sendBtn" type="button" data-act="recStart" aria-label="Enregistrer un message vocal">${I.mic}</button></form>`;
 }
 // Le bouton rond est un micro tant que rien n'est écrit ; il devient « Envoyer » dès qu'on écrit.
@@ -545,7 +548,7 @@ function renderMessages(keep) {
     let body;
     if (m.deleted) body = `<span class="txt gone">${m.delBy ? (m.delBy === S.me.id ? 'Vous avez supprimé ce message (administrateur)' : 'Supprimé par un administrateur') : out ? 'Vous avez supprimé ce message' : 'Ce message a été supprimé'}</span>`;
     else if (m.once) body = onceBubble(m, out);
-    else if (m.kind === 'video') body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + `<div class="vidb"><video class="photo vid" data-vid="${m.id}" playsinline controls preload="metadata" controlslist="nodownload"${E2E.vids.has(m.id) ? ` src="${E2E.vids.get(m.id)}"` : ''}></video>${m.dur ? `<small class="vid-d">${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>` + (m.text ? Tr.txt(m) : '');
+    else if (m.kind === 'video') body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + `<div class="vidb"><button class="ib vid-x" type="button" data-act="zoomVid" data-id="${m.id}" aria-label="Plein écran" title="Plein écran">${I.expand || '⤢'}</button><video class="photo vid" data-vid="${m.id}" playsinline controls preload="metadata" controlslist="nodownload"${E2E.vids.has(m.id) ? ` src="${E2E.vids.get(m.id)}"` : ''}></video>${m.dur ? `<small class="vid-d">${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>` + (m.text ? Tr.txt(m) : '');
     else if (m.fl) body = `<span class="flame-msg"><span class="fl-ic">🔥</span><b>${out ? 'Vous avez envoyé une flamme' : `${esc(first(u.name))} t’a envoyé une flamme`}</b></span>` + stQuote(m, out, c);
     else if (m.kind === 'loc') body = locHtml(m);
     else if (m.kind === 'doc') body = docHtml(m) + (m.text ? Tr.txt(m) : '');
@@ -818,7 +821,7 @@ function reportSheet(userId, chatId) {
     <p class="err" id="rrErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="submit">Signaler</button></div></div></form>`, 'Signaler');
 }
 const micErr = e => toast(e && e.name === 'NotFoundError' ? 'Aucun micro détecté sur cet appareil. Branchez un micro ou un casque, puis réessayez.' : e && e.name === 'NotReadableError' ? 'Le micro est déjà utilisé par une autre application. Fermez-la, puis réessayez.' : 'Le micro est bloqué pour Tam-Tam. Sur ordinateur : cliquez sur le cadenas à gauche de l’adresse, puis Micro → Autoriser. Sur téléphone : autorisez le micro dans les réglages de l’application.');
-const DEL_ALL_MAX = 3600_000, EDIT_MAX = 2 * 60_000;
+const DEL_ALL_MAX = 2 * 60_000, EDIT_MAX = 2 * 60_000;
 const FWD_IC = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l6 6-6 6"/><path d="M21 11H10a6 6 0 0 0-6 6v2"/></svg>';
 const QUICK = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 function reactsHtml(m) {
@@ -946,7 +949,7 @@ async function fwdSend(m, ids) {
   }
 }
 function fwdSheet(id) {
-  const m = (S.msgs.get(S.chatId) || []).find(x => x.id === id); if (!m) return; S.fwd = {m, sel: new Set()};
+  const all = S.msgs.get(S.chatId) || [], ms = (Array.isArray(id) ? id : [id]).map(i => all.find(x => x.id === i)).filter(Boolean).sort((x, y) => x.at - y.at); if (!ms.length) return; const m = ms[0]; S.fwd = {m, ms, sel: new Set()};
   const list = [...S.chats.values()].filter(c => !c.blocked && !(c.type === 'direct' && !c.peer)).sort((a, b) => (b.last?.at || 0) - (a.last?.at || 0));
   sheet(`${head('Transférer à…')}<div class="sheet-body" style="padding-bottom:0"><p class="hint">Choisissez jusqu’à 5 discussions. Le message portera la mention « Transféré ».</p></div>
     <div class="sheet-scroll">${list.map(c => `<label class="row fwd-row">${c.type === 'group' ? grpAv(c, 'sm') : avOn(uOf(c.peer))}<span class="row-name">${esc(chatTitle(c))}</span><input type="checkbox" data-fwd="${c.id}" aria-label="Choisir ${esc(chatTitle(c))}"></label>`).join('')}</div>
@@ -983,6 +986,13 @@ async function sendLoc() {
   wid = navigator.geolocation.watchPosition(p => { if (!best || p.coords.accuracy < best.accuracy) best = p.coords; if (best.accuracy <= 15) finish(); }, err => { if (err.code === 1 || !best) finish(err); }, {enableHighAccuracy: true, timeout: 10000, maximumAge: 0});
 }
 function msgHide(chatId, id) { const l = S.msgs.get(chatId); if (l) { const i = l.findIndex(x => x.id === id); if (i >= 0) l.splice(i, 1); } if (S.chatId === chatId) renderMessages(true); loadChats().then(() => { if (S.tab === 'chats') renderBody(); }).catch(() => {}); }
+// Photo ou vidéo en plein écran, avec le point en haut à droite (répondre, transférer, supprimer…).
+function zoomOpen(kind, src, mid) {
+  const m = mid && (S.msgs.get(S.chatId) || []).find(x => x.id === mid), u = m && uOf(m.from);
+  const who = m ? `<span class="zm-who"><b>${esc(m.from === S.me.id ? 'Vous' : u.name)}</b><small>${new Date(m.at).toLocaleString('fr-FR', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'})}</small></span>` : '<span class="grow"></span>';
+  layer.innerHTML = `<div class="zoom${m && S.chats.get(S.chatId)?.hidden ? ' nocopy' : ''}" role="dialog" aria-modal="true" aria-label="${kind === 'video' ? 'Vidéo' : 'Photo'}"><div class="zm-top"><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.back}</button>${who}${m && !m.once ? `<button class="ib" type="button" data-act="zoomMenu" data-id="${mid}" aria-label="Actions" title="Actions">${I.more}</button>` : ''}</div>
+    <div class="zm-stage">${kind === 'video' ? `<video src="${esc(src)}" controls autoplay playsinline controlslist="nodownload" disablepictureinpicture></video>` : `<img src="${esc(src)}" alt="Photo" draggable="false">`}</div>${m && m.text ? `<p class="zm-cap">${esc(m.text)}</p>` : ''}</div>`;
+}
 function msgMenu(id) {
   const list = S.msgs.get(S.chatId) || [], m = list.find(x => x.id === id); if (!m) return;
   if (m.deleted) return sheet(`<div class="menu" style="padding-top:12px"><button type="button" class="danger" data-act="hideAsk" data-id="${id}">${I.trash}Supprimer pour moi</button></div>`, 'Message');
@@ -991,8 +1001,9 @@ function msgMenu(id) {
   sheet(`<div class="react-bar" role="group" aria-label="Réagir">${QUICK.map(e => `<button type="button" data-act="react" data-id="${id}" data-e="${e}" aria-pressed="${!!myR && myR.e === e}">${e}</button>`).join('')}<button type="button" class="more" data-act="reactMore" data-id="${id}" aria-label="Plus d’émoticônes">${I.plus}</button></div><div class="menu" style="padding-top:4px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once && !m.locked && m.from !== S.me.id && Tr.st && Tr.st.on && S.me.trConsent ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}${Tr.shown.has(id) ? 'Voir la traduction' : 'Traduire'}</button>` : ''}${m.text && !m.once && !(S.chats.get(S.chatId) || {}).hidden ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
     ${m.from === S.me.id && m.kind === 'text' && !m.media && !m.once && !m.locked && !m.fl && Date.now() - m.at < EDIT_MAX ? `<button type="button" data-act="editMsg" data-id="${id}"><span class="pin-ic" aria-hidden="true">✎</span>Modifier mon message</button>` : ''}
     ${canFwd ? `<button type="button" data-act="fwd" data-id="${id}">${FWD_IC}Transférer</button>` : ''}${!m.once ? `<button type="button" data-act="${pinned ? 'pinMsgOff' : 'pinMsg'}" data-id="${id}"><span class="pin-ic" aria-hidden="true">📌</span>${pinned ? 'Retirer l’épingle' : 'Épingler en haut de la discussion'}</button>` : ''}
+    <button type="button" data-act="mselStart" data-id="${id}"><span class="pin-ic" aria-hidden="true">☑</span>Sélectionner</button>
     <button type="button" class="danger" data-act="hideAsk" data-id="${id}">${I.trash}Supprimer pour moi</button>
-    ${canAll ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde${modo ? ' (administrateur)' : ''}</button>` : m.from === S.me.id ? '<p class="hint" style="padding:4px 16px 10px">Plus d’une heure après l’envoi, un message ne peut plus être supprimé pour tout le monde.</p>' : ''}</div>`, 'Message');
+    ${canAll ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde${modo ? ' (administrateur)' : ''}</button>` : m.from === S.me.id ? '<p class="hint" style="padding:4px 16px 10px">2 minutes après l’envoi, un message ne peut plus être modifié ni supprimé pour tout le monde.</p>' : ''}</div>`, 'Message');
 }
 
 /* ---------- statuts : création et lecture ---------- */
@@ -1081,7 +1092,7 @@ async function stPublish() {
       await api('/api/statuses', {enc: sealed.env, bg: s.bg, media, music, aud: s.aud, ...(s.kind === 'video' ? {kind: 'video'} : {})});
     }
     if (s.url) URL.revokeObjectURL(s.url); if (s.music) URL.revokeObjectURL(s.music.url);
-    S.sc = null; closeLayer(); await loadStatuses(); renderStories(); toast('Statut publié pour 24 heures');
+    S.sc = null; closeLayer(); await loadStatuses(); renderStories();
   } catch (e) { toast(e.message); if (b) { b.disabled = false; b.textContent = 'Publier'; } }
 }
 let svT;
@@ -1543,7 +1554,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.64</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.65</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1605,8 +1616,17 @@ const ACT = {
   async chatClearYes(d) { closeLayer(); const id = +d.id; try { await chatMine(id, {clear: true}, true); S.msgs.delete(id); if (S.chatId === id) ACT.back(); renderTabs(); renderBody(); toast('Discussion supprimée de votre côté'); } catch (e) { toast(e.message); } },
   selStart(d) { closeLayer(); S.sel = new Set([+d.id]); renderBody(); },
   selOff() { S.sel = null; renderBody(); },
+  selMenu() {
+    const ids = [...(S.sel || [])]; if (!ids.length) return; const allPinned = ids.every(i => S.chats.get(i)?.pinned), arch = S.filt === 'arch', n = ids.length;
+    sheet(`<div class="menu" style="padding-top:12px">
+      <button type="button" data-act="selDo" data-k="read">${I.check || '✓'}Marquer comme lu</button>
+      <button type="button" data-act="selDo" data-k="unread"><span class="pin-ic" aria-hidden="true">●</span>Marquer comme non lu</button>
+      <button type="button" data-act="selDo" data-k="pin"><span class="pin-ic" aria-hidden="true">📌</span>${allPinned ? 'Retirer l’épingle' : 'Épingler en haut'}</button>
+      <button type="button" data-act="selDo" data-k="arch">${ARCH_IC}${arch ? 'Désarchiver' : 'Archiver'}</button>
+      <button type="button" class="danger" data-act="selDo" data-k="clear">${I.trash}Supprimer ${n > 1 ? `les ${n} discussions` : 'la discussion'}</button></div>`, 'Actions');
+  },
   async selDo(d) {
-    const ids = [...(S.sel || [])]; if (!ids.length) return;
+    const ids = [...(S.sel || [])]; if (!ids.length) return; if (d.k !== 'clear') closeLayer();
     if (d.k === 'clear') return confirmSheet(`Supprimer ${ids.length > 1 ? `ces ${ids.length} discussions` : 'cette discussion'} ?`, 'Les messages disparaîtront de votre côté seulement.', 'Supprimer', 'selClearYes', '');
     const allPinned = ids.every(i => S.chats.get(i)?.pinned);
     try { for (const i of ids) await chatMine(i, d.k === 'pin' ? {pin: !allPinned} : d.k === 'arch' ? {archive: S.filt !== 'arch'} : {unread: d.k === 'unread'}, true); if (d.k === 'arch') toast(S.filt === 'arch' ? 'Remises dans la liste' : `${ids.length > 1 ? 'Discussions rangées' : 'Discussion rangée'} dans Archives`); } catch (e) { toast(e.message); }
@@ -1620,7 +1640,7 @@ const ACT = {
     sheet(`${head('Réactions')}<div class="sheet-scroll">${m.reacts.map(r => { const u = r.u === S.me.id ? S.me : uOf(r.u); return `<div class="row">${avOn(u)}<span class="row-name">${esc(r.u === S.me.id ? 'Vous' : u.name)}</span><span class="row-end react-e">${r.e}</span>${r.u === S.me.id ? `<span class="row-prev"><button class="linkless" type="button" data-act="react" data-id="${m.id}" data-e="${r.e}">Touchez pour retirer</button></span>` : ''}</div>`; }).join('')}</div>`, 'Réactions');
   },
   fwd(d) { fwdSheet(+d.id); },
-  async fwdGo() { const f = S.fwd; if (!f || !f.sel.size) return; const g = $('#fwdGo'); if (g) { g.disabled = true; g.textContent = 'Envoi…'; } try { await fwdSend(f.m, [...f.sel]); closeLayer(); toast(f.sel.size > 1 ? `Message transféré à ${f.sel.size} discussions` : 'Message transféré'); } catch (e) { toast(e.message); if (g) { g.disabled = false; g.textContent = 'Transférer'; } } },
+  async fwdGo() { const f = S.fwd; if (!f || !f.sel.size) return; const g = $('#fwdGo'); if (g) { g.disabled = true; g.textContent = 'Envoi…'; } try { for (const m of (f.ms || [f.m])) await fwdSend(m, [...f.sel]); closeLayer(); toast(f.sel.size > 1 ? `Message transféré à ${f.sel.size} discussions` : 'Message transféré'); } catch (e) { toast(e.message); if (g) { g.disabled = false; g.textContent = 'Transférer'; } } },
   async pinMsg(d) { closeLayer(); try { await api(`/api/chats/${S.chatId}/pinmsg`, {msgId: +d.id}); } catch (e) { toast(e.message); } },
   async pinMsgOff() { closeLayer(); try { await api(`/api/chats/${S.chatId}/pinmsg`, {msgId: null}); } catch (e) { toast(e.message); } },
   pinJump(d) { const el = document.querySelector(`.msg[data-mid="${d.id}"]`); if (el) { el.scrollIntoView({block: 'center', behavior: 'smooth'}); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); } else toast('Ce message est plus ancien : faites défiler la discussion vers le haut.'); },
@@ -1674,7 +1694,7 @@ const ACT = {
     locBusy('Envoi de votre position');
     try { const sealed = await E2E.seal({t: '', loc: l}, recipients(c)); const r = await api(`/api/chats/${c.id}/messages`, {enc: sealed.env, kind: 'loc'}); locBusy(null); onMsg(r.msg); } catch (e) { locBusy(null); toast(e.message); }
   },
-  back() { S.chatId = null; $('.app').dataset.view = 'list'; renderMain(); renderBody(); },
+  back() { S.msel = null; S.chatId = null; $('.app').dataset.view = 'list'; renderMain(); renderBody(); },
   async write(d) { closeLayer(); try { const r = await api('/api/chats/direct', {userId: +d.id}); keepUsers(Object.values(r.chat.users)); S.chats.set(r.chat.id, r.chat); S.tab = 'chats'; renderAll(); openChat(r.chat.id); } catch (e) { toast(e.message); } },
   close() { closeLayer(); },
   scrim(d, el, e) { if (e.target === el) closeLayer(); },
@@ -1749,7 +1769,7 @@ const ACT = {
       <div class="stage">${inner}${m.text ? `<p class="once-txt">${esc(m.text)}</p>` : ''}</div>${watermark()}</div>`;
   },
   onceClose() { onceDone(); },
-  zoom(d, el) { layer.innerHTML = `<div class="zoom" data-act="close"><img src="${esc(el.src)}" alt="Photo"><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>`; },
+  zoom(d, el) { const msg = el.closest && el.closest('.msg[data-mid]'); zoomOpen('img', el.src, msg ? +msg.dataset.mid : 0); },
   older() { loadOlder(); },
   msgMenu(d) { msgMenu(+d.id); },
   editMsg(d) {
@@ -1759,6 +1779,29 @@ const ACT = {
     setTimeout(() => { if (S.editId === m.id) { S.editId = null; renderReplyBar(); toast('Le délai de 2 minutes pour modifier ce message est passé.'); } }, Math.max(0, EDIT_MAX - (Date.now() - m.at)));
   },
   editCancel() { S.editId = null; renderReplyBar(); const i = $('#msgIn'); if (i) { i.value = ''; autoGrow(i); syncSend(); } },
+  mselStart(d) { closeLayer(); mselToggle(+d.id); },
+  mselOff() { S.msel = null; document.querySelectorAll('.msg.msel').forEach(e => e.classList.remove('msel')); renderChatHead(); },
+  mselMenu() {
+    const ids = [...(S.msel || [])]; if (!ids.length) return;
+    if (ids.length === 1) { ACT.mselOff(); return msgMenu(ids[0]); }   // un seul message : le menu complet (réactions, répondre, modifier…)
+    const list = S.msgs.get(S.chatId) || [], ms = ids.map(id => list.find(x => x.id === id)).filter(Boolean), c = S.chats.get(S.chatId) || {};
+    const modo = c.type === 'group' && c.admin && (c.gset || {}).del === 'admins';
+    const canAll = ms.every(m => !m.deleted && ((m.from === S.me.id && Date.now() - m.at < DEL_ALL_MAX) || (modo && m.from !== S.me.id)));
+    const canFwd = ms.every(m => !m.once && !m.locked && !m.deleted && m.kind !== 'sys') && !c.hidden, txt = ms.some(m => m.text && !m.deleted && !m.locked);
+    sheet(`<div class="menu" style="padding-top:12px">
+      ${txt ? `<button type="button" data-act="mselCopy">${I.copy || ''}Copier les textes</button>` : ''}
+      ${canFwd ? `<button type="button" data-act="mselFwd">${FWD_IC}Transférer (${ms.length})</button>` : ''}
+      <button type="button" class="danger" data-act="mselHideAsk">${I.trash}Supprimer pour moi (${ms.length})</button>
+      ${canAll ? `<button type="button" class="danger" data-act="mselDelAsk">${I.trash}Supprimer pour tout le monde (${ms.length})</button>` : ''}</div>`, 'Messages');
+  },
+  mselCopy() { const list = S.msgs.get(S.chatId) || [], t = [...(S.msel || [])].map(id => list.find(x => x.id === id)).filter(m => m && m.text && !m.deleted).sort((x, y) => x.at - y.at).map(m => m.text).join('\n'); closeLayer(); ACT.mselOff(); if (navigator.clipboard) navigator.clipboard.writeText(t).then(() => toast('Textes copiés'), () => toast('Copie impossible')); },
+  mselFwd() { const ids = [...(S.msel || [])]; closeLayer(); ACT.mselOff(); fwdSheet(ids); },
+  mselHideAsk() { confirmSheet('Supprimer pour moi ?', 'Ces messages disparaîtront seulement de votre côté.', 'Supprimer', 'mselHideYes', ''); },
+  async mselHideYes() { const ids = [...(S.msel || [])]; closeLayer(); ACT.mselOff(); try { for (const id of ids) { await api(`/api/messages/${id}/hide`, {}); msgHide(S.chatId, id); } toast(ids.length > 1 ? 'Messages supprimés pour vous' : 'Message supprimé pour vous'); } catch (e) { toast(e.message); } },
+  mselDelAsk() { confirmSheet('Supprimer pour tout le monde ?', 'Les messages seront remplacés par « Ce message a été supprimé » chez tous les membres.', 'Supprimer', 'mselDelYes', ''); },
+  async mselDelYes() { const ids = [...(S.msel || [])]; closeLayer(); ACT.mselOff(); try { for (const id of ids) await api(`/api/messages/${id}/delete`, {}); } catch (e) { toast(e.message); } },
+  zoomMenu(d) { closeLayer(); msgMenu(+d.id); },
+  zoomVid(d) { const u = E2E.vids.get(+d.id); if (!u) return toast('Vidéo en cours de chargement…'); zoomOpen('video', u, +d.id); },
   reply(d) { S.replyTo = +d.id; closeLayer(); renderReplyBar(); const i = $('#msgIn'); if (i) i.focus(); },
   replyCancel() { S.replyTo = null; renderReplyBar(); },
   jump(d) { const el = document.querySelector(`.msg[data-mid="${d.id}"]`); if (el) el.scrollIntoView({block: 'center', behavior: 'smooth'}); },
@@ -1958,6 +2001,7 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', async e => {
   const t = e.target;
+  if (t.id === 'fileIn' && t.files.length > 1) { const fs = [...t.files]; t.value = ''; return Multi.ask(fs); }
   if (t.id === 'fileIn' || t.id === 'camIn') { const f = t.files[0]; t.value = ''; if (f) { if (/^video\//.test(f.type)) Edit.videoFile(f); else Edit.photoFile(f); } }
   else if (t.id === 'stIn' || t.id === 'stCamIn') { const f = t.files[0]; t.value = ''; if (!f) return; keepSt(); if (/^video\//.test(f.type)) Edit.videoFile(f, stOpts()); else Edit.photoFile(f, stOpts()); }
   else if (t.id === 'stMusIn') { const f = t.files[0]; t.value = ''; if (!f) return; if (!/^audio\//.test(f.type)) return toast('Choisissez un fichier son.'); if (f.size > ST_MUS_MAX) return toast('Musique trop lourde (8 Mo au maximum).'); keepSt(); S.sc.music = {blob: f, name: f.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 60), url: URL.createObjectURL(f)}; stComposer(); toast('Musique ajoutée : elle sera jouée avec votre statut.'); }
@@ -1982,17 +2026,42 @@ document.addEventListener('contextmenu', e => {
   if (!S.me) return; const m = e.target.closest('.msg[data-mid] .bubble'); if (m) { e.preventDefault(); return msgMenu(+m.parentNode.dataset.mid); }
   const r = e.target.closest('#body .chat-row'); if (r && !S.sel) { e.preventDefault(); chatListMenu(+r.dataset.id); }
 });
-let pressT, pressXY = [0, 0], pressFired = 0;
+let pressT, pressXY = [0, 0], pressFired = 0, pressDone = true, swipe = null;
+// Sélection de messages : appui long sur un message, puis toucher les autres pour les ajouter ; le point en haut à droite donne les actions.
+function mselToggle(id) {
+  const m = (S.msgs.get(S.chatId) || []).find(x => x.id === id); if (!m || m.kind === 'sys') return;
+  S.msel = S.msel || new Set(); S.msel.has(id) ? S.msel.delete(id) : S.msel.add(id); if (!S.msel.size) S.msel = null;
+  document.querySelectorAll('#msgs .msg[data-mid]').forEach(el => el.classList.toggle('msel', !!S.msel && S.msel.has(+el.dataset.mid)));
+  renderChatHead();
+}
+document.addEventListener('click', e => {
+  if (!S.msel) return; const el = e.target.closest('#msgs .msg[data-mid]'); if (!el) return;
+  e.preventDefault(); e.stopPropagation(); mselToggle(+el.dataset.mid);
+}, true);
+document.addEventListener('pointermove', e => {
+  if (!swipe) return; const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+  if (!swipe.on) { if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { swipe = null; return; } if (dx > 14 && dx > Math.abs(dy) * 1.5) swipe.on = true; else return; }
+  clearTimeout(pressT); swipe.dx = Math.max(0, Math.min(90, dx)); swipe.el.style.transform = `translateX(${swipe.dx}px)`; swipe.el.classList.add('swiping');
+  if (swipe.dx >= 64 && !swipe.buzz) { swipe.buzz = true; if (navigator.vibrate) navigator.vibrate(10); }
+}, {passive: true});
+['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, () => {
+  if (!swipe) return; const s = swipe; swipe = null; if (!s.on) return;
+  s.el.style.transition = 'transform .18s'; s.el.style.transform = ''; setTimeout(() => { s.el.style.transition = ''; s.el.classList.remove('swiping'); }, 200);
+  if (s.dx >= 64) { pressFired = Date.now(); const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +s.el.dataset.mid); if (m && !m.once && !m.deleted && m.kind !== 'sys') ACT.reply({id: m.id}); }
+}, true));
 document.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse') return;
   const b = e.target.closest('.msg[data-mid] .bubble'), r = !b && e.target.closest('#body .chat-row');
-  if (b && !e.target.closest('button,a,video,audio')) { pressXY = [e.clientX, e.clientY]; clearTimeout(pressT); pressT = setTimeout(() => { pressFired = Date.now(); msgMenu(+b.parentNode.dataset.mid); }, 520); }
-  else if (r && !S.sel && !e.target.closest('.row-more')) { pressXY = [e.clientX, e.clientY]; clearTimeout(pressT); pressT = setTimeout(() => { pressFired = Date.now(); if (navigator.vibrate) navigator.vibrate(15); chatListMenu(+r.dataset.id); }, 520); }
+  if (b && !e.target.closest('button,a,video,audio')) { pressXY = [e.clientX, e.clientY]; clearTimeout(pressT); pressT = setTimeout(() => { pressFired = Date.now(); pressDone = false; if (navigator.vibrate) navigator.vibrate(15); mselToggle(+b.parentNode.dataset.mid); }, 480); }
+  else if (r && !S.sel && !e.target.closest('.row-more')) { pressXY = [e.clientX, e.clientY]; clearTimeout(pressT); pressT = setTimeout(() => { pressFired = Date.now(); pressDone = false; if (navigator.vibrate) navigator.vibrate(15); ACT.selStart({id: r.dataset.id}); }, 480); }
+  // glisser un message vers la droite = y répondre (comme WhatsApp)
+  const sm = e.target.closest('#msgs .msg[data-mid]'); swipe = sm && !S.msel && !e.target.closest('button,a,input,video,audio') ? {el: sm, x: e.clientX, y: e.clientY, dx: 0, on: false} : null;
 });
 // Après un appui long, le doigt relâché ne doit pas ouvrir la discussion ni la photo.
 document.addEventListener('click', e => { if (Date.now() - pressFired < 600) { e.preventDefault(); e.stopPropagation(); } }, true);
 document.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - pressXY[0], e.clientY - pressXY[1]) > 10) clearTimeout(pressT); }, true);
-['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, () => clearTimeout(pressT), true));
+// Doigt relevé après un appui long (même tenu longtemps) : le « clic » qui suit ne doit pas annuler la sélection.
+['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, () => { clearTimeout(pressT); if (pressFired && Date.now() - pressFired < 8000 && !pressDone) { pressFired = Date.now(); pressDone = true; } }, true));
 setInterval(() => { if (S.me && S.tab === 'chats') renderBody(); }, 60_000);
 
 /* ---------- clés de chiffrement : création ou récupération ---------- */

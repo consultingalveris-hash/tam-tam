@@ -406,3 +406,55 @@ async function hydrateVids(chatId) {
     catch { const w = el.closest('.vidb'); if (w) w.insertAdjacentHTML('beforeend', '<small class="hint">Vidéo illisible sur cet appareil</small>'); }
   }
 }
+
+/* ---------- plusieurs photos et vidéos d'un coup (discussion) ---------- */
+const Multi = {
+  files: [],
+  ask(files) {
+    const c = S.chats.get(S.chatId); if (!c) return toast('Ouvrez d’abord une discussion.');
+    const ok = files.filter(f => /^(image|video)\//.test(f.type)).slice(0, 30); if (!ok.length) return toast('Choisissez des photos ou des vidéos.');
+    if (files.length > 30) toast('30 fichiers au maximum à la fois : les 30 premiers sont gardés.');
+    this.files = ok; this.urls = ok.map(f => URL.createObjectURL(f));
+    sheet(`${head(`Envoyer ${ok.length} fichiers`)}<div class="sheet-body"><div class="multi-grid">${ok.map((f, i) => `<div class="mg-it">${/^video/.test(f.type) ? `<video src="${this.urls[i]}" muted playsinline preload="metadata"></video><span class="mg-v">▶</span>` : `<img src="${this.urls[i]}" alt="">`}<button class="ib mg-x" type="button" data-act="multiDrop" data-i="${i}" aria-label="Retirer">${I.close}</button></div>`).join('')}</div>
+      <input id="multiCap" maxlength="1000" placeholder="Légende (sur le premier fichier)…" autocomplete="off">
+      <p class="hint" id="multiSt" role="status"></p>
+      <div class="actions"><button class="btn ghost" type="button" data-act="multiCancel">Annuler</button><button class="btn" type="button" data-act="multiGo" id="multiGo">Envoyer (${ok.length})</button></div></div>`, 'Envoyer');
+  },
+  drop(i) { const f = this.files.filter((_, k) => k !== i); (this.urls || []).forEach(u => URL.revokeObjectURL(u)); this.urls = []; if (!f.length) return this.cancel(); this.ask(f); },
+  cancel() { (this.urls || []).forEach(u => URL.revokeObjectURL(u)); this.files = []; this.urls = []; closeLayer(); },
+  dur(f) { return new Promise(ok => { const v = document.createElement('video'), u = URL.createObjectURL(f); v.preload = 'metadata'; v.onloadedmetadata = () => { URL.revokeObjectURL(u); ok(Math.round(v.duration || 0)); }; v.onerror = () => { URL.revokeObjectURL(u); ok(0); }; v.src = u; }); },
+  async photo(f) {
+    const url = URL.createObjectURL(f), im = new Image(); await new Promise((ok, ko) => { im.onload = ok; im.onerror = () => ko(new Error('Photo illisible.')); im.src = url; });
+    const eco = dataSaver(), max = eco ? 1280 : 2560, k = Math.min(1, max / Math.max(im.width, im.height)), cv = document.createElement('canvas'); cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k);
+    cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url);
+    return new Promise((ok, ko) => cv.toBlob(b => b ? ok(b) : ko(new Error('Photo illisible.')), 'image/jpeg', eco ? .72 : .88));
+  },
+  async go() {
+    const c = S.chats.get(S.chatId), files = this.files.slice(), btn = $('#multiGo'), st = $('#multiSt'), cap = ($('#multiCap') || {}).value?.trim() || ''; if (!c || !files.length) return;
+    if (btn) btn.disabled = true; let sent = 0, skipped = 0;
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i], say = t => { if (st) st.textContent = `${i + 1} / ${files.length} · ${t}`; };
+      try {
+        let items;
+        if (/^video/.test(f.type)) {
+          const d = await this.dur(f);
+          if (d > VID_MAX_TOTAL) { skipped++; toast(`Vidéo trop longue (${fmtT(d)}) : ignorée.`); continue; }
+          if (VFast.ok() && (d > VID_MAX_S + 2 || f.size > (dataSaver() ? 4_000_000 : 12_000_000))) { say('préparation de la vidéo…'); items = await VFast.cut(f, p => say(`préparation ${Math.round(p * 100)} %`), {stop: false}); items = items.map(p => ({blob: p.blob, mime: p.mime, dur: p.dur, kind: 'video'})); }
+          else if (d > VID_MAX_S + 2 || f.size > VID_MAX_BYTES) { skipped++; toast('Une vidéo trop longue ou trop lourde a été ignorée (ouvrez-la seule pour la couper).'); continue; }
+          else items = [{blob: f, mime: (f.type || 'video/mp4').split(';')[0], dur: d, kind: 'video'}];
+        } else items = [{blob: await this.photo(f), kind: 'photo'}];
+        for (let k = 0; k < items.length; k++) {
+          const it = items[k], t = sent === 0 && k === 0 ? cap : '', pl = it.kind === 'video' ? {t: items.length > 1 ? `${t ? t + ' ' : ''}(${k + 1}/${items.length})` : t, mime: it.mime, dur: it.dur} : {t};
+          say('envoi…');
+          const sealed = await E2E.seal(pl, recipients(c), await it.blob.arrayBuffer());
+          const up = await upMedia(sealed.blob, p => say(`envoi ${Math.round(p * 100)} %`));
+          const r = await api(`/api/chats/${c.id}/messages`, {media: up.id, enc: sealed.env, ...(it.kind === 'video' ? {kind: 'video'} : {})});
+          (it.kind === 'video' ? E2E.vids : E2E.imgs).set(r.msg.id, URL.createObjectURL(it.blob)); onMsg(r.msg);
+        }
+        sent++;
+      } catch (e) { skipped++; toast(e.message || 'Un fichier n’a pas pu être envoyé.'); }
+    }
+    this.cancel(); if (skipped) toast(`${sent} envoyé${sent > 1 ? 's' : ''}, ${skipped} non envoyé${skipped > 1 ? 's' : ''}.`);
+  },
+};
+Object.assign(ACT, { multiGo() { Multi.go(); }, multiCancel() { Multi.cancel(); }, multiDrop(d) { Multi.drop(+d.i); } });

@@ -1087,3 +1087,24 @@ body.in-cam{overflow:hidden}
 .st-box{color:var(--stc,#fff)}.st-box textarea{color:var(--stc,#fff)}.st-box textarea::placeholder{color:var(--stph,rgba(255,255,255,.7))}
 .sv-box .sv-text{color:var(--stc,#fff)}
 .st-bgs .sw[data-h="362"]{box-shadow:inset 0 0 0 1px rgb(0 0 0/.25)}
+/* sélection de messages */
+.msg.msel{background:var(--accent-soft);border-radius:12px}
+.msg.msel .bubble{box-shadow:0 0 0 2px var(--accent)}
+#chatHead.msel-head{gap:8px}.msel-n{font-size:16px}
+.msg{touch-action:pan-y}.msg.swiping{will-change:transform}
+/* visionneuse plein écran */
+.zoom{display:flex!important;flex-direction:column;inset:0!important;top:0!important;left:0!important;transform:none!important;width:auto!important;height:auto!important;border-radius:0!important;background:#000!important;color:#fff}
+.zm-top{align-self:stretch;display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top,0px)) 10px 8px;background:linear-gradient(rgba(0,0,0,.6),transparent)}
+.zoom .zm-top .ib{position:static;color:#fff}
+.zm-who{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.2}.zm-who small{opacity:.75}
+.zm-stage{align-self:stretch;flex:1;min-height:0;display:grid;place-items:center}
+.zm-stage img,.zm-stage video{max-width:100%;max-height:100%;object-fit:contain}
+.zm-cap{margin:0;padding:10px 16px calc(14px + env(safe-area-inset-bottom,0px));text-align:center}
+.vidb{position:relative}.vid-x{position:absolute;top:6px;right:6px;z-index:2;width:32px;height:32px;border-radius:50%;background:rgb(0 0 0/.45);color:#fff}
+/* envoi groupé */
+.multi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:6px;max-height:46vh;overflow:auto}
+.mg-it{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--surface-2)}
+.mg-it img,.mg-it video{width:100%;height:100%;object-fit:cover}
+.mg-v{position:absolute;left:6px;bottom:4px;color:#fff;text-shadow:0 1px 3px #000}
+.mg-x{position:absolute;top:3px;right:3px;width:26px;height:26px;border-radius:50%;background:rgb(0 0 0/.5);color:#fff}
+#multiCap{width:100%}
