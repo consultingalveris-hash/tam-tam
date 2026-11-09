@@ -62,10 +62,11 @@ const Sound = {
     const hp = c.createBiquadFilter(), ng = c.createGain(); hp.type = 'bandpass'; hp.frequency.value = f0 * 6; ng.gain.value = vol * .35;
     n.buffer = b; n.connect(hp).connect(ng).connect(c.destination); n.start(t);
   },
+  notif() { if (!this.on() || Date.now() - this.last < 1500) return; this.last = Date.now(); if (typeof Tones !== 'undefined') Tones.play(Tones.get('notif'), {short: true}); },
   msg(force) {
     if (!force && (!this.on() || Date.now() - this.last < 1500)) return; this.last = Date.now();
     this.unlock(); const c = this.ctx; if (!c) return; const t = c.currentTime + .02;
-    this.drum(t, 190, 95, .32, .55); this.drum(t + .16, 330, 170, .16, .35); this.drum(t + .30, 200, 100, .36, .5);
+    if (typeof Tones !== 'undefined') Tones.play(Tones.get('msg'), {short: true}); else { this.drum(t, 190, 95, .32, .55); this.drum(t + .16, 330, 170, .16, .35); this.drum(t + .30, 200, 100, .36, .5); }
     if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) try { navigator.vibrate([60, 60, 60]); } catch {}
   },
 };
@@ -226,7 +227,7 @@ function onEvent(ev) {
   else if (ev.t === 'read') { if (ev.user === S.me.id) Device.badge(); const c = S.chats.get(ev.chatId); if (c) { const m = c.members.find(x => x.id === ev.user); if (m) m.lastRead = Math.max(m.lastRead, ev.upTo); if (S.chatId === ev.chatId) renderMessages(true); if (S.tab === 'chats') renderBody(); } }
   else if (ev.t === 'typing') { const k = ev.chatId; if (Date.now() - (S.lastFrom.get(k + ':' + ev.user) || 0) < 2500) return; S.typing.set(k, {user: ev.user, until: Date.now() + 4000}); refreshTyping(k); setTimeout(() => refreshTyping(k), 4100); }
   else if (ev.t === 'contacts') { loadContacts().then(() => { renderTabs(); if (S.tab !== 'chats') renderBody(); if (document.getElementById('addSheet') && typeof Add !== 'undefined') Add.loadPeople(); }); loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }); }
-  else if (ev.t === 'mem') { if (typeof Mem !== 'undefined') Mem.loadRecv(true); }
+  else if (ev.t === 'mem') { Sound.notif(); if (typeof Mem !== 'undefined') Mem.loadRecv(true); }
   else if (ev.t === 'chats') loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) { renderPin(); renderMessages(true); } });
   else if (ev.t === 'statuses') loadStatuses().then(() => { renderStories(); if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); });
   else if (ev.t === 'presence') { const u = S.users.get(ev.id); if (u) { u.online = ev.online; u.busy = ev.busy; u.lastSeen = ev.lastSeen; } if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }
@@ -362,7 +363,7 @@ function chatRows() {
     const mine = m && m.from === S.me.id && !m.deleted && m.kind !== 'sys';
     const sel = S.sel && S.sel.has(c.id);
     return `<button class="row chat-row${c.id === S.chatId && !S.sel ? ' active' : ''}${sel ? ' sel' : ''}" type="button" data-act="open" data-id="${c.id}"${S.sel ? ` aria-pressed="${!!sel}"` : ''}>
-      ${S.sel ? `<span class="selmark" aria-hidden="true">${sel ? '✓' : ''}</span>` : ''}${c.type === 'group' ? grpAv(c) : stRing(u, avOn(u))}
+      ${S.sel ? `<span class="selmark" aria-hidden="true">${sel ? '✓' : ''}</span>` : ''}<span class="avm">${c.type === 'group' ? grpAv(c) : stRing(u, avOn(u))}${c.muted ? `<span class="mute-b" title="Son coupé" aria-label="Son coupé">${BELL_OFF}</span>` : ''}</span>
       <span class="row-name">${esc(chatTitle(c))}</span><span class="row-time${c.unread || c.marked ? ' new' : ''}">${m ? listTime(m.at) : ''}</span>
       <span class="row-prev">${mine && !tu ? tick(readState(c, m)) : ''}<span>${prev}</span><span class="row-flags">${c.pinned ? '<span class="pin-f" title="Épinglée">📌</span>' : ''}${c.unread ? `<span class="badge">${c.unread}</span>` : c.marked ? '<span class="badge dot" title="Marquée comme non lue"></span>' : ''}</span></span>
       ${S.sel ? '' : `<span class="row-more" role="button" tabindex="-1" data-act="chatRowMenu" data-id="${c.id}" aria-label="Options de la discussion" title="Options">${I.chev}</span>`}</button>`;
@@ -736,6 +737,7 @@ function popOpen(html, label, a) {
   if (below >= h || below > r.top) { box.style.top = (r.bottom + 6) + 'px'; box.style.maxHeight = Math.max(160, below - 6) + 'px'; } else { box.style.bottom = (H - r.top + 6) + 'px'; box.style.maxHeight = Math.max(160, r.top - 18) + 'px'; }
   el.addEventListener('click', e => { if (e.target === el) popClose(); });
 }
+const BELL_OFF = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.7 21a2 2 0 0 1-3.4 0M18 8a6 6 0 0 0-9.3-5M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h14M3 3l18 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function sheet(html, label, focus) {
   if (popFrom && Date.now() - popAt < 900 && /class="(menu|react-bar)/.test(html) && !/<(input|textarea|select|form)\b/.test(html)) { const f = popFrom; popFrom = null; return popOpen(html, label, f); }
   popClose();
@@ -1078,13 +1080,17 @@ async function exportChat(id, withMedia) {
       }
       lines.push(`[${when}] ${who} : ${m.kind === 'loc' ? '(position partagée)' : (m.text || '')}${att}`);
     }
-    const title = chatTitle(c), head = `Discussion Tam-Tam : ${title}\nExportée le ${new Date().toLocaleString('fr-FR')} par ${S.me.name}\n\n`;
-    files.unshift({name: 'discussion.txt', data: enc.encode(head + lines.join('\n'))});
-    const zip = Zip.make(files), safe = title.replace(/[^\p{L}\p{N} _-]/gu, '').trim().slice(0, 40) || 'discussion', name = `Tam-Tam - ${safe}.zip`;
-    const file = new File([zip], name, {type: 'application/zip'});
-    if (navigator.canShare && navigator.canShare({files: [file]})) { try { await navigator.share({files: [file], title: name}); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
-    const u = URL.createObjectURL(zip), lk = document.createElement('a'); lk.href = u; lk.download = name; document.body.appendChild(lk); lk.click(); lk.remove(); setTimeout(() => URL.revokeObjectURL(u), 60_000);
-    toast(`Export prêt : ${name}`);
+    const title = chatTitle(c), intro = `Discussion Tam-Tam : ${title}\nExportée le ${new Date().toLocaleString('fr-FR')} par ${S.me.name}\n\n`;
+    files.unshift({name: 'discussion.txt', data: enc.encode(intro + lines.join('\n'))});
+    const safe = title.replace(/[^\p{L}\p{N} _-]/gu, '').trim().slice(0, 40) || 'discussion', zipName = `Tam-Tam - ${safe}.zip`;
+    // Par e-mail : la messagerie (Gmail…) reçoit la discussion et les pièces jointes directement, sans rien enregistrer sur le téléphone.
+    const typeOf = n => /\.txt$/.test(n) ? 'text/plain' : /\.jpe?g$/.test(n) ? 'image/jpeg' : /\.png$/.test(n) ? 'image/png' : /\.mp4$/.test(n) ? 'video/mp4' : /\.webm$/.test(n) ? (n.startsWith('AUD') ? 'audio/webm' : 'video/webm') : /\.m4a$/.test(n) ? 'audio/mp4' : /\.ogg$/.test(n) ? 'audio/ogg' : /\.pdf$/.test(n) ? 'application/pdf' : 'application/octet-stream';
+    const all = files.map(f => { const n = f.name.split('/').pop(); return new File([f.data], f.name === 'discussion.txt' ? `Tam-Tam - ${safe}.txt` : n, {type: typeOf(n)}); });
+    const can = !!(navigator.canShare && navigator.share), ok = can ? all.filter(f => { try { return navigator.canShare({files: [f]}); } catch { return false; } }) : [];
+    S.exp = {files: ok, title: `Discussion Tam-Tam : ${title}`, text: `Discussion Tam-Tam « ${title} », exportée le ${new Date().toLocaleDateString('fr-FR')}.`, zip: Zip.make(files), zipName};
+    const left = all.length - ok.length;
+    sheet(`${head('Discussion prête')}<div class="sheet-body"><p class="hint">${ok.length ? `${ok.length} fichier${ok.length > 1 ? 's' : ''} prêt${ok.length > 1 ? 's' : ''}. Touchez « Envoyer par e-mail », puis choisissez <b>Gmail</b> (ou votre messagerie) : un brouillon s’ouvre avec tout en pièce jointe.${left ? ` ${left} document${left > 1 ? 's' : ''} d’un format non accepté par la messagerie ne ${left > 1 ? 'sont' : 'est'} pas joint${left > 1 ? 's' : ''}.` : ''}` : 'Cet appareil ne permet pas d’ouvrir la messagerie directement : vous pouvez récupérer le fichier ZIP.'}</p>
+      <div class="actions">${ok.length ? '<button class="btn" type="button" data-act="exportSend">✉ Envoyer par e-mail</button>' : '<button class="btn" type="button" data-act="exportZip">Récupérer le fichier ZIP</button>'}</div></div>`, 'Export');
   } catch (e) { toast(e.message || 'Export impossible.'); }
 }
 /* Suivre la position d'un proche qui la partage avec moi (il l'a choisi dans ses réglages). */
@@ -1112,9 +1118,9 @@ function msgMenu(id) {
   sheet(`<div class="react-bar" role="group" aria-label="Réagir">${QUICK.map(e => `<button type="button" data-act="react" data-id="${id}" data-e="${e}" aria-pressed="${!!myR && myR.e === e}">${e}</button>`).join('')}<button type="button" class="more" data-act="reactMore" data-id="${id}" aria-label="Plus d’émoticônes">${I.plus}</button></div><div class="menu" style="padding-top:4px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once && !m.locked && m.from !== S.me.id && Tr.st && Tr.st.on && S.me.trConsent ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}${Tr.shown.has(id) ? 'Voir la traduction' : 'Traduire'}</button>` : ''}${m.text && !m.once && !(S.chats.get(S.chatId) || {}).hidden ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
     ${m.from === S.me.id && m.kind === 'text' && !m.media && !m.once && !m.locked && !m.fl && Date.now() - m.at < EDIT_MAX ? `<button type="button" data-act="editMsg" data-id="${id}"><span class="pin-ic" aria-hidden="true">✎</span>Modifier mon message</button>` : ''}
     ${canFwd ? `<button type="button" data-act="fwd" data-id="${id}">${FWD_IC}Transférer</button>` : ''}${!m.once ? `<button type="button" data-act="${pinned ? 'pinMsgOff' : 'pinMsg'}" data-id="${id}"><span class="pin-ic" aria-hidden="true">📌</span>${pinned ? 'Retirer l’épingle' : 'Épingler en haut de la discussion'}</button>` : ''}
-    <button type="button" data-act="mselStart" data-id="${id}"><span class="pin-ic" aria-hidden="true">☑</span>Sélectionner</button>
+    ${S.msel ? '' : `<button type="button" data-act="mselStart" data-id="${id}"><span class="pin-ic" aria-hidden="true">☑</span>Sélectionner</button>`}
     <button type="button" class="danger" data-act="hideAsk" data-id="${id}">${I.trash}Supprimer pour moi</button>
-    ${canAll ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde${modo ? ' (administrateur)' : ''}</button>` : m.from === S.me.id ? '<p class="hint" style="padding:4px 16px 10px">2 minutes après l’envoi, un message ne peut plus être modifié ni supprimé pour tout le monde.</p>' : ''}</div>`, 'Message');
+    ${canAll ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde${modo ? ' (administrateur)' : ''}</button>` : ''}</div>`, 'Message');
 }
 
 /* ---------- statuts : création et lecture ---------- */
@@ -1650,9 +1656,10 @@ function settingsBody() {
     <div class="set-block"><h2>${I.shield} Chiffrement de bout en bout</h2><p class="hint">Vos messages et vos photos sont chiffrés sur votre appareil : seules les personnes de la discussion peuvent les lire, pas même le serveur.</p>
       <p>Votre code de sécurité : <b class="fp" id="myFp">…</b></p><p class="hint">Comparez-le avec celui qu’un proche voit sur votre profil pour vérifier que personne ne s’est glissé entre vous.</p>
       <div><button class="btn sm ghost" type="button" data-act="keyCode">${I.key}Changer le code de sauvegarde</button></div></div>
-    <div class="set-block" id="locSet"><h2>📍 Partager ma localisation</h2><p class="hint">Les personnes que vous cochez peuvent voir où vous êtes, en permanence : dans votre discussion, le point en haut à droite, puis « Suivre la localisation ». Pratique entre conjoints, ou pour des parents avec leurs enfants. Votre position est chiffrée : même le serveur ne peut pas la lire.</p>
+    <div class="set-block" id="locSet"><details class="loc-det"><summary><h2>📍 Partager ma localisation</h2><span class="loc-st${(me.locTo || []).length ? ' on' : ''}">${(me.locTo || []).length ? `Activé · ${(me.locTo || []).length}` : 'Désactivé'}</span></summary><p class="hint">Les personnes que vous cochez peuvent voir où vous êtes, en permanence : dans votre discussion, le point en haut à droite, puis « Suivre la localisation ». Pratique entre conjoints, ou pour des parents avec leurs enfants. Votre position est chiffrée : même le serveur ne peut pas la lire.</p>
       ${(S.contacts.contacts || []).length ? `<div class="picks">${S.contacts.contacts.slice().sort((x, y) => x.name.localeCompare(y.name, 'fr')).map(u => `<label class="pick"><input type="checkbox" name="locTo" value="${u.id}"${(me.locTo || []).includes(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint">Ajoutez d’abord des contacts.</p>'}
-      <p class="hint">${(me.locTo || []).length ? `✅ Partagée avec ${(me.locTo || []).length} personne${(me.locTo || []).length > 1 ? 's' : ''}. Sur ordinateur et dans le navigateur, la position est envoyée tant que Tam-Tam est ouvert.` : 'Partage désactivé : cochez une personne pour l’activer.'}</p></div>
+      <p class="hint">${(me.locTo || []).length ? `✅ Partagée avec ${(me.locTo || []).length} personne${(me.locTo || []).length > 1 ? 's' : ''}. Sur ordinateur et dans le navigateur, la position est envoyée tant que Tam-Tam est ouvert.` : 'Partage désactivé : cochez une personne pour l’activer.'}</p></details></div>
+    ${Tones.settingsHtml()}
     <div class="set-block"><h2>${I.download || ''} Économie de données</h2><p class="hint">Pour les petits forfaits : photos et vidéos envoyées plus légères, et Tam-Tam ne télécharge rien à l’avance (le statut suivant se charge quand vous y arrivez).</p>
       <label class="pick chk"><input type="checkbox" data-act="saverTog"${dataSaver() ? ' checked' : ''}><span>Activer l’économie de données sur cet appareil</span></label></div>
     ${lockSettingsHtml()}
@@ -1668,7 +1675,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.66</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.67</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1831,8 +1838,10 @@ const ACT = {
   reportAsk(d) { reportSheet(d.id ? +d.id : null, d.chat ? +d.chat : null); },
   chatMenu() { chatMenu(); },
   async chatMute() { const c = S.chats.get(S.chatId); if (!c) return; closeLayer(); try { await chatMine(c.id, {mute: !c.muted}, true); toast(c.muted ? 'Son coupé pour cette discussion' : 'Son réactivé'); } catch (e) { toast(e.message); } },
-  exportAsk() { sheet(`${head('Exporter la discussion')}<div class="sheet-body"><p class="hint">Tam-Tam prépare un fichier ZIP avec toute la discussion, que vous pouvez envoyer dans une autre application ou par e-mail. Les messages à vue unique ne sont jamais exportés.</p>
+  exportAsk() { sheet(`${head('Exporter la discussion')}<div class="sheet-body"><p class="hint">Tam-Tam prépare la discussion puis ouvre votre messagerie : un brouillon d’e-mail se crée avec la discussion en pièce jointe, vous n’avez plus qu’à choisir le destinataire. Rien n’est enregistré sur le téléphone. Les messages à vue unique ne sont jamais exportés.</p>
     <div class="menu"><button type="button" data-act="exportGo" data-m="">${I.clip}Sans les pièces jointes (texte seulement)</button><button type="button" data-act="exportGo" data-m="1">${I.image || I.clip}Avec les pièces jointes (photos, vidéos, documents)</button></div></div>`, 'Exporter'); },
+  exportSend() { const x = S.exp; if (!x) return; navigator.share({files: x.files, title: x.title, text: x.text}).then(() => { closeLayer(); S.exp = null; }).catch(e => { if (e && e.name !== 'AbortError') toast('Envoi impossible depuis cet appareil.'); }); },
+  exportZip() { const x = S.exp; if (!x) return; const u = URL.createObjectURL(x.zip), lk = document.createElement('a'); lk.href = u; lk.download = x.zipName; document.body.appendChild(lk); lk.click(); lk.remove(); setTimeout(() => URL.revokeObjectURL(u), 60_000); closeLayer(); S.exp = null; },
   exportGo(d) { closeLayer(); exportChat(S.chatId, !!d.m); },
   locFollow(d) { locFollow(+d.id); },
   chatInfo() { const c = S.chats.get(S.chatId); if (!c) return; if (c.type === 'group') groupInfo(); else profSheet(c.peer); },
@@ -1900,14 +1909,14 @@ const ACT = {
     const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +d.id); closeLayer(); if (!m) return;
     if (Date.now() - m.at >= EDIT_MAX) return toast('Un message ne peut plus être modifié 2 minutes après son envoi.');
     S.editId = m.id; S.replyTo = null; renderReplyBar(); const i = $('#msgIn'); if (i) { i.value = m.orig != null ? m.orig : m.text; autoGrow(i); syncSend(); i.focus(); }
-    setTimeout(() => { if (S.editId === m.id) { S.editId = null; renderReplyBar(); toast('Le délai de 2 minutes pour modifier ce message est passé.'); } }, Math.max(0, EDIT_MAX - (Date.now() - m.at)));
+    setTimeout(() => { if (S.editId === m.id) { S.editId = null; renderReplyBar();  } }, Math.max(0, EDIT_MAX - (Date.now() - m.at)));
   },
   editCancel() { S.editId = null; renderReplyBar(); const i = $('#msgIn'); if (i) { i.value = ''; autoGrow(i); syncSend(); } },
   mselStart(d) { closeLayer(); mselToggle(+d.id); },
   mselOff() { S.msel = null; document.querySelectorAll('.msg.msel').forEach(e => e.classList.remove('msel')); renderChatHead(); },
   mselMenu() {
     const ids = [...(S.msel || [])]; if (!ids.length) return;
-    if (ids.length === 1) { ACT.mselOff(); return msgMenu(ids[0]); }   // un seul message : le menu complet (réactions, répondre, modifier…)
+    if (ids.length === 1) return msgMenu(ids[0]);   // un seul message : le menu complet (réactions, répondre, transférer…), il reste sélectionné
     const list = S.msgs.get(S.chatId) || [], ms = ids.map(id => list.find(x => x.id === id)).filter(Boolean), c = S.chats.get(S.chatId) || {};
     const modo = c.type === 'group' && c.admin && (c.gset || {}).del === 'admins';
     const canAll = ms.every(m => !m.deleted && ((m.from === S.me.id && Date.now() - m.at < DEL_ALL_MAX) || (modo && m.from !== S.me.id)));
@@ -2114,6 +2123,7 @@ document.addEventListener('click', e => {
   if (el.classList.contains('dotb')) { popFrom = el; popAt = Date.now(); popRect = el.getBoundingClientRect(); }
   const pop = el.closest('#pop');
   fn(el.dataset, el, e);
+  if (pop && S.msel && el.dataset.act !== 'mselStart') ACT.mselOff();   // une action choisie : la sélection est terminée
   if (pop && document.getElementById('pop') === pop) popClose();
 });
 document.addEventListener('submit', e => { const f = e.target.closest('form[data-form]'); if (!f) return; e.preventDefault(); const fn = FORMS[f.dataset.form]; if (fn) fn(f); });

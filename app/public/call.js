@@ -179,7 +179,9 @@ const Call = {
 
   /* ---------- sonnerie (sons générés, aucun fichier) ---------- */
   tone(kind) {
-    clearInterval(this.toneT); this.toneT = null; if (!kind) return;
+    clearInterval(this.toneT); this.toneT = null; if (this.toneP) { this.toneP.stop(); this.toneP = null; } if (!kind) return;
+    // sonnerie d'appel entrant : celle choisie dans les réglages (tam-tam, balafon, kora, ma musique…)
+    if (kind === 'ring' && typeof Tones !== 'undefined') { this.toneP = Tones.play(Tones.get('call'), {loop: true}); if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) try { navigator.vibrate([400, 250, 400]); } catch {} return; }
     Sound.unlock(); const ctx = Sound.ctx; if (!ctx) return;
     const T = (dt, f0, f1, d, v) => Sound.drum(ctx.currentTime + .02 + dt, f0, f1, d, v);
     // sonnerie d'appel : un rythme de tam-tam (grave, aigu, grave-grave, aigu, roulement)

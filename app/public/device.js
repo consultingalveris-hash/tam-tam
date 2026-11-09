@@ -11,7 +11,7 @@ const Device = {
     try { this.reg = await navigator.serviceWorker.register('/sw.js'); } catch { return; }
     navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.open) this.openUrl(e.data.open); });
     // déjà autorisé sur cet appareil : on renouvelle l'abonnement en silence
-    if (this.pushOk() && Notification.permission === 'granted') this.subscribe(true);
+    if (this.pushOk() && Notification.permission === 'granted' && this.notifOn()) this.subscribe(true);
   },
   badge() { try { const n = [...S.chats.values()].reduce((a, c) => a + (c.hidden ? 0 : c.unread || 0), 0); if (navigator.setAppBadge) n ? navigator.setAppBadge(n) : navigator.clearAppBadge(); } catch {} },
   openUrl(url) {
@@ -52,13 +52,14 @@ const Device = {
     if (hid || !this.canInstall()) return '';
     return `<div class="inst"><img src="/icon-192.png" alt="" width="40" height="40"><div><b>Installez tam-tam</b><span>Une icône sur votre écran d’accueil, comme une vraie application.</span></div><button class="btn sm" type="button" data-act="devInstall">Installer</button><button class="ib" type="button" data-act="devInstHide" aria-label="Masquer">${I.close}</button></div>`;
   },
+  notifOn() { try { return localStorage.getItem('tt:notif') !== 'off'; } catch { return true; } },
   settingsHtml() {
     const perm = 'Notification' in window ? Notification.permission : 'unsupported', on = perm === 'granted';
     return `<div class="set-block"><h2>Notifications</h2>
       <p class="hint">Recevez une alerte pour chaque message et chaque appel, même quand tam-tam est fermé. Par respect de votre vie privée, la notification dit seulement <b>qui</b> vous écrit, jamais le contenu.</p>
       <div class="actions" style="justify-content:flex-start">
-        <button class="btn sm${on ? ' ghost' : ''}" type="button" data-act="devPush">${on ? '✅ Notifications activées · tester' : '🔔 Activer les notifications'}</button>
-        <button class="btn sm ghost" type="button" data-act="soundToggle">${Sound.on() ? '🔔 Son des messages : activé' : '🔕 Son des messages : coupé'}</button></div>
+        <button class="tog${on && this.notifOn() ? ' on' : ''}" type="button" data-act="devPushTog" aria-pressed="${on && this.notifOn()}">${on && this.notifOn() ? '🔔' : '🔕'} Son des notifications : ${on && this.notifOn() ? 'activé' : 'désactivé'}</button>
+        <button class="tog${Sound.on() ? ' on' : ''}" type="button" data-act="soundToggle" aria-pressed="${Sound.on()}">${Sound.on() ? '🔔' : '🔕'} Son des messages : ${Sound.on() ? 'activé' : 'désactivé'}</button></div>
       ${perm === 'denied' ? '<p class="err">Les notifications sont bloquées pour ce site. Touchez l’icône à gauche de l’adresse, puis Autorisations → Notifications → Autoriser.</p>' : ''}</div>
     <div class="set-block"><h2>Application</h2>
       <p class="hint">${this.standalone() ? 'tam-tam est installé sur cet appareil. ✅' : 'Ajoutez tam-tam à votre écran d’accueil : il s’ouvre en plein écran, comme WhatsApp.'}</p>
@@ -69,6 +70,11 @@ window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); Device
 window.addEventListener('appinstalled', () => { Device.prompt = null; toast('tam-tam est installé ✅'); });
 Object.assign(ACT, {
   devPush() { Device.enable(); },
+  async devPushTog() {
+    const on = 'Notification' in window && Notification.permission === 'granted' && Device.notifOn();
+    if (on) { try { localStorage.setItem('tt:notif', 'off'); } catch {} await Device.disableHere(); toast('Notifications désactivées sur cet appareil'); renderBody(); }
+    else { try { localStorage.setItem('tt:notif', 'on'); } catch {} await Device.enable(); }
+  },
   devInstall() { Device.install(); },
   devInstHide() { try { localStorage.setItem('tt:instHide', '1'); } catch {} renderBody(); },
 });

@@ -1144,3 +1144,22 @@ body.in-cam{overflow:hidden}
 .zm-stage{position:relative}
 .zm-stage img,.zm-stage video{position:absolute;inset:0;width:100%;height:100%;max-width:none;max-height:none;object-fit:contain}
 .locb.live{margin:4px 0 10px}
+/* liste des discussions : statut déjà vu = plus aucun contour (le demi-cercle reste seulement dans la bande des statuts) */
+.st-ring.seen{background:none!important;box-shadow:none!important}
+/* son coupé : petite cloche barrée sur la photo */
+.avm{position:relative;display:inline-flex;flex:none}
+.mute-b{position:absolute;right:-3px;bottom:-3px;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:var(--surface);color:var(--fg-2);box-shadow:0 0 0 2px var(--surface)}
+.mute-b svg{width:13px;height:13px}
+/* réglages : interrupteurs turquoise (activé) / gris (désactivé) */
+.tog{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border:0;border-radius:20px;font:inherit;font-weight:600;font-size:14px;cursor:pointer;background:var(--surface-2);color:var(--fg-2)}
+.tog.on{background:var(--accent);color:#fff}
+/* partage de position replié */
+.loc-det>summary{list-style:none;display:flex;align-items:center;gap:10px;cursor:pointer}.loc-det>summary::-webkit-details-marker{display:none}
+.loc-det>summary h2{margin:0;flex:1}.loc-st{font-size:13px;font-weight:600;padding:4px 10px;border-radius:12px;background:var(--surface-2);color:var(--fg-2)}.loc-st.on{background:var(--accent);color:#fff}
+.loc-det[open]>summary{margin-bottom:8px}
+/* sonneries */
+.tone-rows{display:flex;flex-direction:column;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.tone-row{display:flex;align-items:center;gap:10px;padding:12px 14px;border:0;border-bottom:1px solid var(--line);background:none;font:inherit;text-align:left;cursor:pointer;color:var(--fg)}
+.tone-row:last-child{border-bottom:0}.tone-row span{flex:1}.tone-row b{color:var(--accent-strong,var(--accent));font-weight:600}.tone-row svg{width:16px;height:16px;opacity:.6}
+.tone-list button{align-items:flex-start}.tone-list small{display:block;color:var(--fg-2);font-size:13px}.tl-ic{color:var(--accent);width:18px}
+.tr-wave{width:100%;height:90px;border-radius:10px;background:var(--surface-2)}
