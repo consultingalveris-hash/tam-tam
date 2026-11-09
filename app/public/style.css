@@ -1171,3 +1171,7 @@ body.in-cam{overflow:hidden}
 @keyframes pspin{to{transform:rotate(360deg)}}
 .bubble.pending .vid-play{display:none}
 .bubble.pending.cap .pend-spin{bottom:44px}
+
+.tone-grp{margin:10px 16px 2px;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;opacity:.65}
+.tone-cred{list-style:none;padding:0;margin:8px 0;display:grid;gap:10px;font-size:.85rem;line-height:1.35}
+.tone-cred small{opacity:.7}

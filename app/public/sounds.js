@@ -1,5 +1,6 @@
-/* tam-tam — sonneries africaines, créées par l'application elle-même (aucun fichier à télécharger, aucun droit d'auteur),
-   plus « Ma musique » : un morceau du téléphone, coupé à la partie choisie. Réglage propre à chaque appareil. */
+/* tam-tam — sonneries africaines : sons créés par l'application elle-même, enregistrements libres de droits venus de toute
+   l'Afrique (Wikimedia Commons, extraits de 20 s dans /sons/, crédits dans Réglages), plus « Ma musique » : un morceau du
+   téléphone, coupé à la partie choisie. Réglage propre à chaque appareil. */
 'use strict';
 const Tones = {
   // [identifiant, nom, description]
@@ -13,12 +14,35 @@ const Tones = {
     ['shekere', 'Shékéré', 'la calebasse perlée'],
     ['grillons', 'Grillons', 'le soir au village'],
     ['foret', 'Nuit dans la forêt', 'grillons, vent et hibou'],
+    ...[['m01', 'Balafon sénoufo', 'Mali · Burkina Faso · Côte d’Ivoire'], ['m02', 'Balafon et djembé', 'pays sénoufo'], ['m03', 'Djembé', 'Afrique de l’Ouest · accompagnement'],
+      ['m04', 'Djembé – rythme', 'Afrique de l’Ouest'], ['m05', 'Tambour parlant', 'Nigeria · pays yoruba'], ['m06', 'Sanza', 'Afrique centrale · piano à pouces'],
+      ['m07', 'Kora', 'Afrique de l’Ouest · harpe mandingue'], ['m08', 'Koumbasilla', 'Mali · danse de la jeune fille'], ['m09', 'Rumba « Yo carre samou »', 'Congo'],
+      ['m10', 'Chant yoruba « Ẹkùn Ìyàwó »', 'Nigeria'], ['m11', 'Chant xhosa « Ibalilika »', 'Afrique du Sud'], ['m12', 'Ziguinchor', 'Sénégal · Casamance'],
+      ['m13', 'Tambours et chants', 'Nord du Ghana'], ['m14', 'Valiha « Mandihiza »', 'Madagascar'], ['m15', 'Valiha – berceuse', 'Madagascar']].map(x => [...x, 1]),
     ['custom', 'Ma musique', 'un morceau de votre téléphone'],
   ],
   def: {call: 'tamtam', msg: 'tamtam', notif: 'balafon'},
   get(k) { try { return localStorage.getItem('tt:tone:' + k) || this.def[k]; } catch { return this.def[k]; } },
   set(k, id) { try { localStorage.setItem('tt:tone:' + k, id); } catch {} },
   name(id) { const t = this.list.find(x => x[0] === id); return t ? (id === 'custom' && this.meta() ? this.meta().name : t[1]) : 'Tam-tam'; },
+  // crédits des enregistrements (licences libres : CC0, domaine public, CC BY, CC BY-SA, Art Libre)
+  credits: {
+    m01: ['Le son de balafon sénoufo', 'KONE IF', 'CC BY 4.0'], m02: ['Performance musicale sénoufo, balafon accompagné du djembé', 'KONE IF', 'CC BY 4.0'],
+    m03: ['Djembe accompaniment', 'Michi Henning', 'CC0'], m04: ['Djembee2', 'Dennis Ruigrok', 'CC BY-SA 3.0'],
+    m05: ['The sound of the talking drum when its been played', 'Bamidele S. Ajayi', 'CC BY-SA 4.0'], m06: ['CarmeSansaAlbert (veu)', 'Eloibg', 'CC0'],
+    m07: ['17 - Cinus Laurent - Kora', 'Cinus Laurent', 'Licence Art Libre'], m08: ['Koumbasilla, danse de la jeune fille', 'auteur inconnu', 'domaine public'],
+    m09: ['Yo carre samou na rumba', 'auteur inconnu (éd. Gouvernement général de l’AEF)', 'domaine public'], m10: ['Ẹkùn Ìyàwó 02', 'Royalesignature', 'CC BY-SA 4.0'],
+    m11: ['IbalilikaNomathemba', 'Xoliswa Matrokko', 'CC BY 2.5'], m12: ['ZIGUINCHOR', 'Djiby Diagne Sambou', 'CC BY-SA 4.0'],
+    m13: ['Drumming and Singing in Northern Ghana', 'Ibn Shiraz', 'CC BY-SA 4.0'], m14: ['Old Malagasy Folk Song « Mandihiza Rahitsikitsika » (valiha)', 'Kaluvau', 'CC BY-SA 3.0'],
+    m15: ['Old Lullaby « Iny Hono Izy Ravorona » (valiha en bambou)', 'Kaluvau', 'CC BY-SA 3.0'],
+  },
+  isRec(id) { return /^m\d\d$/.test(id) && !!this.credits[id]; },
+  recs: new Map(),
+  async recBuf(id) {
+    if (this.recs.has(id)) return this.recs.get(id);
+    const r = await fetch('/sons/' + id + '.mp3'); if (!r.ok) throw new Error('son'); Sound.unlock();
+    const b = await Sound.ctx.decodeAudioData(await r.arrayBuffer()); this.recs.set(id, b); return b;
+  },
   meta() { try { return JSON.parse(localStorage.getItem('tt:tone:custom-meta') || 'null'); } catch { return null; } },
 
   /* ---------- petits instruments ---------- */
@@ -75,6 +99,13 @@ const Tones = {
     let stopped = false, timer = null, src = null;
     const once = async () => {
       if (stopped) return;
+      if (this.isRec(id)) {   // enregistrement : 20 s pour un appel, 4 s (fondu) pour un message ou une notification
+        const b = await this.recBuf(id).catch(() => null); if (stopped) return;
+        if (!b) { this.P.tamtam(this, c, out, c.currentTime + .02, short); timer = loop && setTimeout(once, 2800); return; }
+        const t0 = c.currentTime + .02, len = short ? Math.min(4, b.duration) : b.duration; src = c.createBufferSource(); src.buffer = b; src.connect(out); src.start(t0, 0, len);
+        if (short) { out.gain.setValueAtTime(.9, t0 + len - .8); out.gain.linearRampToValueAtTime(0.0001, t0 + len); }
+        if (loop) timer = setTimeout(once, len * 1000 + 400); return;
+      }
       if (id === 'custom') {
         const b = await this.customBuf().catch(() => null), m = this.meta();
         if (!b || !m) { this.P.tamtam(this, c, out, c.currentTime + .02, short); timer = loop && setTimeout(once, 2800); return; }
@@ -95,12 +126,18 @@ const Tones = {
   settingsHtml() {
     return `<div class="set-block"><h2>🥁 Sonneries</h2><p class="hint">Des sons d’Afrique pour vos appels, vos messages et vos notifications, ou un morceau de votre téléphone.</p>
       <div class="tone-rows">${this.kinds.map(([k, l]) => `<button class="tone-row" type="button" data-act="toneOpen" data-k="${k}"><span>${l}</span><b>${esc(this.name(this.get(k)))}</b>${I.chev || '›'}</button>`).join('')}</div>
-      <div><button class="btn sm ghost" type="button" data-act="toneImport">🎵 ${this.meta() ? 'Changer ma musique' : 'Importer ma musique'}</button></div></div>`;
+      <div class="actions"><button class="btn sm ghost" type="button" data-act="toneImport">🎵 ${this.meta() ? 'Changer ma musique' : 'Importer ma musique'}</button><button class="btn sm ghost" type="button" data-act="toneCredits">Crédits musicaux</button></div></div>`;
   },
   open(k) {
     const cur = this.get(k), lab = this.kinds.find(x => x[0] === k)[1];
-    sheet(`${head('Sonnerie · ' + lab)}<div class="sheet-body"><p class="hint">Touchez un son pour l’écouter et le choisir.</p></div><div class="menu tone-list">${this.list.map(([id, n, d]) => id === 'custom' && !this.meta() ? '' : `<button type="button" data-act="toneSet" data-k="${k}" data-id="${id}" aria-pressed="${id === cur}"><span class="tl-ic" aria-hidden="true">${id === cur ? '●' : '○'}</span><span><b>${esc(id === 'custom' ? this.meta().name : n)}</b><small>${esc(d)}</small></span></button>`).join('')}</div>
+    sheet(`${head('Sonnerie · ' + lab)}<div class="sheet-body"><p class="hint">Touchez un son pour l’écouter et le choisir.</p></div><div class="menu tone-list">${this.list.map(([id, n, d, rec], i) => (id === 'custom' && !this.meta() ? '' : (i === 0 ? '<p class="tone-grp">Sons d’Afrique créés par Tam-Tam</p>' : rec && !this.list[i - 1][3] ? '<p class="tone-grp">Musiques d’Afrique · enregistrements libres</p>' : '') + `<button type="button" data-act="toneSet" data-k="${k}" data-id="${id}" aria-pressed="${id === cur}"><span class="tl-ic" aria-hidden="true">${id === cur ? '●' : '○'}</span><span><b>${esc(id === 'custom' ? this.meta().name : n)}</b><small>${esc(d)}</small></span></button>`)).join('')}</div>
       <div class="sheet-body"><div class="actions"><button class="btn sm ghost" type="button" data-act="toneImport">🎵 Importer ma musique</button><button class="btn" type="button" data-act="toneDone">Terminé</button></div></div>`, 'Sonnerie');
+  },
+  creditsSheet() {
+    sheet(`${head('Crédits musicaux')}<div class="sheet-body"><p class="hint">Les musiques enregistrées de Tam-Tam sont des extraits d’œuvres sous licence libre, publiées sur Wikimedia Commons (commons.wikimedia.org). Merci à leurs auteurs.</p>
+      <ul class="tone-cred">${this.list.filter(x => x[3]).map(([id, n, d]) => { const [t, a, l] = this.credits[id]; return `<li><b>${esc(n)}</b> <small>${esc(d)}</small><br>« ${esc(t)} » · ${esc(a)} · <i>${esc(l)}</i></li>`; }).join('')}</ul>
+      <p class="hint">Extraits raccourcis à 20 secondes, avec fondu et volume ajusté. Licences : CC0 et domaine public (libres), CC BY (citer l’auteur), CC BY-SA (citer l’auteur, partager dans les mêmes conditions), Licence Art Libre.</p>
+      <div class="actions"><button class="btn" type="button" data-act="close">Fermer</button></div></div>`, 'Crédits');
   },
   pick() { const i = document.createElement('input'); i.type = 'file'; i.accept = 'audio/*'; i.onchange = () => { const f = i.files[0]; if (f) this.trimSheet(f); }; i.click(); },
   async trimSheet(file) {
@@ -131,6 +168,7 @@ Object.assign(ACT, {
   toneSet(d) { Tones.set(d.k, d.id); Tones.test(d.id, d.k); document.querySelectorAll('.tone-list button').forEach(b => { const on = b.dataset.id === d.id; b.setAttribute('aria-pressed', on); b.querySelector('.tl-ic').textContent = on ? '●' : '○'; }); },
   toneDone() { if (Tones.preview) Tones.preview.stop(); closeLayer(); renderBody(); if (typeof pmRefresh === 'function') try { pmRefresh(); } catch {} },
   toneImport() { Tones.pick(); },
+  toneCredits() { Tones.creditsSheet(); },
   trPlay() { Tones.trPlay(); },
   trSave() { Tones.trSave(); },
 });

@@ -246,7 +246,7 @@ backup(); setInterval(backup, 3600_000);
 
 /* ---------- HTTP ---------- */
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.mp3': 'audio/mpeg' };
 function send(res, code, body, headers = {}) {
   const isObj = typeof body === 'object' && !Buffer.isBuffer(body);
   res.writeHead(code, { 'Content-Type': isObj ? 'application/json; charset=utf-8' : 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
@@ -258,7 +258,7 @@ const E = (code, msg) => { throw new HttpError(code, msg); };
 function serveFile(res, file, extra = {}) {
   fs.readFile(file, (err, buf) => {
     if (err) return send(res, 404, 'Page introuvable');
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache', ...extra }); res.end(buf);
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', ...extra, 'Cache-Control': path.extname(file) === '.mp3' ? 'public, max-age=604800' : 'no-cache' }); res.end(buf);
   });
 }
 async function readBody(req, max) {
