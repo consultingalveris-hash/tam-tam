@@ -555,9 +555,9 @@ function renderMessages(keep) {
     else if (m.kind === 'doc') body = docHtml(m) + (m.text ? Tr.txt(m) : '');
     else if (m.kind === 'audio') body = stQuote(m, out, c) + `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
     else body = stQuote(m, out, c) + (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? Tr.txt(m) : '');
-    h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble${!m.deleted && !m.once && (m.kind === 'video' || (m.media && m.kind !== 'audio' && m.kind !== 'doc' && m.kind !== 'loc')) ? ' mb' : ''}">
-      ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${m.fwd ? `<span class="fwd">${FWD_IC}Transféré</span>` : ''}${body}<span class="meta">${m.edited ? '<i class="edited">modifié</i> ' : ''}${hm(m.at)}${out && !m.deleted ? tick(readState(c, m)) : ''}</span>
-      ${m.deleted ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message" title="Options : réagir, répondre, transférer, épingler…">${I.chev}</button>`}</div>${reactsHtml(m)}</div>`;
+    h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble${!m.deleted && !m.once && (m.kind === 'video' || (m.media && m.kind !== 'audio' && m.kind !== 'doc' && m.kind !== 'loc')) ? ' mb' : ''}${m.pending ? ' pending' + (m.text ? ' cap' : '') : ''}">${m.pending ? '<span class="pend-spin" role="status" aria-label="Envoi en cours"></span>' : ''}
+      ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${m.fwd ? `<span class="fwd">${FWD_IC}Transféré</span>` : ''}${body}<span class="meta">${m.edited ? '<i class="edited">modifié</i> ' : ''}${hm(m.at)}${m.pending ? ' 🕓' : out && !m.deleted ? tick(readState(c, m)) : ''}</span>
+      ${m.deleted || m.pending ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message" title="Options : réagir, répondre, transférer, épingler…">${I.chev}</button>`}</div>${reactsHtml(m)}</div>`;
   }
   const tu = typingIn(c.id); if (tu) h += `<div class="msg in first typing-b"><div class="bubble" aria-label="En train d’écrire"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
   box.innerHTML = h;
@@ -963,6 +963,24 @@ async function msgBytes(m) {
   const r = await fetch(m.media, {credentials: 'same-origin'}); return E2E.decBytes(m._key, m.miv, await r.arrayBuffer());
 }
 // Transférer : le message est déchiffré sur l'appareil puis rechiffré pour chaque discussion choisie.
+// Envoi en arrière-plan, avec un aperçu immédiat (cercle qui tourne) dans chaque discussion déjà ouverte.
+async function fwdRun(ms, ids) {
+  let ok = 0;
+  for (const m of ms) {
+    const temps = [];
+    for (const id of ids) {
+      const list = S.msgs.get(id); if (!list) continue;
+      const tmp = {id: -(Date.now() + Math.floor(Math.random() * 1e6)), chatId: id, from: S.me.id, at: Date.now(), kind: m.kind, media: m.media ? 'en-cours' : null, enc: !!m.media, text: m.text || '', fwd: true, pending: true, dur: m.dur, loc: m.loc, fname: m.fname};
+      const map = m.kind === 'video' ? E2E.vids : m.kind === 'audio' ? E2E.auds : E2E.imgs; if (map && map.has(m.id)) map.set(tmp.id, map.get(m.id));
+      list.push(tmp); temps.push(tmp);
+    }
+    if (temps.some(t => t.chatId === S.chatId)) renderMessages();
+    try { await fwdSend(m, ids); ok++; } catch (e) { toast(e.message || 'Le transfert a échoué.'); }
+    for (const t of temps) { const list = S.msgs.get(t.chatId); const k = list ? list.indexOf(t) : -1; if (k >= 0) list.splice(k, 1); }
+    if (temps.some(t => t.chatId === S.chatId)) renderMessages();
+  }
+  return ok;
+}
 async function fwdSend(m, ids) {
   const payload = {t: m.text || ''}; if (m.loc) payload.loc = m.loc; if (m.amime) payload.mime = m.amime; if (m.dur) payload.dur = m.dur;
   const bytes = m.media ? await msgBytes(m) : undefined, kind = m.kind === 'video' || m.kind === 'audio' || m.kind === 'loc' ? m.kind : undefined;
@@ -970,7 +988,9 @@ async function fwdSend(m, ids) {
     const c = S.chats.get(id); if (!c) continue;
     const sealed = await E2E.seal(payload, recipients(c), bytes);
     let media = null; if (sealed.blob) media = (await upMedia(sealed.blob)).id;
-    const r = await api(`/api/chats/${id}/messages`, {enc: sealed.env, media, kind, fwd: true}); onMsg(r.msg);
+    const r = await api(`/api/chats/${id}/messages`, {enc: sealed.env, media, kind, fwd: true});
+    const map = m.kind === 'video' ? E2E.vids : m.kind === 'audio' ? E2E.auds : E2E.imgs; if (map && map.has(m.id)) map.set(r.msg.id, map.get(m.id));
+    onMsg(r.msg);
   }
 }
 function fwdSheet(id) {
@@ -1117,7 +1137,7 @@ function msgMenu(id) {
   const canFwd = !m.once && !m.locked && !c.hidden && m.kind !== 'sys', pinned = c.pinMsg && c.pinMsg.id === m.id;
   sheet(`<div class="react-bar" role="group" aria-label="Réagir">${QUICK.map(e => `<button type="button" data-act="react" data-id="${id}" data-e="${e}" aria-pressed="${!!myR && myR.e === e}">${e}</button>`).join('')}<button type="button" class="more" data-act="reactMore" data-id="${id}" aria-label="Plus d’émoticônes">${I.plus}</button></div><div class="menu" style="padding-top:4px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once && !m.locked && m.from !== S.me.id && Tr.st && Tr.st.on && S.me.trConsent ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}${Tr.shown.has(id) ? 'Voir la traduction' : 'Traduire'}</button>` : ''}${m.text && !m.once && !(S.chats.get(S.chatId) || {}).hidden ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
     ${m.from === S.me.id && m.kind === 'text' && !m.media && !m.once && !m.locked && !m.fl && Date.now() - m.at < EDIT_MAX ? `<button type="button" data-act="editMsg" data-id="${id}"><span class="pin-ic" aria-hidden="true">✎</span>Modifier mon message</button>` : ''}
-    ${canFwd ? `<button type="button" data-act="fwd" data-id="${id}">${FWD_IC}Transférer</button>` : ''}${!m.once ? `<button type="button" data-act="${pinned ? 'pinMsgOff' : 'pinMsg'}" data-id="${id}"><span class="pin-ic" aria-hidden="true">📌</span>${pinned ? 'Retirer l’épingle' : 'Épingler en haut de la discussion'}</button>` : ''}
+    ${canFwd ? `<button type="button" data-act="fwd" data-id="${id}">${FWD_IC}Transférer</button>` : ''}${canFwd && m.media && (m.kind === 'video' || !m.kind || m.kind === 'image' || m.kind === 'photo') ? `<button type="button" data-act="toStatus" data-id="${id}"><span class="pin-ic" aria-hidden="true">⭕</span>Mettre sur mon statut</button>` : ''}${!m.once ? `<button type="button" data-act="${pinned ? 'pinMsgOff' : 'pinMsg'}" data-id="${id}"><span class="pin-ic" aria-hidden="true">📌</span>${pinned ? 'Retirer l’épingle' : 'Épingler en haut de la discussion'}</button>` : ''}
     ${S.msel ? '' : `<button type="button" data-act="mselStart" data-id="${id}"><span class="pin-ic" aria-hidden="true">☑</span>Sélectionner</button>`}
     <button type="button" class="danger" data-act="hideAsk" data-id="${id}">${I.trash}Supprimer pour moi</button>
     ${canAll ? `<button type="button" class="danger" data-act="delAsk" data-id="${id}">${I.trash}Supprimer pour tout le monde${modo ? ' (administrateur)' : ''}</button>` : ''}</div>`, 'Message');
@@ -1675,7 +1695,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.68</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.69</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1766,7 +1786,11 @@ const ACT = {
     sheet(`${head('Réactions')}<div class="sheet-scroll">${m.reacts.map(r => { const u = r.u === S.me.id ? S.me : uOf(r.u); return `<div class="row">${avOn(u)}<span class="row-name">${esc(r.u === S.me.id ? 'Vous' : u.name)}</span><span class="row-end react-e">${r.e}</span>${r.u === S.me.id ? `<span class="row-prev"><button class="linkless" type="button" data-act="react" data-id="${m.id}" data-e="${r.e}">Touchez pour retirer</button></span>` : ''}</div>`; }).join('')}</div>`, 'Réactions');
   },
   fwd(d) { fwdSheet(+d.id); },
-  async fwdGo() { const f = S.fwd; if (!f || !f.sel.size) return; const g = $('#fwdGo'); if (g) { g.disabled = true; g.textContent = 'Envoi…'; } try { for (const m of (f.ms || [f.m])) await fwdSend(m, [...f.sel]); closeLayer(); toast(f.sel.size > 1 ? `Message transféré à ${f.sel.size} discussions` : 'Message transféré'); } catch (e) { toast(e.message); if (g) { g.disabled = false; g.textContent = 'Transférer'; } } },
+  fwdGo() {
+    const f = S.fwd; if (!f || !f.sel.size) return; const to = [...f.sel], ms = f.ms || [f.m]; S.fwd = null; closeLayer();
+    if (to.length === 1) { const id = to[0]; openChat(id).then(() => fwdRun(ms, to)); }
+    else { toast(`Envoi à ${to.length} discussions…`); fwdRun(ms, to).then(n => toast(n ? `Transféré à ${to.length} discussions` : 'Le transfert a échoué. Réessayez.')); }
+  },
   async pinMsg(d) { closeLayer(); try { await api(`/api/chats/${S.chatId}/pinmsg`, {msgId: +d.id}); } catch (e) { toast(e.message); } },
   async pinMsgOff() { closeLayer(); try { await api(`/api/chats/${S.chatId}/pinmsg`, {msgId: null}); } catch (e) { toast(e.message); } },
   pinJump(d) { const el = document.querySelector(`.msg[data-mid="${d.id}"]`); if (el) { el.scrollIntoView({block: 'center', behavior: 'smooth'}); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); } else toast('Ce message est plus ancien : faites défiler la discussion vers le haut.'); },
@@ -1934,6 +1958,15 @@ const ACT = {
   mselDelAsk() { confirmSheet('Supprimer pour tout le monde ?', 'Les messages seront remplacés par « Ce message a été supprimé » chez tous les membres.', 'Supprimer', 'mselDelYes', ''); },
   async mselDelYes() { const ids = [...(S.msel || [])]; closeLayer(); ACT.mselOff(); try { for (const id of ids) await api(`/api/messages/${id}/delete`, {}); } catch (e) { toast(e.message); } },
   zoomMenu(d) { msgMenu(+d.id); },
+  async toStatus(d) {
+    const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +d.id); if (!m) return;
+    try {
+      const bytes = await msgBytes(m), vid = m.kind === 'video', type = vid ? (m.amime || 'video/mp4') : 'image/jpeg', blob = new Blob([bytes], {type});
+      closeLayer(); if (S.sc && S.sc.url) URL.revokeObjectURL(S.sc.url);
+      S.sc = {aud: 'public', bg: 362, text: '', font: 0, kind: vid ? 'video' : 'photo', blob, url: URL.createObjectURL(blob), mime: type, dur: m.dur || 0, music: null, tab: null, grp: false};
+      stComposer();
+    } catch (e) { toast(e.message || 'Impossible de préparer ce fichier.'); }
+  },
   zoomVid(d) { const u = E2E.vids.get(+d.id); if (!u) return toast('Vidéo en cours de chargement…'); zoomOpen('video', u, +d.id); },
   reply(d) { S.replyTo = +d.id; closeLayer(); renderReplyBar(); const i = $('#msgIn'); if (i) i.focus(); },
   replyCancel() { S.replyTo = null; renderReplyBar(); },
