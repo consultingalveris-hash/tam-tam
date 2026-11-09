@@ -221,7 +221,10 @@ function statusVisible(s, viewer) {
 }
 
 /* ---------- entretien et sauvegardes ---------- */
+const attempts = new Map();
 function sweep() {
+  // compteurs anti-abus : on oublie les essais de plus d'une heure (sinon la mémoire grossit sans fin)
+  { const t = now(); for (const [k, a] of attempts) { const b = a.filter(x => t - x < 3600_000); if (b.length) attempts.set(k, b); else attempts.delete(k); } }
   for (const c of qa(`SELECT id FROM chats WHERE expires IS NOT NULL AND expires<?`, now())) { run(`DELETE FROM calls WHERE chat_id=?`, c.id); run(`DELETE FROM chats WHERE id=?`, c.id); }
   run(`DELETE FROM sessions WHERE expires<?`, now()); run(`DELETE FROM tr_cache WHERE at<?`, now() - 180 * DAY); run(`DELETE FROM resets WHERE expires<?`, now());
   for (const s of qa(`SELECT id, media, music FROM statuses WHERE expires<?`, now())) { if (s.media) dropMedia(s.media); if (s.music) dropMedia(s.music); run(`DELETE FROM statuses WHERE id=?`, s.id); }
@@ -278,7 +281,6 @@ function currentUser(req) {
   if (now() - u.s_seen > 3600_000) run(`UPDATE sessions SET seen=?, expires=? WHERE token=?`, now(), now() + SESSION_DAYS * DAY, h);
   return u;
 }
-const attempts = new Map();
 function blockedNow(key, max = 10, win = 15 * 60_000) { const t = now(); return (attempts.get(key) || []).filter(x => t - x < win).length >= max; }
 function tooMany(key, max = 10, win = 15 * 60_000) {
   const t = now(), a = (attempts.get(key) || []).filter(x => t - x < win); a.push(t); attempts.set(key, a); return a.length > max;
@@ -1412,7 +1414,8 @@ R('POST', /^\/api\/admin\/report-done$/, async ({ me, body }) => { adminOnly(me)
 
 /* flux temps réel */
 // Empreinte de la version de l'application : quand elle change (mise à jour), les écrans ouverts se rechargent.
-const APP_VER = sha(['app.js', 'tabs.js', 'call.js', 'gcall.js', 'kit.js', 'device.js', 'secure.js', 'style.css', 'app.html'].map(f => { try { return fs.readFileSync(path.join(PUB, f), 'utf8'); } catch { return ''; } }).join('|')).slice(0, 12);
+// Tous les fichiers de l'application comptent (avant : camera.js, memories.js et emoji.js étaient oubliés, leurs mises à jour n'arrivaient qu'au rechargement manuel).
+const APP_VER = sha(fs.readdirSync(PUB).filter(f => /\.(js|css|html)$/.test(f) && f !== 'jsqr.js' && f !== 'mb.js').sort().map(f => { try { return fs.readFileSync(path.join(PUB, f), 'utf8'); } catch { return ''; } }).join('|')).slice(0, 12);
 R('GET', /^\/api\/stream$/, async ({ me, req, res }) => {
   res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
   res.write(`retry: 3000\ndata: ${JSON.stringify({ t: 'hello', v: APP_VER })}\n\n`);

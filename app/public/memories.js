@@ -13,9 +13,9 @@ const Mem = {
   },
   codeSheet(mode, msg) {
     this.cmode = mode; const t = {ask: 'Souvenirs privés', new: 'Créez votre code', again: 'Confirmez votre code', forgot: 'Nouveau code'}[mode];
-    const sub = {ask: 'Tapez votre code à 4 chiffres pour ouvrir vos souvenirs privés.', new: 'Choisissez un code à 4 chiffres. Il protège vos souvenirs privés et ceux que vos amis vous envoient en privé.', again: 'Tapez le même code une seconde fois.', forgot: 'Tapez le mot de passe de votre compte Tam-Tam, puis un nouveau code à 4 chiffres.'}[mode];
+    const sub = {ask: 'Tapez votre code à 4 chiffres pour ouvrir vos souvenirs privés.', new: 'Choisissez un code à 4 chiffres. Il protège vos souvenirs privés et ceux que vos amis vous envoient en privé.', again: 'Tapez le même code une seconde fois.', forgot: 'Pour votre sécurité, confirmez d’abord que c’est bien vous avec le mot de passe de votre compte, puis choisissez votre nouveau code.'}[mode];
     sheet(`${head(t)}<form data-form="memCode"><div class="sheet-body mc-body"><div class="mc-logo">${BRAND()}<span>${I.lock}Privé</span></div><p class="hint" style="text-align:center">${sub}</p>
-      ${mode === 'forgot' ? '<div class="field"><label for="mcPass">Mot de passe du compte</label><input id="mcPass" type="password" autocomplete="current-password" required></div>' : ''}
+      ${mode === 'forgot' ? '<div class="field"><label for="mcPass">1. Mot de passe de votre compte</label><input id="mcPass" type="password" autocomplete="current-password" placeholder="Celui que vous utilisez pour vous connecter" required></div><label class="mc-lab" for="mcIn">2. Nouveau code à 4 chiffres</label>' : ''}
       <input id="mcIn" class="mc-in" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" aria-label="Code à 4 chiffres" required>
       <div class="mc-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
       <p class="err" id="mcErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p>

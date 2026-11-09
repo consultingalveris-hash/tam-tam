@@ -10,7 +10,7 @@
     "start": "node index.mjs"
   },
   "dependencies": {
-    "nodemailer": "6.9.16",
+    "nodemailer": "10.2.1",
     "qrcode": "1.5.4",
     "web-push": "3.6.7"
   }

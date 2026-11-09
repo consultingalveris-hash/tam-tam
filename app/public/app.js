@@ -223,14 +223,13 @@ function onEvent(ev) {
   if (ev.t === 'hello') { if (resync) { loadChats().then(renderAll); if (S.chatId) loadMessages(S.chatId, true); } resync = true; }
   else if (ev.t === 'msg') onMsg(ev.msg, ev.update);
   else if (ev.t === 'hide') msgHide(ev.chatId, ev.id);
-  else if (ev.t === 'read') { const c = S.chats.get(ev.chatId); if (c) { const m = c.members.find(x => x.id === ev.user); if (m) m.lastRead = Math.max(m.lastRead, ev.upTo); if (S.chatId === ev.chatId) renderMessages(true); if (S.tab === 'chats') renderBody(); } }
+  else if (ev.t === 'read') { if (ev.user === S.me.id) Device.badge(); const c = S.chats.get(ev.chatId); if (c) { const m = c.members.find(x => x.id === ev.user); if (m) m.lastRead = Math.max(m.lastRead, ev.upTo); if (S.chatId === ev.chatId) renderMessages(true); if (S.tab === 'chats') renderBody(); } }
   else if (ev.t === 'typing') { const k = ev.chatId; if (Date.now() - (S.lastFrom.get(k + ':' + ev.user) || 0) < 2500) return; S.typing.set(k, {user: ev.user, until: Date.now() + 4000}); refreshTyping(k); setTimeout(() => refreshTyping(k), 4100); }
   else if (ev.t === 'contacts') { loadContacts().then(() => { renderTabs(); if (S.tab !== 'chats') renderBody(); if (document.getElementById('addSheet') && typeof Add !== 'undefined') Add.loadPeople(); }); loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }); }
   else if (ev.t === 'mem') { if (typeof Mem !== 'undefined') Mem.loadRecv(true); }
   else if (ev.t === 'chats') loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) { renderPin(); renderMessages(true); } });
   else if (ev.t === 'statuses') loadStatuses().then(() => { renderStories(); if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); });
   else if (ev.t === 'presence') { const u = S.users.get(ev.id); if (u) { u.online = ev.online; u.busy = ev.busy; u.lastSeen = ev.lastSeen; } if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }
-  else if (ev.t === 'read' && ev.user === S.me.id) Device.badge();
   else if (ev.t === 'gcall') GCall.onEvent(ev).catch(e => { console.error(e); toast('Problème pendant l’appel de groupe.'); });
   else if (ev.t === 'call') (ev.fromUser && keepUsers([ev.fromUser]), Call.onSignal(ev)).catch(e => { console.error(e); toast('Problème pendant l’appel.'); Call.hangup(); });
   else if (ev.t === 'report' && S.me.admin) toast('Nouveau signalement reçu (Réglages, Administration)');
@@ -1514,7 +1513,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.62</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.63</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1756,7 +1755,7 @@ const ACT = {
   stGrpOk() { keepSt(); S.sc.grp = false; stComposer(); }, stGrpBg() { ACT.stGrpOk(); },
   stNoPhoto() { keepSt(); if (S.sc.url) URL.revokeObjectURL(S.sc.url); Object.assign(S.sc, {kind: 'text', blob: null, url: null}); stComposer(); },
   stPublish() { stPublish(); },
-  closeEdit() { keepSt(); S.sc = S.sc; closeLayer(); if (isDesk()) pmOpen('settings'); else { S.tab = 'settings'; renderAll(); } setTimeout(() => { const el = document.querySelector('input[name="close"]'); if (el) el.scrollIntoView({block: 'center'}); }, 50); toast('Cochez les personnes de votre groupe privé, puis revenez publier votre statut.'); },
+  closeEdit() { keepSt(); closeLayer(); if (isDesk()) pmOpen('settings'); else { S.tab = 'settings'; renderAll(); } setTimeout(() => { const el = document.querySelector('input[name="close"]'); if (el) el.scrollIntoView({block: 'center'}); }, 50); toast('Cochez les personnes de votre groupe privé, puis revenez publier votre statut.'); },
   async stQuoteOpen(d) {
     await loadStatuses().catch(() => {}); const uid = +d.u, id = +d.id;
     const g = uid === S.me.id ? {items: S.statuses.mine.items} : S.statuses.others.find(x => x.user.id === uid), i = g ? g.items.findIndex(x => x.id === id) : -1;
