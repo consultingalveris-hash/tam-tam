@@ -1027,3 +1027,26 @@ body.in-cam{overflow:hidden}
 .mem-sdoc b{font-size:11px;padding:4px 6px;border-radius:6px;background:var(--accent);color:#fff}.mem-sdoc small{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
 /* traduction : le bouton de langue ne chevauche plus les émoticônes */
 .inwrap .tr-tog{width:auto!important;padding:0 8px;flex:none}
+
+/* statut : appeler, répondre, flamme */
+.sv-call{background:rgb(0 0 0/.28)!important;color:rgb(255 255 255/.85)!important;width:38px;height:38px;border-radius:50%;margin-left:2px}.sv-call svg{width:19px;height:19px}
+.sv-reply{display:flex;align-items:center;gap:8px;padding:8px 12px calc(12px + env(safe-area-inset-bottom,0px));width:min(560px,100%);align-self:center}
+.svr-in{flex:1;min-width:0;display:flex;align-items:center;gap:2px;border-radius:24px;background:rgb(255 255 255/.14);border:1px solid rgb(255 255 255/.22);padding:0 4px}
+.svr-in input{flex:1;min-width:0;height:44px;border:0;background:none;color:#fff;font:inherit;font-size:16px;padding:0 10px;outline:none}
+.svr-in input::placeholder{color:rgb(255 255 255/.7)}
+.svr-in .ib{color:#fff;width:38px;height:38px}
+.sv-reply .svr-x,.sv-reply .svr-send{display:none}
+.sv-reply.on .svr-x{display:grid}.sv-reply.on.typed .svr-mic{display:none}.sv-reply.on.typed .svr-send{display:grid}
+.sv-reply.rec .svr-mic{display:grid;color:#ff5a5a}.sv-reply.rec .emo-btn{display:none}
+.svr-fire{flex:none;width:46px;height:46px;border-radius:50%;border:0;background:rgb(255 255 255/.14);font-size:24px;cursor:pointer;filter:grayscale(.6);transition:transform .2s,filter .2s}
+.svr-fire:hover,.svr-fire.on{filter:none}.svr-fire.pop{animation:firepop .7s ease}
+@keyframes firepop{0%{transform:scale(1)}35%{transform:scale(1.6) rotate(-8deg)}70%{transform:scale(.9)}100%{transform:scale(1)}}
+.emo-panel.emo-float{z-index:80}
+/* messages liés à un statut */
+.st-q{border-left-color:#f59e0b}
+.flame-msg{display:flex;align-items:center;gap:8px;font-size:15px}.fl-ic{font-size:26px}
+/* position : envoi en cours */
+.loc-busy{display:flex;align-items:center;gap:6px;padding:8px 16px;font-size:14px;color:var(--fg-2);background:var(--surface);border-top:1px solid var(--line)}
+.ldots{display:inline-flex;gap:3px;margin-left:2px}.ldots i{width:5px;height:5px;border-radius:50%;background:var(--accent);animation:ldot 1.2s infinite ease-in-out}
+.ldots i:nth-child(2){animation-delay:.2s}.ldots i:nth-child(3){animation-delay:.4s}
+@keyframes ldot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}

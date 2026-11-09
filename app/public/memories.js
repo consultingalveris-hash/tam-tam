@@ -225,7 +225,7 @@ const Mem = {
   shareSheet(id) {
     const it = this.find(id); if (!it) return; const cs = (S.contacts.contacts || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'fr'));
     this.shareId = id;
-    sheet(`${head('Envoyer à mon Tam-Tam')}<form data-form="memShare"><div class="sheet-body">
+    sheet(`${head('Envoyer')}<form data-form="memShare"><div class="sheet-body">
       <div class="mem-opts"><label class="pick chk"><input type="checkbox" id="shLock"${it.aud === 'private' ? ' checked' : ''}><span><b>${I.lock} Privé</b> · chaque ami l’ouvre avec son propre code à 4 chiffres</span></label><label class="pick chk"><input type="checkbox" id="shOnce"><span><b>① Vue unique</b> · une seule ouverture</span></label></div>
       <div class="grp-box"><div class="picks">${cs.map(u => `<label class="pick"><input type="checkbox" name="shTo" value="${u.id}">${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('') || '<p class="hint">Ajoutez d’abord des amis.</p>'}</div></div>
       <p class="err" id="shErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="submit" id="shBtn">Envoyer</button></div></div></form>`, 'Envoyer');
@@ -243,7 +243,7 @@ const Mem = {
     const it = this.find(id); if (!it) return; const mine = this.mine(it);
     sheet(`${head(mine ? 'Souvenir' : `Souvenir de ${esc(first(uOf(it.from).name))}`)}<div class="menu">
       <button type="button" data-act="memView" data-id="${id}">${I.eye}Ouvrir</button>
-      ${mine && !it.once ? `<button type="button" data-act="memShare" data-id="${id}">${I.users}Envoyer à mon Tam-Tam</button>` : ''}
+      ${mine && !it.once ? `<button type="button" data-act="memShare" data-id="${id}">${I.users}Envoyer</button>` : ''}
       <button type="button" data-act="memSelStart" data-id="${id}">${I.check}Sélectionner plusieurs</button>
       <button type="button" class="danger" data-act="memDelAsk" data-id="${id}">${I.trash}${mine ? 'Supprimer' : 'Retirer de mes souvenirs'}</button></div>`, 'Souvenir');
   },
@@ -269,7 +269,7 @@ const Mem = {
     layer.innerHTML = `<div class="mem-view${prot ? ' nocopy' : ''}" role="dialog" aria-modal="true" aria-label="Souvenir"><div class="mv-top"><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button>
       <div class="grow"><b>${new Date(it.takenAt).toLocaleDateString('fr-FR', {day: 'numeric', month: 'long', year: 'numeric'})}</b><small>${recv ? `Envoyé par ${esc(uOf(it.from).name)}` : `${ic}${l}`}${it.lock ? ' · privé' : ''}${it.once ? ' · vue unique' : ''}</small></div></div>
       <div class="mv-stage"><div class="lk-spin"></div></div>${it.cap ? `<p class="mv-cap">${esc(it.cap)}</p>` : ''}
-      ${mine ? `<div class="mv-foot"><button class="btn sm" type="button" data-act="memShare" data-id="${it.id}">${I.users}Envoyer à mon Tam-Tam</button>${it.aud === 'public' ? `<button class="btn sm ghost" type="button" data-act="memRepost" data-id="${it.id}">Reposter en statut</button>` : ''}<button class="btn sm ghost danger" type="button" data-act="memDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}${prot && !mine ? watermark() : ''}</div>`;
+      ${mine ? `<div class="mv-foot"><button class="btn sm" type="button" data-act="memShare" data-id="${it.id}">${I.users}Envoyer</button>${it.aud === 'public' ? `<button class="btn sm ghost" type="button" data-act="memRepost" data-id="${it.id}">Reposter en statut</button>` : ''}<button class="btn sm ghost danger" type="button" data-act="memDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}${prot && !mine ? watermark() : ''}</div>`;
     try {
       const b = await this.full(it), u = URL.createObjectURL(b), st = layer.querySelector('.mv-stage'); if (!st) return URL.revokeObjectURL(u);
       if (it.kind === 'doc') { st.innerHTML = `<div class="mv-docbox"><span class="mem-doc big"><b>${esc(((it.fname || '').split('.').pop() || 'DOC').slice(0, 4).toUpperCase())}</b><small>${esc(it.fname || 'Document')}</small></span><button class="btn" type="button" id="mvDocOpen">Ouvrir le document</button></div>`; $('#mvDocOpen').onclick = () => { const a = document.createElement('a'); a.href = u; a.download = it.fname || 'document'; if (/pdf|image|text/.test(b.type)) a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove(); }; return; }

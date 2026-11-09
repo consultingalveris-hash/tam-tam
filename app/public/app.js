@@ -243,7 +243,7 @@ async function reveal(m) {
   const r = await E2E.open(m.enc, S.me.id);
   if (r.err === 'absent') { m.text = '🔒 Message chiffré avant votre arrivée, ou pour une ancienne clé'; m.locked = true; }
   else if (r.err) { m.text = '🔒 Message illisible sur cet appareil'; m.locked = true; }
-  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; if (r.payload.loc) m.loc = r.payload.loc; if (r.payload.name) { m.fname = r.payload.name; m.fsize = r.payload.size || 0; m.fmime = r.payload.mime || 'application/octet-stream'; } }
+  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; if (r.payload.loc) m.loc = r.payload.loc; if (r.payload.sr) m.sr = r.payload.sr; if (r.payload.fl) m.fl = true; if (r.payload.name) { m.fname = r.payload.name; m.fsize = r.payload.size || 0; m.fmime = r.payload.mime || 'application/octet-stream'; } }
   return m;
 }
 async function loadChats() { const r = await api('/api/chats'); const map = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); await reveal(c.last); if (c.pinMsg) await reveal(c.pinMsg); map.set(c.id, c); } S.chats = map; }
@@ -317,7 +317,7 @@ function renderModal(first) {
 const chatTitle = c => c.type === 'group' ? c.name : uOf(c.peer).name;
 function snippet(m) {
   if (!m) return 'Aucun message';
-  if (m.deleted) return 'Message supprimé'; if (m.kind === 'sys') return m.text; if (m.once) return m.kind === 'audio' ? '① Vocal à vue unique' : m.kind === 'video' ? '① Vidéo à vue unique' : m.media ? '① Photo à vue unique' : '① Message à vue unique'; if (m.kind === 'audio') return '🎤 Message vocal'; if (m.kind === 'loc') return '📍 Position'; if (m.kind === 'doc') return '📄 ' + (m.fname || 'Document'); if (m.kind === 'video') return '🎥 Vidéo' + (m.text ? ' · ' + m.text : ''); if (m.locked) return m.text;
+  if (m.deleted) return 'Message supprimé'; if (m.kind === 'sys') return m.text; if (m.once) return m.kind === 'audio' ? '① Vocal à vue unique' : m.kind === 'video' ? '① Vidéo à vue unique' : m.media ? '① Photo à vue unique' : '① Message à vue unique'; if (m.kind === 'audio') return '🎤 Message vocal'; if (m.fl) return '🔥 Flamme sur un statut'; if (m.kind === 'loc') return '📍 Position'; if (m.kind === 'doc') return '📄 ' + (m.fname || 'Document'); if (m.kind === 'video') return '🎥 Vidéo' + (m.text ? ' · ' + m.text : ''); if (m.locked) return m.text;
   return (m.media ? '📷 Photo' + (m.text ? ' · ' : '') : '') + (m.text || '');
 }
 function readState(c, m) {
@@ -560,10 +560,11 @@ function renderMessages(keep) {
     if (m.deleted) body = `<span class="txt gone">${m.delBy ? (m.delBy === S.me.id ? 'Vous avez supprimé ce message (administrateur)' : 'Supprimé par un administrateur') : out ? 'Vous avez supprimé ce message' : 'Ce message a été supprimé'}</span>`;
     else if (m.once) body = onceBubble(m, out);
     else if (m.kind === 'video') body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + `<div class="vidb"><video class="photo vid" data-vid="${m.id}" playsinline controls preload="metadata" controlslist="nodownload"${E2E.vids.has(m.id) ? ` src="${E2E.vids.get(m.id)}"` : ''}></video>${m.dur ? `<small class="vid-d">${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>` + (m.text ? Tr.txt(m) : '');
+    else if (m.fl) body = `<span class="flame-msg"><span class="fl-ic">🔥</span><b>${out ? 'Vous avez envoyé une flamme' : `${esc(first(u.name))} t’a envoyé une flamme`}</b></span>` + stQuote(m, out, c);
     else if (m.kind === 'loc') body = locHtml(m);
     else if (m.kind === 'doc') body = docHtml(m) + (m.text ? Tr.txt(m) : '');
-    else if (m.kind === 'audio') body = `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
-    else body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? Tr.txt(m) : '');
+    else if (m.kind === 'audio') body = stQuote(m, out, c) + `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
+    else body = stQuote(m, out, c) + (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? Tr.txt(m) : '');
     h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble">
       ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${m.fwd ? `<span class="fwd">${FWD_IC}Transféré</span>` : ''}${body}<span class="meta">${hm(m.at)}${out && !m.deleted ? tick(readState(c, m)) : ''}</span>
       ${m.deleted ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message" title="Options : réagir, répondre, transférer, épingler…">${I.chev}</button>`}</div>${reactsHtml(m)}</div>`;
@@ -741,7 +742,7 @@ if (window.TamTamAndroid) {
 }
 document.addEventListener('keyup', e => { if (e.key === 'PrintScreen' && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
 document.addEventListener('keydown', e => { if (e.metaKey && e.shiftKey && ['3', '4', '5', 's', 'S'].includes(e.key) && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
-function closeLayer() { if (S.onceMsg) return onceDone(); clearTimeout(svT); layer.innerHTML = ''; S.sv = null; if (S.pend) { URL.revokeObjectURL(S.pend.url); S.pend = null; } }
+function closeLayer() { if (S.svRec) svRecStop(false); if (S.onceMsg) return onceDone(); clearTimeout(svT); layer.innerHTML = ''; S.sv = null; if (S.pend) { URL.revokeObjectURL(S.pend.url); S.pend = null; } }
 function confirmSheet(title, text, yes, act, id) {
   sheet(`${head(title)}<div class="sheet-body"><p>${text}</p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="button" data-act="${act}" data-id="${id || ''}">${yes}</button></div></div>`, title);
 }
@@ -921,6 +922,11 @@ async function joinPreview(code) {
       <p class="hint">Les membres du groupe verront votre pseudo. Vous pourrez quitter le groupe quand vous voulez.</p><div class="actions"><button class="btn ghost" type="button" data-act="close">Plus tard</button><button class="btn" type="button" data-act="joinGo">Rejoindre le groupe</button></div></div>`, 'Rejoindre');
   } catch (e) { toast(e.message); }
 }
+function stQuote(m, out, c) {
+  const r = m.sr; if (!r) return '';
+  const who = out ? `Statut de ${esc(first(chatTitle(c)))}` : 'Votre statut';
+  return `<span class="quote st-q"><b>↩ ${who}</b><span>${r.k === 'video' ? '🎥 Vidéo' : r.k === 'image' ? '📷 Photo' : ''}${r.t ? (r.k === 'text' ? '' : ' · ') + esc(r.t) : ''}</span></span>`;
+}
 function locHtml(m) {
   const l = m.loc || {}; if (l.la == null) return '<span class="txt gone">📍 Position illisible</span>';
   const q = `${(+l.la).toFixed(6)},${(+l.lo).toFixed(6)}`;
@@ -959,14 +965,20 @@ function moreEmoji(id) {
   const list = (EMO[1][2].slice(0, 40)).concat(EMO[3][2].slice(0, 16), EMO[2][2].slice(0, 24));
   sheet(`${head('Réagir')}<div class="sheet-body"><div class="emo-grid react-grid">${list.map(e => `<button type="button" data-act="react" data-id="${id}" data-e="${e}">${e}</button>`).join('')}</div></div>`, 'Réagir');
 }
+function locBusy(txt) {
+  let el = $('#locBusy'); if (!txt) { if (el) el.remove(); return; }
+  const host = $('#compose'); if (!host) return;
+  if (!el) { el = document.createElement('div'); el.id = 'locBusy'; el.className = 'loc-busy'; host.parentNode.insertBefore(el, host); }
+  el.innerHTML = `📍 ${txt}<span class="ldots" aria-hidden="true"><i></i><i></i><i></i></span>`;
+}
 async function sendLoc() {
   if (!navigator.geolocation) return toast('Cet appareil ne permet pas de partager la position.');
-  closeLayer(); toast('Recherche de votre position…');
+  closeLayer(); locBusy('Recherche de votre position');
   navigator.geolocation.getCurrentPosition(p => {
-    S.locNow = {la: +p.coords.latitude.toFixed(6), lo: +p.coords.longitude.toFixed(6), acc: Math.round(p.coords.accuracy || 0)};
+    locBusy(null); S.locNow = {la: +p.coords.latitude.toFixed(6), lo: +p.coords.longitude.toFixed(6), acc: Math.round(p.coords.accuracy || 0)};
     const c = S.chats.get(S.chatId); if (!c) return;
     confirmSheet('Envoyer votre position actuelle ?', `${esc(chatTitle(c))} verra l’endroit où vous êtes en ce moment${S.locNow.acc ? ` (précision : environ ${S.locNow.acc} m)` : ''}. La position est chiffrée de bout en bout et n’est pas suivie après l’envoi.`, 'Envoyer', 'locGo', c.id);
-  }, err => toast(err.code === 1 ? 'Tam-Tam n’a pas accès à votre position. Autorisez la localisation dans les réglages de votre téléphone ou de votre navigateur.' : 'Position introuvable pour l’instant. Vérifiez que la localisation (GPS) est activée, puis réessayez.'),
+  }, err => { locBusy(null); toast(err.code === 1 ? 'Tam-Tam n’a pas accès à votre position. Autorisez la localisation dans les réglages de votre téléphone ou de votre navigateur.' : 'Position introuvable pour l’instant. Vérifiez que la localisation (GPS) est activée, puis réessayez.'); },
   {enableHighAccuracy: true, timeout: 20000, maximumAge: 30000});
 }
 function msgHide(chatId, id) { const l = S.msgs.get(chatId); if (l) { const i = l.findIndex(x => x.id === id); if (i >= 0) l.splice(i, 1); } if (S.chatId === chatId) renderMessages(true); loadChats().then(() => { if (S.tab === 'chats') renderBody(); }).catch(() => {}); }
@@ -1056,6 +1068,25 @@ let svT;
 const SV_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
 const SV_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>';
 // Pause / reprise de la lecture d'un statut : le temps restant, la barre, la vidéo et la musique s'arrêtent ensemble.
+async function directWith(uid) {
+  let c = [...S.chats.values()].find(x => x.type === 'direct' && x.peer === uid); if (c) return c;
+  const r = await api('/api/chats/direct', {userId: uid}); keepUsers(Object.values(r.chat.users)); S.chats.set(r.chat.id, r.chat); return r.chat;
+}
+function svCur() { const v = S.sv; if (!v) return null; const g = S.statuses.others.find(x => x.user.id === v.uid); return g ? {g, it: g.items[v.i]} : null; }
+async function svSend(extra, bytes, kind) {
+  const cur = svCur(); if (!cur) return; const {g, it} = cur, c = await directWith(g.user.id);
+  const payload = Object.assign({sr: {k: it.media ? (it.kind === 'video' ? 'video' : 'image') : 'text', t: (it.text || '').slice(0, 80), id: it.id}}, extra);
+  const sealed = await E2E.seal(payload, recipients(c), bytes);
+  let media = null; if (sealed.blob) media = (await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'})).id;
+  const r = await api(`/api/chats/${c.id}/messages`, {enc: sealed.env, media, kind, stReply: !extra.fl, flame: !!extra.fl}); onMsg(r.msg);
+}
+async function svRecStop(send) {
+  const c = S.svRec; S.svRec = null; if (!c) return;
+  await new Promise(res => { c.mr.onstop = res; try { c.mr.stop(); } catch { res(); } }); c.stream.getTracks().forEach(t => t.stop());
+  const rf = layer.querySelector('.sv-reply'); if (rf) rf.classList.remove('rec');
+  const dur = Math.round((Date.now() - c.t0) / 1000); if (!send || dur < 1 || !c.chunks.length) return;
+  try { const blob = new Blob(c.chunks, {type: c.mime}); await svSend({t: '', mime: c.mime.split(';')[0], dur}, await blob.arrayBuffer(), 'audio'); toast('Message vocal envoyé'); } catch (e) { toast(e.message); }
+}
 function svPause(on) {
   const v = S.sv; if (!v) return; on = on == null ? !v.paused : on; if (on === v.paused) return;
   const box = layer.querySelector('.sv'), bar = layer.querySelector('.sv-bars i.run b'), med = [...layer.querySelectorAll('video[data-stvid], audio[data-stmus]')], bt = layer.querySelector('.sv-pp');
@@ -1076,11 +1107,18 @@ function renderSV() {
   if (!mine && !it.seen) { it.seen = true; api(`/api/statuses/${it.id}/view`, {}).catch(() => {}); }
   const vid = it.kind === 'video', dur = vid ? (Math.min(62, Math.max(3, it.dur || 15)) + 2) * 1000 : it.music ? 15000 : 6000; stFontsLoad();
   layer.innerHTML = `<div class="sv${it.media ? ' media' : ''}" style="${stBgStyle(it.bg || 170)}${stBgc(it.bg) ? `;--bgd:${stBgc(it.bg)}` : ''}" role="dialog" aria-modal="true" aria-label="Statut"><div class="sv-bars">${g.items.map((_, k) => `<i class="${k < v.i ? 'done' : k === v.i ? 'run' : ''}"><b${k === v.i ? ` style="animation-duration:${dur / 1000}s"` : ''}></b></i>`).join('')}</div>
-    <div class="sv-head">${avatar(g.user, 'sm')}<div class="grow"><b>${esc(mine ? 'Mon statut' : g.user.name)}</b><small>${dayLabel(it.at)}, ${hm(it.at)} · ${it.aud === 'private' ? 'Privé' : 'Public'}</small></div><button class="ib sv-pp" type="button" data-act="svPause" aria-label="Mettre en pause" title="Pause (barre d’espace)">${SV_PAUSE}</button><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div><span class="sv-paused" aria-live="polite">En pause</span>
+    <div class="sv-head">${avatar(g.user, 'sm')}<div class="grow"><b>${esc(mine ? 'Mon statut' : g.user.name)}</b><small>${dayLabel(it.at)}, ${hm(it.at)} · ${it.aud === 'private' ? 'Privé' : 'Public'}</small></div>${mine ? '' : `<button class="ib sv-call" type="button" data-act="svCall" data-v="1" aria-label="Appel vidéo" title="Appel vidéo">${I.video}</button><button class="ib sv-call" type="button" data-act="svCall" data-v="" aria-label="Appel vocal" title="Appel vocal">${I.phone}</button>`}<button class="ib sv-pp" type="button" data-act="svPause" aria-label="Mettre en pause" title="Pause (barre d’espace)">${SV_PAUSE}</button><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div><span class="sv-paused" aria-live="polite">En pause</span>
     <div class="sv-stage"><div class="sv-box${it.aud === 'private' ? ' nocopy' : ''}">${it.media ? (vid ? `<video data-stvid="${it.id}" class="${it.mir ? 'mirror' : ''}" playsinline autoplay controlslist="nodownload" disablepictureinpicture></video>` : it.enc ? `<img data-stenc="${it.id}" alt="" draggable="false">` : `<img src="${esc(it.media)}" alt="" draggable="false">`) : `<div class="sv-text" style="font-family:${stFont(it.font)}">${esc(it.text)}</div>`}${it.media && it.text ? `<div class="sv-cap" style="font-family:${stFont(it.font)}">${esc(it.text)}</div>` : ''}${it.music ? `<div class="sv-mus">🎵 ${esc(it.mname || 'Musique')}</div><audio data-stmus="${it.id}" loop></audio>` : ''}
       ${it.aud === 'private' && !mine ? watermark() : ''}<button class="sv-nav prev" type="button" data-act="svPrev" aria-label="Précédent"></button><button class="sv-nav next" type="button" data-act="svNext" aria-label="Suivant"></button></div></div>
-    ${mine ? `<div class="sv-foot"><button class="btn sm ghost" type="button" data-act="svViews">${I.eye}${(it.views || []).length} vue${(it.views || []).length > 1 ? 's' : ''}</button><button class="btn sm ghost" type="button" data-act="stNew">${I.plus}Ajouter</button><button class="btn sm ghost" type="button" data-act="stDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : ''}</div>`;
+    ${mine ? `<div class="sv-foot"><button class="btn sm ghost" type="button" data-act="svViews">${I.eye}${(it.views || []).length} vue${(it.views || []).length > 1 ? 's' : ''}</button><button class="btn sm ghost" type="button" data-act="stNew">${I.plus}Ajouter</button><button class="btn sm ghost" type="button" data-act="stDelAsk" data-id="${it.id}">${I.trash}Supprimer</button></div>` : `<form class="sv-reply" data-form="svReply" autocomplete="off"><div class="svr-in">${Emoji.btn('#svrIn', 'ib svr-x')}<input id="svrIn" maxlength="1000" placeholder="Répondre à ${esc(first(g.user.name))}…" aria-label="Répondre au statut"><button class="ib svr-x svr-mic" type="button" data-act="svrMic" aria-label="Message vocal">${I.mic}</button><button class="ib svr-send" type="submit" aria-label="Envoyer">${I.send}</button></div><button class="svr-fire${it.flamed ? ' on' : ''}" type="button" data-act="svFlame" aria-label="Envoyer une flamme" title="Envoyer une flamme">🔥</button></form>`}</div>`;
   clearTimeout(svT); svT = setTimeout(() => svStep(1), dur); Object.assign(v, {t0: Date.now(), left: dur, paused: false});
+  // Répondre : le statut se met en pause pendant qu'on écrit ; émoticônes et micro n'apparaissent qu'à ce moment-là.
+  const ri = layer.querySelector('#svrIn'), rf = layer.querySelector('.sv-reply');
+  if (ri) {
+    ri.addEventListener('focus', () => { rf.classList.add('on'); svPause(true); });
+    ri.addEventListener('input', () => rf.classList.toggle('typed', !!ri.value.trim()));
+    ri.addEventListener('blur', () => setTimeout(() => { if (!layer.contains(ri) || document.activeElement === ri || Emoji.el || ri.value.trim() || S.svRec) return; rf.classList.remove('on'); svPause(false); }, 250));
+  }
   // Doigt posé sur le statut (ou clic maintenu) : pause le temps de lire, reprise au relâchement.
   const stg = layer.querySelector('.sv-stage'); let holdT = 0, held = false;
   stg.addEventListener('pointerdown', () => { held = false; clearTimeout(holdT); holdT = setTimeout(() => { if (!S.sv || S.sv.paused) return; held = true; svPause(true); }, 220); });
@@ -1437,7 +1475,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.54</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.55</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1565,7 +1603,8 @@ const ACT = {
   locSend() { sendLoc(); },
   async locGo(d) {
     closeLayer(); const c = S.chats.get(+d.id), l = S.locNow; if (!c || !l) return;
-    try { const sealed = await E2E.seal({t: '', loc: l}, recipients(c)); const r = await api(`/api/chats/${c.id}/messages`, {enc: sealed.env, kind: 'loc'}); onMsg(r.msg); toast('Position envoyée'); } catch (e) { toast(e.message); }
+    locBusy('Envoi de votre position');
+    try { const sealed = await E2E.seal({t: '', loc: l}, recipients(c)); const r = await api(`/api/chats/${c.id}/messages`, {enc: sealed.env, kind: 'loc'}); locBusy(null); onMsg(r.msg); } catch (e) { locBusy(null); toast(e.message); }
   },
   back() { S.chatId = null; $('.app').dataset.view = 'list'; renderMain(); renderBody(); },
   async write(d) { closeLayer(); try { const r = await api('/api/chats/direct', {userId: +d.id}); keepUsers(Object.values(r.chat.users)); S.chats.set(r.chat.id, r.chat); S.tab = 'chats'; renderAll(); openChat(r.chat.id); } catch (e) { toast(e.message); } },
@@ -1673,9 +1712,25 @@ const ACT = {
   stPublish() { stPublish(); },
   closeEdit() { keepSt(); S.sc = S.sc; closeLayer(); if (isDesk()) pmOpen('settings'); else { S.tab = 'settings'; renderAll(); } setTimeout(() => { const el = document.querySelector('input[name="close"]'); if (el) el.scrollIntoView({block: 'center'}); }, 50); toast('Cochez les personnes de votre groupe privé, puis revenez publier votre statut.'); },
   svNext() { svStep(1); }, svPrev() { svStep(-1); }, svPause() { svPause(); },
+  async svCall(d) { const cur = svCur(); if (!cur) return; try { const c = await directWith(cur.g.user.id); closeLayer(); S.tab = 'chats'; renderAll(); await openChat(c.id); Call.start(!!d.v); } catch (e) { toast(e.message); } },
+  async svFlame(d, el) {
+    const cur = svCur(); if (!cur) return; if (cur.it.flamed) return toast('Vous avez déjà envoyé une flamme pour ce statut.');
+    cur.it.flamed = true; if (el) { el.classList.add('on', 'pop'); setTimeout(() => el.classList.remove('pop'), 700); }
+    try { await api(`/api/statuses/${cur.it.id}/flame`, {}); await svSend({t: '🔥', fl: 1}); toast(`🔥 Flamme envoyée à ${first(cur.g.user.name)}`); } catch (e) { cur.it.flamed = false; toast(e.message); }
+  },
+  async svrMic() {
+    if (S.svRec) return svRecStop(true);
+    if (!navigator.mediaDevices || !window.MediaRecorder) return toast('Ce navigateur ne permet pas d’enregistrer la voix.');
+    let stream; try { stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}}); } catch { return toast('Autorisez le micro pour envoyer un message vocal.'); }
+    const mime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported(t)) || '';
+    const mr = new MediaRecorder(stream, mime ? {mimeType: mime, audioBitsPerSecond: 32000} : undefined), chunks = [];
+    mr.ondataavailable = e => { if (e.data.size) chunks.push(e.data); }; mr.start(500);
+    S.svRec = {mr, stream, chunks, t0: Date.now(), mime: mr.mimeType || mime || 'audio/webm'}; svPause(true);
+    const rf = layer.querySelector('.sv-reply'); if (rf) { rf.classList.add('rec'); const i = rf.querySelector('#svrIn'); i.value = ''; i.placeholder = '● Enregistrement… touchez le micro pour envoyer'; }
+  },
   svViews() {
     const it = S.statuses.mine.items[S.sv.i]; clearTimeout(svT);
-    sheet(`${head('Vu par')}<div class="sheet-scroll">${(it.views || []).length ? it.views.map(v => `<div class="row">${avatar(v.user)}<span class="row-name">${esc(v.user.name)}</span><span class="row-prev"><span>${dayLabel(v.at)}, ${hm(v.at)}</span></span></div>`).join('') : '<p class="empty">Personne pour l’instant.</p>'}</div>`, 'Vu par');
+    sheet(`${head('Vu par')}<div class="sheet-scroll">${(it.views || []).length ? it.views.map(v => `<div class="row">${avatar(v.user)}<span class="row-name">${esc(v.user.name)}</span>${v.flame ? '<span class="row-end" title="A envoyé une flamme">🔥</span>' : ''}<span class="row-prev"><span>${dayLabel(v.at)}, ${hm(v.at)}</span></span></div>`).join('') : '<p class="empty">Personne pour l’instant.</p>'}</div>`, 'Vu par');
   },
   stDelAsk(d) { clearTimeout(svT); confirmSheet('Supprimer ce statut ?', 'Il disparaîtra pour tous vos contacts.', 'Supprimer', 'stDelYes', d.id); },
   async stDelYes(d) { closeLayer(); try { await api(`/api/statuses/${d.id}/delete`, {}); await loadStatuses(); renderStories(); toast('Statut supprimé'); } catch (e) { toast(e.message); } },
@@ -1732,6 +1787,7 @@ const ACT = {
 function keepSt() { const t = ($('#stText') || $('#stCap') || {}).value; if (t != null && S.sc) S.sc.text = t; }
 
 const FORMS = {
+  async svReply() { const i = $('#svrIn'), t = (i && i.value || '').trim(); if (!t) return; i.value = ''; i.blur(); try { await svSend({t}); toast('Réponse envoyée'); } catch (e) { toast(e.message); } },
   async lockPass(f) { const i = $('#lkPass'), b = f.querySelector('button'); if (!i.value) return; b.disabled = true; try { await api('/api/me/unlock', {pass: i.value}); unlock(); } catch (e) { b.disabled = false; i.value = ''; const er = $('#lkErr'); er.textContent = e.message; er.hidden = false; } },
   auth: submitAuth,
   keys: submitKeys,
