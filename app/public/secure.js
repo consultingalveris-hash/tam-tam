@@ -63,9 +63,14 @@ const E2E = {
     this.shared.set(id, key); return key;
   },
   /* chiffre un message pour tous les membres (dont soi-même) ; renvoie l'enveloppe et la clé du message */
-  async seal(payload, recipients, bytes, bytes2) {
+  // Chiffre un fichier tout de suite (avant de savoir à qui il ira) : la clé reste sur l'appareil et sera remise plus tard aux destinataires dans seal().
+  async preSeal(bytes) {
     const raw = crypto.getRandomValues(new Uint8Array(32)), k = await subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
-    let blob = null, blob2 = null; if (bytes) { const e = await this.encBytes(k, bytes); payload.miv = e.iv; blob = new Blob([e.data], {type: 'application/octet-stream'}); }
+    const e = await this.encBytes(k, bytes); return {raw, iv: e.iv, blob: new Blob([e.data], {type: 'application/octet-stream'})};
+  },
+  async seal(payload, recipients, bytes, bytes2, pre) {
+    const raw = pre ? pre.raw : crypto.getRandomValues(new Uint8Array(32)), k = await subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+    let blob = null, blob2 = null; if (pre) payload.miv = pre.iv; else if (bytes) { const e = await this.encBytes(k, bytes); payload.miv = e.iv; blob = new Blob([e.data], {type: 'application/octet-stream'}); }
     if (bytes2) { const e = await this.encBytes(k, bytes2); payload.mmiv = e.iv; blob2 = new Blob([e.data], {type: 'application/octet-stream'}); }
     const iv = crypto.getRandomValues(new Uint8Array(12)), ct = await subtle.encrypt({name: 'AES-GCM', iv}, k, te.encode(JSON.stringify(payload)));
     const keys = {};

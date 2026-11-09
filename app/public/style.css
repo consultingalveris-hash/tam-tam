@@ -1083,3 +1083,7 @@ body.in-cam{overflow:hidden}
 /* statuts : flèches précédent / suivant, attente du chargement */
 .sv-wait{position:absolute;left:50%;top:50%;margin:-17px 0 0 -17px;z-index:3}
 .mc-lab{align-self:center;margin:4px 0 -2px;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--fg-2)}
+/* fond blanc des statuts texte : texte foncé, pastille bordée */
+.st-box{color:var(--stc,#fff)}.st-box textarea{color:var(--stc,#fff)}.st-box textarea::placeholder{color:var(--stph,rgba(255,255,255,.7))}
+.sv-box .sv-text{color:var(--stc,#fff)}
+.st-bgs .sw[data-h="362"]{box-shadow:inset 0 0 0 1px rgb(0 0 0/.25)}

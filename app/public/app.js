@@ -40,7 +40,7 @@ async function api(path, body, opts = {}) {
   try { r = await fetch(path, init); } catch { throw new Error('Pas de connexion internet. Réessayez.'); }
   const data = await r.json().catch(() => ({}));
   if (r.status === 401 && S.me) { S.me = null; boot(); }
-  if (!r.ok) throw new Error(data.error || (r.status === 413 ? 'Fichier trop lourd pour être envoyé (40 Mo au maximum).' : r.status >= 502 ? 'Le serveur met trop de temps à répondre. Vérifiez votre connexion et réessayez.' : 'Erreur. Réessayez.'));
+  if (!r.ok) throw Object.assign(new Error(data.error || (r.status === 413 ? 'Fichier trop lourd pour être envoyé (40 Mo au maximum).' : r.status >= 502 ? 'Le serveur met trop de temps à répondre. Vérifiez votre connexion et réessayez.' : 'Erreur. Réessayez.')), {status: r.status});
   if (data && data.me && S.me && data.me.id === S.me.id && typeof PP !== 'undefined' && PP.data) PP.attach(data.me);
   return data;
 }
@@ -384,23 +384,8 @@ function relBtn(u) {
   if (u.rel === 'sent') return `<button class="btn sm ghost" type="button" data-act="cRemove" data-id="${u.id}">Annuler</button>`;
   return `<button class="btn sm" type="button" data-act="cRequest" data-id="${u.id}">${I.plus}Ajouter</button>`;
 }
-const pseudoRow = u => `<div class="row">${avOn(u)}<button class="row-name linkless" type="button" data-act="prof" data-id="${u.id}" style="border:0;background:none;padding:0;text-align:left;display:flex;flex-direction:column;align-items:flex-start;min-width:0"><b>@${esc(u.handle)}</b><small style="color:var(--fg-2);font-weight:400">${subH(u) ? esc(u.name) : ''}${u.mutual ? ` · ${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun` : ''}</small></button><span class="row-end">${relBtn(u)}</span></div>`;
 const userRow = (u, extra) => `<div class="row">${avOn(u)}<button class="row-name linkless" type="button" data-act="prof" data-id="${u.id}" style="border:0;background:none;padding:0;text-align:left">${esc(u.name)}</button><span class="row-end">${extra || relBtn(u)}</span>
   <span class="row-prev"><span>@${esc(u.handle)}${u.pub && u.pub.ville ? ' · ' + esc(u.pub.ville) : ''}${u.mutual ? ` · ${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun` : ''}</span></span></div>`;
-function contactsBody() {
-  const C = S.contacts;
-  return `<div class="invite-box"><div class="ib-head"><b>Invitez vos proches</b><button class="btn sm ghost" type="button" data-act="qrShow">${I.qr}Mon code QR</button></div><span class="hint">Seules les personnes qui ont un lien d’invitation peuvent s’inscrire. La personne invitée devient directement votre contact.</span>
-      ${S.lastInvite ? `<div class="invite-url">${esc(S.lastInvite.url)}</div><div class="actions" style="justify-content:flex-start"><button class="btn sm" type="button" data-act="invCopy">${I.copy}Copier le lien</button><a class="btn sm ghost" href="https://wa.me/?text=${encodeURIComponent(inviteText())}" target="_blank" rel="noopener">WhatsApp</a>${navigator.share ? '<button class="btn sm ghost" type="button" data-act="invShare">Partager… (SMS, e-mail, autres)</button>' : ''}${'contacts' in navigator && navigator.contacts && navigator.contacts.select ? '<button class="btn sm ghost" type="button" data-act="invContacts">Choisir dans mes contacts</button>' : ''}</div><span class="hint">Valable 14 jours, pour 20 personnes au plus.</span>`
-      : `<div><button class="btn" type="button" data-act="invNew">${I.userplus}Créer un lien d’invitation</button></div>`}</div>
-    <div style="padding:0 16px"><label class="search">${I.search}<span class="sr">Chercher un membre</span><input id="fq" type="search" placeholder="Chercher un membre : nom, @pseudo ou e-mail" autocomplete="off" value="${esc(S.fq || '')}"></label></div>
-    <div id="fres">${S.fres ? (S.fres.length ? S.fres.map(u => userRow(u)).join('') : '<p class="empty">Personne ne correspond.</p>') : ''}</div>
-    ${C.incoming.length ? `<div class="sec">Demandes reçues · ${C.incoming.length}</div>${C.incoming.map(u => userRow(u, `<button class="btn sm ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button><button class="btn sm" type="button" data-act="cAccept" data-id="${u.id}">Accepter</button>`)).join('')}` : ''}
-    <details class="drop" open><summary>${I.userplus}Trouver des amis${C.suggestions.length ? ` · ${C.suggestions.length}` : ''}</summary>
-      ${C.suggestions.length ? C.suggestions.map(u => pseudoRow(u)).join('') : '<p class="empty">Pas de suggestion pour l’instant. Cherchez un membre par son nom ou son @pseudo ci-dessus.</p>'}</details>
-    ${C.outgoing.length ? `<details class="drop"><summary>${I.clock || ''}Demandes envoyées · ${C.outgoing.length}</summary>${C.outgoing.map(u => pseudoRow(u)).join('')}</details>` : ''}
-    <details class="drop"><summary>${I.users}Mes contacts · ${C.contacts.length}</summary>${C.contacts.length ? C.contacts.map(u => pseudoRow(u)).join('') : '<p class="empty">Pas encore de contact. Envoyez un lien d’invitation à vos proches.</p>'}</details>
-    <p class="hint" style="padding:0 16px">Pour retrouver une discussion, tapez un nom ou un mot de la conversation dans la recherche de l’onglet <b>Discussions</b>.</p><div style="height:20px"></div>`;
-}
 let fqT;
 async function searchPeople(q) {
   S.fq = q; clearTimeout(fqT);
@@ -520,7 +505,7 @@ const Rec = {
     try {
       const blob = new Blob(c.chunks, {type: c.mime}), once = !!S.once; S.once = false;
       const sealed = await E2E.seal({t: '', mime: c.mime.split(';')[0], dur}, recipients(chat), await blob.arrayBuffer());
-      const up = await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'});
+      const up = await upMedia(sealed.blob);
       const r = await api(`/api/chats/${chat.id}/messages`, {media: up.id, enc: sealed.env, kind: 'audio', once});
       if (!once) E2E.auds.set(r.msg.id, URL.createObjectURL(blob)); renderComposer(); onMsg(r.msg);
     } catch (e) { toast(e.message); }
@@ -697,19 +682,31 @@ function shrink(file, max = 1600) {
     im.src = url;
   });
 }
-async function upload(blob) { return api('/api/media', blob, {raw: true, type: 'image/jpeg'}); }
-async function photoPreview(file) {
-  let blob; try { blob = await shrink(file); } catch (e) { return toast(e.message); }
-  const url = URL.createObjectURL(blob); S.pend = {blob, url};
-  layer.innerHTML = `<div class="ph-prev" role="dialog" aria-modal="true" aria-label="Envoyer une photo"><div class="bar"><button class="ib" type="button" data-act="phCancel" aria-label="Annuler">${I.close}</button><b>Envoyer à ${esc(chatTitle(S.chats.get(S.chatId)))}</b></div>
-    <div class="stage"><img src="${url}" alt="Aperçu"></div><form class="send-row" data-form="photo"><button class="ib once-tog" type="button" data-act="onceTog" aria-pressed="${!!S.once}" aria-label="Vue unique" title="Vue unique"><span class="one" aria-hidden="true">1</span></button><input id="phCap" maxlength="1000" placeholder="Ajouter une légende…"><button class="send" type="submit" aria-label="Envoyer">${I.send}</button></form></div>`;
-  $('#phCap').focus();
+// Envoi d'un fichier chiffré : d'un coup s'il est petit, sinon par morceaux d'1 Mo.
+// Si le réseau coupe, on attend qu'il revienne et on reprend là où on s'était arrêté (rien n'est renvoyé deux fois).
+async function upMedia(blob, prog) {
+  if (!blob) return null;
+  if (blob.size <= 3_000_000) { const r = await api('/api/media', blob, {raw: true, type: 'application/octet-stream'}); if (prog) prog(1); return r; }
+  const CH = 1_000_000; let {id, have} = await api('/api/media/up', {size: blob.size}), fails = 0;
+  while (have < blob.size) {
+    try {
+      const r = await api(`/api/media/up/${id}/chunk?off=${have}`, blob.slice(have, Math.min(blob.size, have + CH)), {raw: true, type: 'application/octet-stream'});
+      have = r.have; fails = 0; if (prog) prog(have / blob.size);
+    } catch (e) {
+      if ((e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429) || ++fails > 40) throw e;
+      if (!navigator.onLine) await new Promise(r => window.addEventListener('online', r, {once: true}));
+      await new Promise(r => setTimeout(r, Math.min(15000, 800 * 2 ** Math.min(fails, 5))));
+      try { have = (await api(`/api/media/up/${id}`)).have; } catch (e2) { if (e2.status === 404) throw e2; }
+    }
+  }
+  return api(`/api/media/up/${id}/done`, {});
 }
+async function upload(blob) { return api('/api/media', blob, {raw: true, type: 'image/jpeg'}); }
 async function sendPhoto() {
   const p = S.pend; if (!p) return; const cap = $('#phCap').value.trim(), btn = layer.querySelector('.send'); btn.disabled = true;
   try {
     const c = S.chats.get(S.chatId), sealed = await E2E.seal({t: cap}, recipients(c), await p.blob.arrayBuffer());
-    const up = await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'});
+    const up = await upMedia(sealed.blob);
     const once = !!S.once; S.once = false;
     const r = await api(`/api/chats/${c.id}/messages`, {media: up.id, enc: sealed.env, once}); if (once) URL.revokeObjectURL(p.url); else E2E.imgs.set(r.msg.id, p.url); S.pend = null; closeLayer(); renderComposer(); onMsg(r.msg);
   }
@@ -725,11 +722,6 @@ function sheet(html, label, focus) {
 // Filigrane au nom de la personne qui regarde : une capture faite malgré tout montre qui l'a prise.
 // Filigranes retirés à la demande du propriétaire (la protection contre les captures reste active sur Android).
 function watermark() { return ''; }
-function watermarkOld() {
-  const t = `@${S.me.handle} · ${new Date().toLocaleDateString('fr-FR')} ${hm(Date.now())}`.replace(/[<>&"']/g, '');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="260" height="150"><text x="10" y="90" transform="rotate(-24 130 75)" fill="white" fill-opacity="0.22" font-family="sans-serif" font-size="15">${t}</text></svg>`;
-  return `<div class="wmark" aria-hidden="true" style="background-image:url('data:image/svg+xml;utf8,${encodeURIComponent(svg)}')"></div>`;
-}
 function onceDone() {
   const id = S.onceMsg; if (!id) return; S.onceMsg = null; if (S.onceUrl) { URL.revokeObjectURL(S.onceUrl); S.onceUrl = null; }
   layer.innerHTML = '';
@@ -749,7 +741,7 @@ if (window.TamTamAndroid) {
 }
 document.addEventListener('keyup', e => { if (e.key === 'PrintScreen' && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
 document.addEventListener('keydown', e => { if (e.metaKey && e.shiftKey && ['3', '4', '5', 's', 'S'].includes(e.key) && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
-function closeLayer() { if (S.svRec) svRecStop(false); if (S.onceMsg) return onceDone(); clearTimeout(svT); layer.innerHTML = ''; S.sv = null; if (S.pend) { URL.revokeObjectURL(S.pend.url); S.pend = null; } }
+function closeLayer() { if (S.svRec) svRecStop(false); if (S.onceMsg) return onceDone(); clearTimeout(svT); if (S.sv) setTimeout(svCacheClear, 500); layer.innerHTML = ''; S.sv = null; if (S.pend) { URL.revokeObjectURL(S.pend.url); S.pend = null; } }
 function confirmSheet(title, text, yes, act, id) {
   sheet(`${head(title)}<div class="sheet-body"><p>${text}</p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="button" data-act="${act}" data-id="${id || ''}">${yes}</button></div></div>`, title);
 }
@@ -815,11 +807,6 @@ function groupInfo() {
     ${mem.map(m => { const u = m.id === S.me.id ? S.me : uOf(m.id), r = role(m); return `<button class="row" type="button" data-act="grpMember" data-id="${m.id}">${avOn(u)}<span class="row-name">${esc(m.id === S.me.id ? 'Vous' : u.name)}</span>${r ? `<span class="row-end"><span class="role-b${r === 'Créateur' ? ' own' : ''}">${r}</span></span>` : ''}<span class="row-prev"><span>${esc(subH(u) || '@' + u.handle)}</span></span></button>`; }).join('')}
     <div class="sheet-body"><button class="btn ghost danger" type="button" data-act="leaveAsk">${I.back}Quitter le groupe</button></div></div>`, 'Infos du groupe');
 }
-function groupInfoOld() {
-  const c = S.chats.get(S.chatId); if (!c) return;
-  sheet(`${head(esc(c.name))}<div class="sheet-body"><div class="prof">${grpAv(c, 'lg')}<b>${esc(c.name)}</b><span>Groupe · ${c.members.length} membres</span></div></div>
-    <div class="sheet-scroll">${c.members.map(m => { const u = m.id === S.me.id ? S.me : uOf(m.id); return `<button class="row" type="button" data-act="${m.id === S.me.id ? 'close' : 'prof'}" data-id="${m.id}">${avOn(u)}<span class="row-name">${esc(m.id === S.me.id ? 'Vous' : u.name)}</span><span class="row-prev"><span>${m.admin ? 'Créateur du groupe' : esc(subH(u))}</span></span></button>`; }).join('')}</div>`, 'Infos du groupe');
-}
 function reportSheet(userId, chatId) {
   const reasons = ['Arnaque ou spam', 'Harcèlement ou menaces', 'Propos haineux ou racistes', 'Contenu choquant ou sexuel', 'Usurpation d’identité', 'Atteinte à un mineur', 'Autre motif'];
   S.rep = {userId: userId || null, chatId: chatId || null};
@@ -874,7 +861,7 @@ async function sendDoc(f) {
   toast('Envoi du document…');
   try {
     const mime = f.type || 'application/octet-stream', sealed = await E2E.seal({t: '', name: f.name.slice(0, 120), size: f.size, mime}, recipients(c), await f.arrayBuffer());
-    const up = await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'});
+    const up = await upMedia(sealed.blob);
     const r = await api(`/api/chats/${c.id}/messages`, {media: up.id, enc: sealed.env, kind: 'doc'}); onMsg(r.msg); toast('Document envoyé');
   } catch (e) { toast(e.message); }
 }
@@ -954,7 +941,7 @@ async function fwdSend(m, ids) {
   for (const id of ids) {
     const c = S.chats.get(id); if (!c) continue;
     const sealed = await E2E.seal(payload, recipients(c), bytes);
-    let media = null; if (sealed.blob) media = (await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'})).id;
+    let media = null; if (sealed.blob) media = (await upMedia(sealed.blob)).id;
     const r = await api(`/api/chats/${id}/messages`, {enc: sealed.env, media, kind, fwd: true}); onMsg(r.msg);
   }
 }
@@ -1009,10 +996,11 @@ function msgMenu(id) {
 }
 
 /* ---------- statuts : création et lecture ---------- */
-const BGS = [170, 200, 260, 300, 340, 20, 45, 130, 360, 361];
+const BGS = [362, 170, 200, 260, 300, 340, 20, 45, 130, 360, 361];
 // 360 = noir, 361 = gris foncé ; les autres nombres sont des teintes.
-const stBgc = h => +h === 360 ? '#000' : +h === 361 ? '#2b3034' : '';
-const stBgStyle = h => `--h:${h}${stBgc(h) ? `;--bgc:${stBgc(h)}` : ''}`;
+// 362 = blanc (texte foncé), 360 = noir, 361 = gris foncé ; les autres nombres sont des teintes.
+const stBgc = h => +h === 362 ? '#fff' : +h === 360 ? '#000' : +h === 361 ? '#2b3034' : '';
+const stBgStyle = h => `--h:${h}${stBgc(h) ? `;--bgc:${stBgc(h)}` : ''}${+h === 362 ? ';--stc:#14181b;--stph:rgb(20 24 27/.45)' : ''}`;
 // Polices des statuts (chargées à la demande depuis Google Fonts).
 const ST_FONTS = [['Classique', 'inherit', ''], ['Élégante', "'Playfair Display', Georgia, serif", 'Playfair+Display:wght@700'], ['Manuscrite', "Pacifico, 'Brush Script MT', cursive", 'Pacifico'],
   ['Écriture', "Caveat, 'Segoe Print', cursive", 'Caveat:wght@700'], ['Affiche', "'Bebas Neue', Impact, sans-serif", 'Bebas+Neue'], ['Machine', "'Courier Prime', 'Courier New', monospace", 'Courier+Prime:wght@700']];
@@ -1032,9 +1020,9 @@ function stMedia(r) {
   if (r.cap) s.text = r.cap; s.tab = null; stComposer();
 }
 function stComposer() {
-  S.sc = S.sc || {aud: 'public', bg: 170, text: '', font: 0, kind: 'text', blob: null, url: null, music: null, tab: null, grp: false};
+  S.sc = S.sc || {aud: 'public', bg: 362, text: '', font: 0, kind: 'text', blob: null, url: null, music: null, tab: null, grp: false};
   if (!S.sc.kind) S.sc.kind = S.sc.blob ? 'photo' : 'text'; if (S.sc.font == null) S.sc.font = 0;
-  const s = S.sc, closeN = (S.me.close || []).length, media = s.kind !== 'text', capSel = media ? '#stCap' : '#stText'; stFontsLoad();
+  const s = S.sc, closeN = (S.me.close || []).length, media = s.kind !== 'text', capSel = media ? '#stCap' : '#stText'; stFontsLoad(); stPre(s);
   const tool = (act, ic, label, on) => `<button class="st-tool${on ? ' on' : ''}" type="button" data-act="${act}">${ic}<span>${label}</span></button>`;
   layer.innerHTML = `<div class="st-comp" role="dialog" aria-modal="true" aria-label="Nouveau statut">
     <div class="st-head"><button class="ib" type="button" data-act="stCancel" aria-label="Annuler">${I.close}</button>
@@ -1048,12 +1036,27 @@ function stComposer() {
       ${s.music ? `<div class="st-mus">🎵 <span>${esc(s.music.name)}</span><button type="button" data-act="stMusOff" aria-label="Retirer la musique">${I.close}</button></div><audio src="${s.music.url}" id="stMusPrev"></audio>` : ''}
     </div></div>
     ${s.tab === 'font' ? `<div class="st-fonts">${ST_FONTS.map(([n, f], i) => `<button type="button" data-act="stFont" data-i="${i}" aria-pressed="${s.font === i}" style="font-family:${f}">Aa<small>${n}</small></button>`).join('')}</div>` : ''}
-    ${!media ? `<div class="bgs st-bgs">${BGS.map(h => `<button class="sw" type="button" style="--c:${stBgc(h) || `hsl(${h} 62% 47%)`}" data-act="stBg" data-h="${h}" aria-pressed="${s.bg === h}" aria-label="${h === 360 ? 'Fond noir' : h === 361 ? 'Fond gris foncé' : 'Couleur de fond'}"></button>`).join('')}</div>` : ''}
+    ${!media ? `<div class="bgs st-bgs">${BGS.map(h => `<button class="sw" type="button" style="--c:${stBgc(h) || `hsl(${h} 62% 47%)`}" data-act="stBg" data-h="${h}" aria-pressed="${s.bg === h}" aria-label="${h === 362 ? 'Fond blanc' : h === 360 ? 'Fond noir' : h === 361 ? 'Fond gris foncé' : 'Couleur de fond'}"></button>`).join('')}</div>` : ''}
     <div class="st-tools">${tool('stText', '<b class="aa">Aa</b>', 'Texte', !media)}${tool('stPhoto', I.image, 'Photo', s.kind === 'photo')}${tool('stCam', CI.photo, 'Caméra', false)}${tool('stVid', CI.video, 'Vidéo', s.kind === 'video')}${tool('stFontTab', '<b class="aa serif">F</b>', 'Police', s.tab === 'font')}${tool('stMus', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>', 'Musique', !!s.music)}${Emoji.btn(capSel, 'st-tool emo')}</div>
     <input type="file" id="stIn" accept="image/*,video/*" hidden><input type="file" id="stCamIn" accept="image/*" capture="environment" hidden><input type="file" id="stMusIn" accept="audio/*" hidden>
     ${s.grp ? `<div class="st-grp-panel" data-act="stGrpBg"><div class="st-grp-card">${closePicker(true)}</div></div>` : ''}
   </div>`;
   if (s.kind === 'text' && !s.grp && matchMedia('(min-width:821px) and (pointer:fine)').matches) { const t = $('#stText'); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }
+}
+// Envoi anticipé (comme Instagram) : la photo ou la vidéo part chiffrée dès qu'elle est choisie, pendant qu'on écrit la légende
+// ou qu'on choisit qui la verra. Au clic sur « Publier », il ne reste presque plus rien à envoyer.
+function stPre(s) {
+  if (!s || s.kind === 'text' || dataSaver()) return;
+  const list = s.kind === 'video' && s.parts ? s.parts : (s.blob ? [{blob: s.blob}] : []);
+  if (!list.length || (s.pre && s.preFor === list[0].blob)) return;
+  s.preFor = list[0].blob; s.preProg = list.map(() => 0);
+  let chain = Promise.resolve();   // une partie après l'autre, pour ne pas partager la connexion
+  s.pre = list.map((p, i) => (chain = chain.then(async () => {
+    const pre = await E2E.preSeal(await p.blob.arrayBuffer());
+    const up = await upMedia(pre.blob, f => { s.preProg[i] = Math.min(.99, f); });
+    s.preProg[i] = 1; return {raw: pre.raw, iv: pre.iv, id: up.id};
+  })));
+  s.pre.forEach(x => x.catch(() => {}));
 }
 async function stPublish() {
   const s = S.sc; keepSt();
@@ -1069,10 +1072,12 @@ async function stPublish() {
       const p = list[i], n = list.length;
       if (b && n > 1) b.textContent = `${i + 1}/${n}…`;
       const payload = {t: n > 1 ? `${s.text ? s.text + ' ' : ''}(${i + 1}/${n})` : s.text, f: s.font || 0}; if (s.kind === 'video') Object.assign(payload, {mime: p.mime, dur: p.dur, mir: s.mirror ? 1 : 0}); if (s.music && i === 0) payload.mname = s.music.name;
-      const sealed = await E2E.seal(payload, [[S.me.id, E2E.pubJwk], ...cs.map(u => [u.id, u.pubkey])], p.blob ? await p.blob.arrayBuffer() : undefined, s.music && i === 0 ? await s.music.blob.arrayBuffer() : undefined);
-      let media = null, music = null;
-      if (sealed.blob) media = (await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'})).id;
-      if (sealed.blob2) music = (await api('/api/media', sealed.blob2, {raw: true, type: 'application/octet-stream'})).id;
+      // la photo ou la vidéo est peut-être déjà partie pendant qu'on écrivait (envoi anticipé)
+      let pr = null; if (s.pre && s.preFor === list[0].blob && s.pre[i]) { try { while (s.preProg[i] < 1 && b) { b.textContent = `Envoi ${Math.round(s.preProg[i] * 100)} %${n > 1 ? ` (${i + 1}/${n})` : ''}`; await Promise.race([s.pre[i], new Promise(r => setTimeout(r, 400))]); } pr = await s.pre[i]; } catch { pr = null; } }
+      const sealed = await E2E.seal(payload, [[S.me.id, E2E.pubJwk], ...cs.map(u => [u.id, u.pubkey])], !pr && p.blob ? await p.blob.arrayBuffer() : undefined, s.music && i === 0 ? await s.music.blob.arrayBuffer() : undefined, pr);
+      let media = pr ? pr.id : null, music = null;
+      if (sealed.blob) media = (await upMedia(sealed.blob)).id;
+      if (sealed.blob2) music = (await upMedia(sealed.blob2)).id;
       await api('/api/statuses', {enc: sealed.env, bg: s.bg, media, music, aud: s.aud, ...(s.kind === 'video' ? {kind: 'video'} : {})});
     }
     if (s.url) URL.revokeObjectURL(s.url); if (s.music) URL.revokeObjectURL(s.music.url);
@@ -1101,7 +1106,7 @@ async function svSend(extra, bytes, kind) {
   const cur = svCur(); if (!cur) return; const {g, it} = cur, c = await directWith(g.user.id);
   const payload = Object.assign({sr: {k: it.media ? (it.kind === 'video' ? 'video' : 'image') : 'text', t: (it.text || '').slice(0, 80), id: it.id}}, extra);
   const sealed = await E2E.seal(payload, recipients(c), bytes);
-  let media = null; if (sealed.blob) media = (await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'})).id;
+  let media = null; if (sealed.blob) media = (await upMedia(sealed.blob)).id;
   const r = await api(`/api/chats/${c.id}/messages`, {enc: sealed.env, media, kind, stReply: !extra.fl, flame: !!extra.fl}); onMsg(r.msg);
 }
 async function svRecStop(send) {
@@ -1136,7 +1141,7 @@ function renderSV() {
   const it = g && g.items[v.i]; if (!it) return svNextUser();
   if (!mine && !it.seen) { it.seen = true; api(`/api/statuses/${it.id}/view`, {}).catch(() => {}); }
   const vid = it.kind === 'video', dur = vid ? (Math.min(62, Math.max(3, it.dur || 15)) + 2) * 1000 : it.music ? 15000 : 6000; stFontsLoad();
-  layer.innerHTML = `<div class="sv${it.media ? ' media' : ''}" style="${stBgStyle(it.bg || 170)}${stBgc(it.bg) ? `;--bgd:${stBgc(it.bg)}` : ''}" role="dialog" aria-modal="true" aria-label="Statut"><div class="sv-bars">${g.items.map((_, k) => `<i class="${k < v.i ? 'done' : k === v.i ? 'run' : ''}"><b${k === v.i ? ` style="animation-duration:${dur / 1000}s"` : ''}></b></i>`).join('')}</div>
+  layer.innerHTML = `<div class="sv${it.media ? ' media' : ''}" style="${stBgStyle(it.bg || 170)}${stBgc(it.bg) ? `;--bgd:${+it.bg === 362 ? '#1b1f22' : stBgc(it.bg)}` : ''}" role="dialog" aria-modal="true" aria-label="Statut"><div class="sv-bars">${g.items.map((_, k) => `<i class="${k < v.i ? 'done' : k === v.i ? 'run' : ''}"><b${k === v.i ? ` style="animation-duration:${dur / 1000}s"` : ''}></b></i>`).join('')}</div>
     <div class="sv-head">${avatar(g.user, 'sm')}<div class="grow"><b>${esc(mine ? 'Mon statut' : g.user.name)}</b><small>${dayLabel(it.at)}, ${hm(it.at)} · ${it.aud === 'private' ? 'Privé' : 'Public'}</small></div>${mine ? '' : `<button class="ib sv-call" type="button" data-act="svCall" data-v="1" aria-label="Appel vidéo" title="Appel vidéo">${I.video}</button><button class="ib sv-call" type="button" data-act="svCall" data-v="" aria-label="Appel vocal" title="Appel vocal">${I.phone}</button>`}<button class="ib sv-pp" type="button" data-act="svPause" aria-label="Mettre en pause" title="Pause (barre d’espace)">${SV_PAUSE}</button><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div><span class="sv-paused" aria-live="polite">En pause</span>
     <div class="sv-stage"><div class="sv-box${it.aud === 'private' ? ' nocopy' : ''}">${it.media ? (vid ? `<video data-stvid="${it.id}" class="${it.mir ? 'mirror' : ''}" playsinline autoplay controlslist="nodownload" disablepictureinpicture></video>` : it.enc ? `<img data-stenc="${it.id}" alt="" draggable="false">` : `<img src="${esc(it.media)}" alt="" draggable="false">`) : `<div class="sv-text" style="font-family:${stFont(it.font)}">${esc(it.text)}</div>`}${it.media && it.text ? `<div class="sv-cap" style="font-family:${stFont(it.font)}">${esc(it.text)}</div>` : ''}${it.music ? `<div class="sv-mus">🎵 ${esc(it.mname || 'Musique')}</div><audio data-stmus="${it.id}" loop></audio>` : ''}
       ${it.aud === 'private' && !mine ? watermark() : ''}</div><button class="sv-nav prev" type="button" data-act="svPrev" aria-label="Statut précédent"></button><button class="sv-nav next" type="button" data-act="svNext" aria-label="Statut suivant"></button></div>
@@ -1159,14 +1164,39 @@ function renderSV() {
   stg.addEventListener('pointerup', up); stg.addEventListener('pointercancel', up); stg.addEventListener('pointerleave', up);
   stg.addEventListener('click', e => { if (held) { e.stopPropagation(); e.preventDefault(); } }, true);
   stg.addEventListener('contextmenu', e => e.preventDefault());
-  const dec = (url, iv, type) => fetch(url, {credentials: 'same-origin'}).then(r => r.arrayBuffer()).then(b => E2E.decBytes(it._key, iv, b)).then(b => URL.createObjectURL(new Blob([b], {type})));
+  const dec = (url, iv, type) => svFetch(it, url, iv, type);
   const vv = layer.querySelector('video[data-stvid]');
   if (vv && it._key && it.miv) dec(it.media, it.miv, it.vmime || 'video/mp4').then(u => { if (!layer.contains(vv)) return; vv.onplaying = () => svReady(); vv.src = u; if (S.sv && S.sv.paused) return; vv.play().catch(() => { vv.muted = true; vv.play().catch(() => {}); }); vv.onended = () => { clearTimeout(svT); svStep(1); }; }).catch(() => {});
   const au = layer.querySelector('audio[data-stmus]');
   if (au && it._key && it.mmiv) dec(it.music, it.mmiv, 'audio/mpeg').then(u => { if (!layer.contains(au)) return; au.src = u; if (!(S.sv && S.sv.paused)) au.play().catch(() => {}); }).catch(() => {});
   const im = layer.querySelector('img[data-stenc]');
-  if (im && it._key && it.miv) fetch(it.media, {credentials: 'same-origin'}).then(r => r.arrayBuffer()).then(b => E2E.decBytes(it._key, it.miv, b)).then(b => { im.onload = () => svReady(); im.src = URL.createObjectURL(new Blob([b], {type: 'image/jpeg'})); }).catch(() => svReady());
+  if (im && it._key && it.miv) dec(it.media, it.miv, 'image/jpeg').then(u => { if (!layer.contains(im)) return; im.onload = () => svReady(); im.src = u; }).catch(() => svReady());
+  svPrefetch(it);
 }
+/* Préchargement (comme TikTok) : pendant qu'on regarde un statut, le suivant est déjà téléchargé et déchiffré.
+   Un seul à l'avance, et rien en mode économie de données. */
+const svCache = new Map();
+function svFetch(it, url, iv, type) {
+  if (!svCache.has(url)) {
+    const p = fetch(url, {credentials: 'same-origin'}).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).then(b => E2E.decBytes(it._key, iv, b)).then(b => URL.createObjectURL(new Blob([b], {type})));
+    p.catch(() => svCache.delete(url)); svCache.set(url, p);
+    // on ne garde que les 4 derniers (le courant, le suivant, et de quoi revenir en arrière)
+    while (svCache.size > 4) { const [k, old] = svCache.entries().next().value; svCache.delete(k); old.then(u => setTimeout(() => URL.revokeObjectURL(u), 60_000)).catch(() => {}); }
+  }
+  return svCache.get(url);
+}
+function svNextOf(v) {
+  const mine = v.uid === S.me.id, g = mine ? {items: S.statuses.mine.items} : S.statuses.others.find(x => x.user.id === v.uid);
+  if (g && g.items[v.i + 1]) return g.items[v.i + 1];
+  if (mine) return null;
+  const k = S.statuses.others.findIndex(x => x.user.id === v.uid), nx = S.statuses.others[k + 1]; return nx ? nx.items[0] : null;
+}
+function svPrefetch() {
+  if (!S.sv || dataSaver()) return; const nx = svNextOf(S.sv); if (!nx || !nx._key || !nx.miv || !nx.media) return;
+  setTimeout(() => { if (S.sv) svFetch(nx, nx.media, nx.miv, nx.kind === 'video' ? (nx.vmime || 'video/mp4') : 'image/jpeg').catch(() => {}); }, 300);
+}
+function svCacheClear() { for (const p of svCache.values()) p.then(u => URL.revokeObjectURL(u)).catch(() => {}); svCache.clear(); }
+const dataSaver = () => { try { return localStorage.getItem('tt:saver') === '1'; } catch { return false; } };
 function svStep(d) {
   const v = S.sv; if (!v) return; const mine = v.uid === S.me.id, g = mine ? {items: S.statuses.mine.items} : S.statuses.others.find(x => x.user.id === v.uid);
   const n = v.i + d; if (n < 0) return svPrevUser(); if (!g || n >= g.items.length) return svNextUser(); v.i = n; renderSV();
@@ -1295,7 +1325,7 @@ const PP = {
   async encPic(bytes) {
     const raw = crypto.getRandomValues(new Uint8Array(32)), iv = crypto.getRandomValues(new Uint8Array(12)), key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt']);
     const ct = await crypto.subtle.encrypt({name: 'AES-GCM', iv}, key, bytes);
-    const up = await api('/api/media', new Blob([ct], {type: 'application/octet-stream'}), {raw: true, type: 'application/octet-stream'});
+    const up = await upMedia(new Blob([ct], {type: 'application/octet-stream'}));
     return {id: up.id, k: Tr.b64(raw), iv: Tr.b64(iv)};
   },
   async decPic(p) {
@@ -1488,8 +1518,6 @@ function availPicker() {
 }
 function settingsBody() {
   const me = S.me, p = me.pub || {}, pv = me.priv || {};
-  const f = (set, k, l, ph = '', type = 'text', max = 80) => `<div class="field"><label for="p-${k}">${l}</label>${k === 'bio' ? `<textarea id="p-${k}" data-set="${set}" data-k="${k}" rows="2" maxlength="200" placeholder="${ph}">${esc((set === 'pub' ? p : pv)[k] || '')}</textarea>` : `<input id="p-${k}" data-set="${set}" data-k="${k}" type="${type}" maxlength="${max}" placeholder="${ph}" value="${esc((set === 'pub' ? p : pv)[k] || '')}">`}</div>`;
-  const cs = S.contacts.contacts, close = new Set(me.close || []);
   return `<div class="set">
     <div class="set-block" id="phBlock"><h2 class="ph-h"><span>Photo de profil</span><b class="me-first">${esc(me.name.split(' ')[0])}</b></h2>
       <div class="ph-pick"><span class="pp-prev">${pendAvatar()}</span><p class="hint" style="margin:0">${S.pp ? 'Aperçu de votre nouveau choix. Il ne remplace votre photo actuelle qu’après « Valider ».' : 'Choisissez une photo ou un avatar dessiné. Rien ne change tant que vous n’avez pas validé.'}</p></div>
@@ -1500,6 +1528,8 @@ function settingsBody() {
     <div class="set-block"><h2>${I.shield} Chiffrement de bout en bout</h2><p class="hint">Vos messages et vos photos sont chiffrés sur votre appareil : seules les personnes de la discussion peuvent les lire, pas même le serveur.</p>
       <p>Votre code de sécurité : <b class="fp" id="myFp">…</b></p><p class="hint">Comparez-le avec celui qu’un proche voit sur votre profil pour vérifier que personne ne s’est glissé entre vous.</p>
       <div><button class="btn sm ghost" type="button" data-act="keyCode">${I.key}Changer le code de sauvegarde</button></div></div>
+    <div class="set-block"><h2>${I.download || ''} Économie de données</h2><p class="hint">Pour les petits forfaits : photos et vidéos envoyées plus légères, et Tam-Tam ne télécharge rien à l’avance (le statut suivant se charge quand vous y arrivez).</p>
+      <label class="pick chk"><input type="checkbox" data-act="saverTog"${dataSaver() ? ' checked' : ''}><span>Activer l’économie de données sur cet appareil</span></label></div>
     ${lockSettingsHtml()}
     ${Priv.settingsHtml()}
     ${Device.settingsHtml()}
@@ -1513,7 +1543,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.63</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.64</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1742,7 +1772,7 @@ const ACT = {
   stCancel() { if (S.sc && S.sc.url) URL.revokeObjectURL(S.sc.url); if (S.sc && S.sc.music) URL.revokeObjectURL(S.sc.music.url); S.sc = null; Emoji.close(); closeLayer(); },
   stAud(d) { keepSt(); S.sc.aud = d.a; S.sc.grp = false; stComposer(); }, // le groupe privé s'ouvre seulement quand on touche « Mon groupe privé »
   // Changer la couleur ne fait pas apparaître le clavier : on change seulement le fond.
-  stBg(d) { S.sc.bg = +d.h; const b = document.querySelector('.st-box'); if (b) { b.style.setProperty('--h', d.h); if (stBgc(d.h)) b.style.setProperty('--bgc', stBgc(d.h)); else b.style.removeProperty('--bgc'); } document.querySelectorAll('.st-bgs .sw').forEach(x => x.setAttribute('aria-pressed', x.dataset.h === d.h)); if (matchMedia('(min-width:821px) and (pointer:fine)').matches) { const t = $('#stText'); if (t) t.focus(); } },
+  stBg(d) { S.sc.bg = +d.h; const b = document.querySelector('.st-box'); if (b) { b.style.setProperty('--h', d.h); if (stBgc(d.h)) b.style.setProperty('--bgc', stBgc(d.h)); else b.style.removeProperty('--bgc'); if (+d.h === 362) { b.style.setProperty('--stc', '#14181b'); b.style.setProperty('--stph', 'rgb(20 24 27/.45)'); } else { b.style.removeProperty('--stc'); b.style.removeProperty('--stph'); } } document.querySelectorAll('.st-bgs .sw').forEach(x => x.setAttribute('aria-pressed', x.dataset.h === d.h)); if (matchMedia('(min-width:821px) and (pointer:fine)').matches) { const t = $('#stText'); if (t) t.focus(); } },
   stPhoto() { keepSt(); $('#stIn').click(); },
   stCam() { keepSt(); Cam.open({...stOpts(), mode: 'photo'}); },
   stVid() { keepSt(); Cam.open({...stOpts(), mode: 'video'}); },
@@ -1831,6 +1861,7 @@ const ACT = {
   },
   async devOut(d) { try { await api('/api/sessions/revoke', {id: +d.id}); toast('Appareil déconnecté'); ACT.devList(); } catch (e) { toast(e.message); } },
   async devOthers() { try { await api('/api/sessions/revoke', {others: true}); toast('Tous les autres appareils sont déconnectés'); ACT.devList(); } catch (e) { toast(e.message); } },
+  saverTog() { const on = !dataSaver(); try { localStorage.setItem('tt:saver', on ? '1' : '0'); } catch {} toast(on ? 'Économie de données activée sur cet appareil' : 'Économie de données désactivée'); },
   listedTog() { saveNow({listed: !S.me.listed}, S.me.listed ? 'Vous n’apparaissez plus dans la liste des membres' : 'Vous apparaissez dans la liste des membres'); },
   pwSheet() { sheet(`${head('Changer le mot de passe')}<form data-form="pw"><div class="sheet-body"><div class="field"><label for="pwOld">Mot de passe actuel</label><input id="pwOld" type="password" autocomplete="current-password"></div><div class="field"><label for="pwNew">Nouveau mot de passe (8 caractères minimum)</label><input id="pwNew" type="password" autocomplete="new-password"></div><p class="err" id="pwErr" role="alert" hidden></p><div class="actions"><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Mot de passe', '#pwOld'); },
   delSheet() { sheet(`${head('Supprimer mon compte')}<form data-form="del"><div class="sheet-body"><p>Votre compte, votre profil, vos photos et vos statuts seront effacés. Vos messages seront remplacés par « Ce message a été supprimé ». C’est définitif.</p><div class="field"><label for="delPw">Votre mot de passe pour confirmer</label><input id="delPw" type="password" autocomplete="current-password"></div><p class="err" id="delErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="submit">Supprimer définitivement</button></div></div></form>`, 'Supprimer', '#delPw'); },

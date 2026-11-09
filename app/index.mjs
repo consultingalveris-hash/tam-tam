@@ -222,6 +222,7 @@ function statusVisible(s, viewer) {
 
 /* ---------- entretien et sauvegardes ---------- */
 const attempts = new Map();
+const ups = new Map(); // envois par morceaux en cours : id -> { owner, size, at }
 function sweep() {
   // compteurs anti-abus : on oublie les essais de plus d'une heure (sinon la mémoire grossit sans fin)
   { const t = now(); for (const [k, a] of attempts) { const b = a.filter(x => t - x < 3600_000); if (b.length) attempts.set(k, b); else attempts.delete(k); } }
@@ -229,6 +230,8 @@ function sweep() {
   run(`DELETE FROM sessions WHERE expires<?`, now()); run(`DELETE FROM tr_cache WHERE at<?`, now() - 180 * DAY); run(`DELETE FROM resets WHERE expires<?`, now());
   for (const s of qa(`SELECT id, media, music FROM statuses WHERE expires<?`, now())) { if (s.media) dropMedia(s.media); if (s.music) dropMedia(s.music); run(`DELETE FROM statuses WHERE id=?`, s.id); }
   for (const m of qa(`SELECT id FROM media WHERE scope IS NULL AND created_at<?`, now() - DAY)) dropMedia(m.id);
+  try { for (const f of fs.readdirSync(MEDIA)) if (f.endsWith('.part')) { const fp = path.join(MEDIA, f); if (now() - fs.statSync(fp).mtimeMs > DAY) fs.rmSync(fp); } } catch {}
+  for (const [id, u] of ups) if (now() - u.at > DAY) ups.delete(id);
 }
 function dropMedia(id) { try { fs.rmSync(path.join(MEDIA, id)); } catch {} run(`DELETE FROM media WHERE id=?`, id); }
 setInterval(sweep, 5 * 60_000); sweep();
@@ -260,6 +263,19 @@ async function readBody(req, max) {
   let size = 0; const chunks = [];
   for await (const ch of req) { size += ch.length; if (size > max) E(413, 'Fichier trop lourd'); chunks.push(ch); }
   return Buffer.concat(chunks);
+}
+// Écrit le corps de la requête directement dans un fichier, morceau par morceau : une vidéo de 40 Mo n'occupe jamais 40 Mo de mémoire.
+async function bodyToFile(req, file, max, flags = 'w') {
+  const ws = fs.createWriteStream(file, { flags }); let size = 0, head = Buffer.alloc(0);
+  try {
+    for await (const ch of req) {
+      size += ch.length; if (size > max) E(413, 'Fichier trop lourd');
+      if (head.length < 12) head = Buffer.concat([head, ch]).subarray(0, 12);
+      if (!ws.write(ch)) await new Promise(r => ws.once('drain', r));
+    }
+    await new Promise((ok, ko) => ws.end(e => e ? ko(e) : ok()));
+    return { size, head };
+  } catch (e) { ws.destroy(); throw e; }
 }
 async function readJson(req) {
   if (!/application\/json/.test(req.headers['content-type'] || '')) E(415, 'Format attendu : JSON');
@@ -1012,12 +1028,40 @@ R('POST', /^\/api\/media$/, async ({ me, req }) => {
   const ct = String(req.headers['content-type'] || ''), enc = ct === 'application/octet-stream';
   if (!enc && !/^image\/(jpeg|png|webp)$/.test(ct)) E(415, 'Seules les photos (JPEG, PNG, WebP) sont acceptées.');
   if (tooMany('up:' + me.id, 60, 10 * 60_000)) E(429, 'Trop de photos envoyées. Patientez un peu.');
-  const buf = await readBody(req, enc ? 42_000_000 : 6_000_000); if (buf.length < (enc ? 17 : 100)) E(400, 'Fichier vide.');
-  const sig = buf.subarray(0, 12).toString('hex');
-  if (!enc && !(sig.startsWith('ffd8ff') || sig.startsWith('89504e47') || (sig.startsWith('52494646') && buf.subarray(8, 12).toString() === 'WEBP'))) E(415, 'Ce fichier n’est pas une photo valide.');
-  const id = rnd(18); fs.writeFileSync(path.join(MEDIA, id), buf);
-  run(`INSERT INTO media(id,owner,mime,size,enc,created_at) VALUES(?,?,?,?,?,?)`, id, me.id, ct, buf.length, enc ? 1 : 0, now());
+  const id = rnd(18), tmp = path.join(MEDIA, id + '.part');
+  let r; try { r = await bodyToFile(req, tmp, enc ? 42_000_000 : 6_000_000); } catch (e) { try { fs.rmSync(tmp); } catch {} throw e; }
+  const bad = msg => { try { fs.rmSync(tmp); } catch {} E(400, msg); };
+  if (r.size < (enc ? 17 : 100)) bad('Fichier vide.');
+  const sig = r.head.toString('hex');
+  if (!enc && !(sig.startsWith('ffd8ff') || sig.startsWith('89504e47') || (sig.startsWith('52494646') && r.head.subarray(8, 12).toString() === 'WEBP'))) { try { fs.rmSync(tmp); } catch {} E(415, 'Ce fichier n’est pas une photo valide.'); }
+  fs.renameSync(tmp, path.join(MEDIA, id));
+  run(`INSERT INTO media(id,owner,mime,size,enc,created_at) VALUES(?,?,?,?,?,?)`, id, me.id, ct, r.size, enc ? 1 : 0, now());
   return { id, url: mediaUrl(id) };
+});
+/* Envoi par morceaux avec reprise : si le réseau coupe, on reprend là où on s'était arrêté.
+   Réservé aux fichiers chiffrés (vidéos, documents…) ; le serveur ne voit que des octets illisibles. */
+const UP_MAX = 42_000_000, CHUNK_MAX = 2_200_000;
+const upPart = id => path.join(MEDIA, id + '.part');
+const upHave = id => { try { return fs.statSync(upPart(id)).size; } catch { return -1; } };
+R('POST', /^\/api\/media\/up$/, async ({ me, body }) => {
+  const size = +body.size; if (!(size >= 17 && size <= UP_MAX)) E(413, 'Fichier trop lourd pour être envoyé (40 Mo au maximum).');
+  if (tooMany('up:' + me.id, 60, 10 * 60_000)) E(429, 'Trop de fichiers envoyés. Patientez un peu.');
+  const id = rnd(18); fs.writeFileSync(upPart(id), ''); ups.set(id, { owner: me.id, size, at: now() });
+  return { id, have: 0 };
+});
+const upOf = (id, me) => { const u = ups.get(id); if (!u || u.owner !== me.id || upHave(id) < 0) E(404, 'Envoi introuvable : recommencez.'); u.at = now(); return u; };
+R('GET', /^\/api\/media\/up\/([A-Za-z0-9_-]{24})$/, async ({ me, m }) => { upOf(m[1], me); return { have: upHave(m[1]) }; });
+R('POST', /^\/api\/media\/up\/([A-Za-z0-9_-]{24})\/chunk$/, async ({ me, m, req, url }) => {
+  const u = upOf(m[1], me), have = upHave(m[1]), off = +url.searchParams.get('off');
+  if (off !== have) return { have, retry: true };           // morceau déjà reçu, ou décalé : le client repart de « have »
+  const r = await bodyToFile(req, upPart(m[1]), Math.min(CHUNK_MAX, u.size - have), 'a');
+  return { have: have + r.size };
+});
+R('POST', /^\/api\/media\/up\/([A-Za-z0-9_-]{24})\/done$/, async ({ me, m }) => {
+  const u = upOf(m[1], me), have = upHave(m[1]); if (have !== u.size) E(409, 'Envoi incomplet.');
+  fs.renameSync(upPart(m[1]), path.join(MEDIA, m[1])); ups.delete(m[1]);
+  run(`INSERT INTO media(id,owner,mime,size,enc,created_at) VALUES(?,?,?,?,?,?)`, m[1], me.id, 'application/octet-stream', have, 1, now());
+  return { id: m[1], url: mediaUrl(m[1]) };
 });
 R('GET', /^\/api\/media\/([A-Za-z0-9_-]{10,40})$/, async ({ me, m, res }) => {
   const md = q1(`SELECT * FROM media WHERE id=?`, m[1]); if (!md) E(404, 'Introuvable');
@@ -1127,7 +1171,7 @@ R('POST', /^\/api\/statuses$/, async ({ me, body }) => {
   if (body.media) { const md = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.media), me.id); if (!md) E(400, 'Photo introuvable.'); media = md.id; }
   let music = null; if (body.music && e2e) { const md = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.music), me.id); if (!md) E(400, 'Musique introuvable.'); music = md.id; }
   if (!media && !text) E(400, 'Écrivez un texte ou ajoutez une photo.');
-  const bg = Math.max(0, Math.min(361, +body.bg || 170)), kind = media ? (body.kind === 'video' && e2e ? 'video' : 'image') : 'text';
+  const bg = Math.max(0, Math.min(362, +body.bg || 170)), kind = media ? (body.kind === 'video' && e2e ? 'video' : 'image') : 'text';
   const id = Number(run(`INSERT INTO statuses(user_id,kind,text,bg,media,aud,created_at,expires,e2e,music) VALUES(?,?,?,?,?,?,?,?,?,?)`, me.id, kind, text || null, bg, media, aud, now(), now() + DAY, e2e, music).lastInsertRowid);
   if (media) run(`UPDATE media SET scope='status', ref=? WHERE id=?`, id, media);
   if (music) run(`UPDATE media SET scope='status', ref=? WHERE id=?`, id, music);
@@ -1443,7 +1487,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method !== 'GET') { const o = req.headers.origin; if (o && o !== BASE_URL && !(BASE_URL.startsWith('http://localhost') && o.startsWith('http://localhost'))) E(403, 'Origine refusée.'); }
       const rt = routes.find(r => r.method === req.method && r.re.test(p)); if (!rt) E(404, 'Adresse inconnue.');
       const me = currentUser(req); if (rt.auth && !me) E(401, 'Connectez-vous.');
-      const body = req.method === 'POST' && !/^\/api\/media$/.test(p) ? await readJson(req) : {};
+      const body = req.method === 'POST' && !/^\/api\/media(\/up\/[A-Za-z0-9_-]+\/chunk)?$/.test(p) ? await readJson(req) : {};
       const out = await rt.fn({ req, res, url, body, me, m: p.match(rt.re) });
       if (out !== null && !res.headersSent) send(res, 200, out);
       return;

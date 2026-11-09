@@ -141,15 +141,15 @@ const VFast = {
     const probe = new M.Input({source: new M.BlobSource(file), formats: M.ALL_FORMATS});
     const total = await probe.computeDuration(), vt = await probe.getPrimaryVideoTrack();
     if (!vt || !total) throw new Error('vidéo illisible');
-    const dw = vt.displayWidth, dh = vt.displayHeight, k = Math.min(1, 720 / Math.min(dw, dh));
+    const eco = dataSaver(), dw = vt.displayWidth, dh = vt.displayHeight, k = Math.min(1, (eco ? 540 : 720) / Math.min(dw, dh));
     const w = Math.round(dw * k / 2) * 2, h = Math.round(dh * k / 2) * 2;
-    const vbr = 1_600_000, abr = 96_000;
+    const vbr = eco ? 850_000 : 1_600_000, abr = eco ? 64_000 : 96_000;
     const vc = await M.getFirstEncodableVideoCodec(['avc', 'vp9', 'vp8'], {width: w, height: h, bitrate: vbr});
     if (!vc) throw new Error('aucun encodeur vidéo');
     const mp4 = vc === 'avc', ac = await M.getFirstEncodableAudioCodec(mp4 ? ['aac', 'opus'] : ['opus'], {numberOfChannels: 2, sampleRate: 48000, bitrate: abr});
     const n = Math.max(1, Math.ceil((total - 1) / VID_MAX_S)), parts = [];
     // Vidéo déjà légère (ex. reçue sur WhatsApp) : on coupe sans recompresser, c'est presque instantané.
-    const light = file.size / total * Math.min(total, VID_MAX_S) < 14_000_000 && Math.min(dw, dh) <= 1080 && ['avc', 'vp8', 'vp9'].includes(vt.codec) && !!(await vt.canDecode());
+    const light = file.size / total * Math.min(total, VID_MAX_S) < (eco ? 7_000_000 : 14_000_000) && Math.min(dw, dh) <= 1080 && ['avc', 'vp8', 'vp9'].includes(vt.codec) && !!(await vt.canDecode());
     const srcMp4 = vt.codec === 'avc' || /mp4|quicktime/.test(file.type);
     for (let i = 0; i < n; i++) {
       if (job.stop) throw new Error('annulé');
@@ -279,7 +279,7 @@ const Edit = {
     v.onloadedmetadata = () => { const d = Math.round(v.duration || 0); URL.revokeObjectURL(u);
       if (d > VID_MAX_TOTAL) return toast(`Vidéo trop longue (${fmtT(d)}). Maximum : ${fmtT(VID_MAX_TOTAL)}, coupée en parties d’une minute.`);
       if (d > VID_MAX_S + 2 || file.size > VID_MAX_BYTES) return VCut.ask(file, d, parts => this.video(parts[0].blob, parts[0].mime, parts[0].dur, false, 'gal', opts, parts));
-      if (file.size > 12_000_000 && VFast.ok()) return VCut.auto(file, d, parts => this.video(parts[0].blob, parts[0].mime, parts[0].dur, false, 'gal', opts, parts), () => this.video(file, file.type, d, false, 'gal', opts));
+      if (file.size > (dataSaver() ? 4_000_000 : 12_000_000) && VFast.ok()) return VCut.auto(file, d, parts => this.video(parts[0].blob, parts[0].mime, parts[0].dur, false, 'gal', opts, parts), () => this.video(file, file.type, d, false, 'gal', opts));
       this.video(file, file.type, d, false, 'gal', opts); };
     v.onerror = () => { URL.revokeObjectURL(u); this.video(file, file.type, 0, false, 'gal', opts); };
     v.src = u;
@@ -353,7 +353,7 @@ const Edit = {
     const cap = ($('#edCap') || {}).value?.trim() || '', once = !!S.once; btn.disabled = true; btn.classList.add('busy');
     try {
       let blob, payload;
-      if (s.kind === 'photo') { const cv = document.createElement('canvas'); this.paint(cv, 2560); blob = await new Promise((ok, ko) => cv.toBlob(b => b ? ok(b) : ko(new Error('Photo illisible.')), 'image/jpeg', .9)); payload = {t: cap}; }
+      if (s.kind === 'photo') { const cv = document.createElement('canvas'), eco = dataSaver(); this.paint(cv, eco ? 1280 : 2560); blob = await new Promise((ok, ko) => cv.toBlob(b => b ? ok(b) : ko(new Error('Photo illisible.')), 'image/jpeg', eco ? .72 : .9)); payload = {t: cap}; }
       else { blob = s.blob; payload = {t: cap, mime: s.mime, dur: s.dur}; }
       if (tgt) { const r = {kind: s.kind, blob, mime: s.kind === 'video' ? s.mime : 'image/jpeg', dur: s.dur || 0, cap, mirror: !!s.mirror, parts: s.parts}; this.close(); return tgt(r); }
       const list = s.parts || [{blob, mime: s.mime, dur: s.dur}];
@@ -362,7 +362,7 @@ const Edit = {
         const p = list[i], b = s.kind === 'video' ? p.blob : blob, pl = s.kind === 'video' ? {t: list.length > 1 ? `${cap ? cap + ' ' : ''}(${i + 1}/${list.length})` : cap, mime: p.mime, dur: p.dur} : payload;
         btn.textContent = list.length > 1 ? `${i + 1}/${list.length}` : '';
         const sealed = await E2E.seal(pl, recipients(c), await b.arrayBuffer());
-        const up = await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'});
+        const up = await upMedia(sealed.blob);
         const r = await api(`/api/chats/${c.id}/messages`, {media: up.id, enc: sealed.env, once, ...(s.kind === 'video' ? {kind: 'video'} : {})});
         if (!once) { const u = URL.createObjectURL(b); (s.kind === 'video' ? E2E.vids : E2E.imgs).set(r.msg.id, u); }
         onMsg(r.msg);

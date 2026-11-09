@@ -201,8 +201,8 @@ const Mem = {
     let sealed;
     if (p.aud === 'public') sealed = await this.sealPublic(payload, bytes, tb);
     else { const rc = [[S.me.id, E2E.pubJwk]]; if (p.aud === 'friends') for (const u of S.contacts.contacts) if (p.to.includes(u.id) && u.pubkey) rc.push([u.id, u.pubkey]); sealed = await E2E.seal(payload, rc, bytes, tb); }
-    const media = (await api('/api/media', sealed.blob, {raw: true, type: 'application/octet-stream'})).id;
-    const th = sealed.blob2 ? (await api('/api/media', sealed.blob2, {raw: true, type: 'application/octet-stream'})).id : null;
+    const media = (await upMedia(sealed.blob)).id;
+    const th = sealed.blob2 ? (await upMedia(sealed.blob2)).id : null;
     const res = await api('/api/memories', {media, thumb: th, env: sealed.env, aud: p.aud, kind: r.kind === 'video' ? 'video' : r.kind === 'doc' ? 'doc' : 'image', taken: new Date(date + 'T12:00:00').getTime(), to: p.to, lock: p.lock, once: p.once});
     const it = await this.open(res.item); it.to = p.aud === 'friends' ? p.to.slice() : undefined; if (thumb) this.thumbs.set(it.id, Promise.resolve(URL.createObjectURL(thumb)));
     (this.items = this.items || []).push(it);
