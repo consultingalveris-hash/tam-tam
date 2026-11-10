@@ -438,6 +438,18 @@ async function openChat(id) {
   await loadMessages(id); if (S.chatId === id) focusComposer();
 }
 // À l'ouverture d'une discussion (liste, statut, groupe…), le curseur se place tout seul dans la zone d'écriture.
+// Sur ordinateur : une discussion ouverte, on tape ou on colle n'importe où, et le texte va dans la zone d'écriture.
+const typingSpot = () => { const t = document.activeElement; return t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable); };
+const composerFree = () => { const app = $('.app'), i = $('#msgIn'); return !!(S.chatId && i && !i.disabled && !S.locked && !document.getElementById('lockScreen') && !(layer && layer.innerHTML.trim()) && !document.getElementById('pmodal') && app && (matchMedia('(min-width:821px)').matches || app.dataset.view === 'chat')); };
+document.addEventListener('keydown', e => {
+  if (e.defaultPrevented || e.isComposing || typingSpot() || !composerFree()) return;
+  const paste = (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'v', printable = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+  if (paste || printable) focusComposer();
+}, true);
+document.addEventListener('paste', e => {
+  if (typingSpot() || !composerFree()) return; const t = e.clipboardData && e.clipboardData.getData('text'); if (!t) return;
+  const i = $('#msgIn'); e.preventDefault(); focusComposer(); i.setRangeText(t, i.selectionStart, i.selectionEnd, 'end'); i.dispatchEvent(new Event('input', {bubbles: true}));
+});
 function focusComposer() {
   const i = $('#msgIn'); if (!i || i.disabled || S.locked || document.getElementById('lockScreen') || (layer && layer.innerHTML.trim())) return;
   if (document.activeElement === i) return; try { i.focus({preventScroll: true}); } catch { i.focus(); }
@@ -1746,7 +1758,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.74</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.75</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -2048,8 +2060,8 @@ const ACT = {
   stMusOff() { keepSt(); if (S.sc.music) URL.revokeObjectURL(S.sc.music.url); S.sc.music = null; stComposer(); },
   stGrp() { keepSt(); S.sc.grp = true; stComposer(); },
   stGrpOk() { keepSt(); S.sc.grp = false; stComposer(); },
-  cgOpen() { S.cgOpen = true; pmRefresh(); renderBody(); },
-  cgClose() { S.cgOpen = false; pmRefresh(); renderBody(); toast('Groupe privé enregistré'); }, stGrpBg() { ACT.stGrpOk(); },
+  cgOpen() { S.cgOpen = true; if (S.modal) renderModal(); else renderBody(); },
+  cgClose() { S.cgOpen = false; if (S.modal) renderModal(); else renderBody(); toast('Groupe privé enregistré'); }, stGrpBg() { ACT.stGrpOk(); },
   stNoPhoto() { keepSt(); if (S.sc.url) URL.revokeObjectURL(S.sc.url); Object.assign(S.sc, {kind: 'text', blob: null, url: null}); stComposer(); },
   stPublish() { stPublish(); },
   closeEdit() { keepSt(); closeLayer(); if (isDesk()) pmOpen('settings'); else { S.tab = 'settings'; renderAll(); } setTimeout(() => { const el = document.querySelector('input[name="close"]'); if (el) el.scrollIntoView({block: 'center'}); }, 50); toast('Cochez les personnes de votre groupe privé, puis revenez publier votre statut.'); },
