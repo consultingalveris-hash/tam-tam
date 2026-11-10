@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS status_views(status_id INTEGER NOT NULL REFERENCES st
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, by_user INTEGER, target_user INTEGER, chat_id INTEGER, reason TEXT NOT NULL, note TEXT,
   created_at INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0);
 `);
-for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `ALTER TABLE users ADD COLUMN avail TEXT NOT NULL DEFAULT 'on'`, `ALTER TABLE users ADD COLUMN tr_consent INTEGER`, `ALTER TABLE users ADD COLUMN priv_env TEXT`, `ALTER TABLE users ADD COLUMN tel_env TEXT`, `ALTER TABLE users ADD COLUMN tel_hash TEXT`, `ALTER TABLE statuses ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE chats ADD COLUMN expires INTEGER`, `ALTER TABLE statuses ADD COLUMN music TEXT`, `ALTER TABLE users ADD COLUMN handle_set INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS msg_hidden(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, PRIMARY KEY(user_id, msg_id))`, `ALTER TABLE users ADD COLUMN handle_at INTEGER`, `CREATE TABLE IF NOT EXISTS reactions(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, emo TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `ALTER TABLE messages ADD COLUMN fwd INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE chats ADD COLUMN pinned_msg INTEGER`, `ALTER TABLE members ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN unread_mark INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN cleared INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE chats ADD COLUMN photo TEXT`, `ALTER TABLE chats ADD COLUMN gset TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE chats ADD COLUMN inv_code TEXT`, `ALTER TABLE messages ADD COLUMN del_by INTEGER`, `ALTER TABLE messages ADD COLUMN edited INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN mem_code TEXT`, `CREATE TABLE IF NOT EXISTS memories(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL, media TEXT NOT NULL, thumb TEXT, env TEXT NOT NULL, aud TEXT NOT NULL, taken_at INTEGER NOT NULL, created_at INTEGER NOT NULL)`, `CREATE INDEX IF NOT EXISTS mem_user ON memories(user_id, taken_at)`, `CREATE TABLE IF NOT EXISTS mem_access(mem_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(mem_id, user_id))`, `CREATE TABLE IF NOT EXISTS corpus(id INTEGER PRIMARY KEY, src TEXT NOT NULL, sl TEXT, tgt TEXT NOT NULL, tl TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL)`, `CREATE UNIQUE INDEX IF NOT EXISTS corpus_u ON corpus(src, tl, tgt, kind)`, `CREATE TABLE IF NOT EXISTS tr_mine(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, id TEXT NOT NULL, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(user_id, id))`, `CREATE TABLE IF NOT EXISTS tr_votes(id TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cid TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(id, user_id))`, `CREATE TABLE IF NOT EXISTS tr_cache(id TEXT PRIMARY KEY, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL)`, `ALTER TABLE tr_cache ADD COLUMN promoted INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`, `CREATE TABLE IF NOT EXISTS status_flames(status_id INTEGER NOT NULL REFERENCES statuses(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, at INTEGER NOT NULL, PRIMARY KEY(status_id, user_id))`, `ALTER TABLE memories ADD COLUMN lock INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE memories ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE mem_access ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE mem_access ADD COLUMN opened INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN loc_to TEXT`, `ALTER TABLE users ADD COLUMN loc_env TEXT`, `ALTER TABLE users ADD COLUMN loc_at INTEGER`, `ALTER TABLE users ADD COLUMN amb TEXT`]) { try { db.exec(sql); } catch {} }
+for (const sql of [`ALTER TABLE users ADD COLUMN pubkey TEXT`, `ALTER TABLE users ADD COLUMN keybackup TEXT`, `ALTER TABLE messages ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE media ADD COLUMN enc INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN google_sub TEXT`, `ALTER TABLE members ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN hide_code TEXT`, `ALTER TABLE users ADD COLUMN qr_token TEXT`, `ALTER TABLE contacts ADD COLUMN lim INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN fav INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN pics TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE messages ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE sessions ADD COLUMN ua TEXT`, `ALTER TABLE users ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`, `ALTER TABLE users ADD COLUMN avail TEXT NOT NULL DEFAULT 'on'`, `ALTER TABLE users ADD COLUMN tr_consent INTEGER`, `ALTER TABLE users ADD COLUMN priv_env TEXT`, `ALTER TABLE users ADD COLUMN tel_env TEXT`, `ALTER TABLE users ADD COLUMN tel_hash TEXT`, `ALTER TABLE statuses ADD COLUMN e2e INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE chats ADD COLUMN expires INTEGER`, `ALTER TABLE statuses ADD COLUMN music TEXT`, `ALTER TABLE users ADD COLUMN handle_set INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS msg_hidden(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, PRIMARY KEY(user_id, msg_id))`, `ALTER TABLE users ADD COLUMN handle_at INTEGER`, `CREATE TABLE IF NOT EXISTS reactions(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, emo TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `ALTER TABLE messages ADD COLUMN fwd INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE chats ADD COLUMN pinned_msg INTEGER`, `ALTER TABLE members ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN unread_mark INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN cleared INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE chats ADD COLUMN photo TEXT`, `ALTER TABLE chats ADD COLUMN gset TEXT NOT NULL DEFAULT '{}'`, `ALTER TABLE chats ADD COLUMN inv_code TEXT`, `ALTER TABLE messages ADD COLUMN del_by INTEGER`, `ALTER TABLE messages ADD COLUMN edited INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN mem_code TEXT`, `CREATE TABLE IF NOT EXISTS memories(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL, media TEXT NOT NULL, thumb TEXT, env TEXT NOT NULL, aud TEXT NOT NULL, taken_at INTEGER NOT NULL, created_at INTEGER NOT NULL)`, `CREATE INDEX IF NOT EXISTS mem_user ON memories(user_id, taken_at)`, `CREATE TABLE IF NOT EXISTS mem_access(mem_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(mem_id, user_id))`, `CREATE TABLE IF NOT EXISTS corpus(id INTEGER PRIMARY KEY, src TEXT NOT NULL, sl TEXT, tgt TEXT NOT NULL, tl TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL)`, `CREATE UNIQUE INDEX IF NOT EXISTS corpus_u ON corpus(src, tl, tgt, kind)`, `CREATE TABLE IF NOT EXISTS tr_mine(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, id TEXT NOT NULL, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(user_id, id))`, `CREATE TABLE IF NOT EXISTS tr_votes(id TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cid TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(id, user_id))`, `CREATE TABLE IF NOT EXISTS tr_cache(id TEXT PRIMARY KEY, iv TEXT NOT NULL, ct TEXT NOT NULL, at INTEGER NOT NULL)`, `ALTER TABLE tr_cache ADD COLUMN promoted INTEGER NOT NULL DEFAULT 0`, `CREATE TABLE IF NOT EXISTS once_views(msg_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(msg_id, user_id))`, `CREATE TABLE IF NOT EXISTS tel_share(owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, viewer INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(owner, viewer))`, `CREATE TABLE IF NOT EXISTS status_flames(status_id INTEGER NOT NULL REFERENCES statuses(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, at INTEGER NOT NULL, PRIMARY KEY(status_id, user_id))`, `ALTER TABLE memories ADD COLUMN lock INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE memories ADD COLUMN once INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE mem_access ADD COLUMN seen INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE mem_access ADD COLUMN opened INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE members ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE users ADD COLUMN loc_to TEXT`, `ALTER TABLE users ADD COLUMN loc_env TEXT`, `ALTER TABLE users ADD COLUMN loc_at INTEGER`, `ALTER TABLE users ADD COLUMN amb TEXT`, `ALTER TABLE users ADD COLUMN prof_seen INTEGER`, `ALTER TABLE users ADD COLUMN calls_seen INTEGER`, `CREATE TABLE IF NOT EXISTS prof_flames(media TEXT NOT NULL, owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, at INTEGER NOT NULL, PRIMARY KEY(media, user_id))`]) { try { db.exec(sql); } catch {} }
 db.exec(`CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS codes(email TEXT PRIMARY KEY, code TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY, call_id TEXT NOT NULL, kind TEXT NOT NULL, chat_id INTEGER NOT NULL, caller INTEGER NOT NULL, callee INTEGER, video INTEGER NOT NULL, status TEXT NOT NULL, joined TEXT NOT NULL DEFAULT '[]', started INTEGER NOT NULL, answered INTEGER, ended INTEGER);
@@ -157,7 +157,7 @@ function userCard(u, me) {
     busy: rel === 'contact' && u.avail === 'busy' ? true : undefined,
     lastSeen: rel === 'contact' && u.avail !== 'off' ? u.last_seen : undefined, pub: {}, mutual: 0, pubkey: u.pubkey ? J(u.pubkey, null) : null, amb: u.amb || undefined };
   for (const k of PUB_K) if (pub[k] != null && pub[k] !== '') card.pub[k] = pub[k];
-  card.pics = picsOf(u, 'pub'); card.trc = !!u.tr_consent;
+  card.pics = picsOf(u, 'pub'); card.vids = vidsOf(u); card.trc = !!u.tr_consent;
   // partage de position permanent : seules les personnes choisies par le membre le voient
   if (me && me !== u.id && rel === 'contact' && (J(u.loc_to, null) || []).includes(me)) card.locMe = true;
   if (me && me !== u.id) {
@@ -176,6 +176,7 @@ function userCard(u, me) {
   return card;
 }
 const telShared = (owner, viewer) => !!q1(`SELECT 1 FROM tel_share WHERE owner=? AND viewer=?`, owner, viewer);
+const vidsOf = u => (J(u.pics, {}).pubv || [null, null, null]).map(v => v && v.id ? { id: v.id, url: mediaUrl(v.id), k: v.k, iv: v.iv, t: v.t } : null);
 const picsOf = (u, set) => (J(u.pics, {})[set] || [null, null, null]).map(mediaUrl);
 function canSeePriv(u, me) {
   if (u.id === me) return true;
@@ -427,7 +428,7 @@ R('POST', /^\/api\/me\/privenv$/, async ({ me, body }) => {
   if (!envOk(body.privEnv) || (body.telEnv && !envOk(body.telEnv))) E(400, 'Profil chiffré invalide.');
   const keep = new Set((Array.isArray(body.mediaIds) ? body.mediaIds : []).map(String).slice(0, 6));
   for (const id of keep) { const md = q1(`SELECT * FROM media WHERE id=? AND owner=?`, id, me.id); if (md && md.enc && (md.scope == null || md.scope === 'ppriv')) run(`UPDATE media SET scope='ppriv', ref=? WHERE id=?`, me.id, id); else keep.delete(id); }
-  for (const r of qa(`SELECT id FROM media WHERE owner=? AND scope='ppriv'`, me.id)) if (!keep.has(r.id)) dropMedia(r.id);
+  for (const r of qa(`SELECT id FROM media WHERE owner=? AND scope='ppriv'`, me.id)) if (!keep.has(r.id)) { dropMedia(r.id); run(`DELETE FROM prof_flames WHERE media=?`, r.id); }
   const pics = J(me.pics, {}); pics.priv = [null, null, null];
   const th = /^[0-9a-f]{64}$/.test(String(body.telHash || '')) ? String(body.telHash) : null;
   run(`UPDATE users SET priv_env=?, tel_env=?, tel_hash=?, priv='{}', pics=? WHERE id=?`, JSON.stringify(body.privEnv), body.telEnv ? JSON.stringify(body.telEnv) : null, th, JSON.stringify(pics), me.id);
@@ -435,14 +436,28 @@ R('POST', /^\/api\/me\/privenv$/, async ({ me, body }) => {
 });
 // Trois photos publiques et trois photos privées sur le profil.
 R('POST', /^\/api\/me\/pics$/, async ({ me, body }) => {
-  const set = body.set === 'priv' ? 'priv' : 'pub', slot = +body.slot; if (![0, 1, 2].includes(slot)) E(400, 'Emplacement inconnu.');
+  const set = body.set === 'priv' ? 'priv' : 'pub', slot = +body.slot; if (![0, 1, 2, 3, 4, 5].includes(slot)) E(400, 'Emplacement inconnu.');
+  if (slot >= 3) { // vidéos publiques : fichier chiffré envoyé par morceaux, clé rangée avec le profil public
+    if (set !== 'pub') E(400, 'Les vidéos privées sont chiffrées sur l’appareil.');
+    const all = J(me.pics, {}), list = (all.pubv || [null, null, null]).slice(0, 3), i = slot - 3, b64 = v => /^[A-Za-z0-9+/=_-]{8,64}$/.test(String(v || ''));
+    let v = null;
+    if (body.media) {
+      const m = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL AND enc=1`, String(body.media), me.id); if (!m) E(400, 'Vidéo introuvable.');
+      if (!b64(body.k) || !b64(body.iv)) E(400, 'Vidéo invalide.');
+      run(`UPDATE media SET scope='ppub', ref=? WHERE id=?`, me.id, m.id);
+      v = { id: m.id, k: String(body.k), iv: String(body.iv), t: /^video\/[a-z0-9.+-]{2,30}$/.test(String(body.t || '')) ? String(body.t) : 'video/mp4' };
+    }
+    if (list[i] && list[i].id) { dropMedia(list[i].id); run(`DELETE FROM prof_flames WHERE media=?`, list[i].id); }
+    list[i] = v; all.pubv = list; run(`UPDATE users SET pics=? WHERE id=?`, JSON.stringify(all), me.id);
+    return { me: meOut(getUser(me.id)) };
+  }
   if (set === 'priv' && me.priv_env) E(400, 'Les photos privées sont chiffrées : mettez à jour l’application.');
   const all = J(me.pics, {}), list = (all[set] || [null, null, null]).slice(0, 3);
   if (body.media) {
     const m = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL AND enc=0`, String(body.media), me.id); if (!m) E(400, 'Photo introuvable.');
     run(`UPDATE media SET scope=?, ref=? WHERE id=?`, set === 'pub' ? 'ppub' : 'ppriv', me.id, m.id);
   }
-  if (list[slot]) dropMedia(list[slot]);
+  if (list[slot]) { dropMedia(list[slot]); run(`DELETE FROM prof_flames WHERE media=?`, list[slot]); }
   list[slot] = body.media ? String(body.media) : null; all[set] = list;
   run(`UPDATE users SET pics=? WHERE id=?`, JSON.stringify(all), me.id);
   return { me: meOut(getUser(me.id)) };
@@ -618,7 +633,7 @@ R('POST', /^\/api\/call\/signal$/, async ({ me, body }) => {
   if (type === 'ring' && !q1(`SELECT 1 FROM calls WHERE call_id=?`, callId)) run(`INSERT INTO calls(call_id,kind,chat_id,caller,callee,video,status,started) VALUES(?,?,?,?,?,?,?,?)`, callId, 'direct', cid, me.id, to, body.video ? 1 : 0, 'ringing', now());
   else if (type === 'accept') run(`UPDATE calls SET status='answered', answered=? WHERE call_id=? AND answered IS NULL`, now(), callId);
   else if (type === 'decline' || type === 'busy') run(`UPDATE calls SET status=?, ended=? WHERE call_id=? AND status='ringing'`, type === 'busy' ? 'busy' : 'declined', now(), callId);
-  else if (type === 'end') run(`UPDATE calls SET ended=COALESCE(ended,?), status=CASE WHEN status='ringing' THEN 'missed' ELSE status END WHERE call_id=?`, now(), callId);
+  else if (type === 'end') { const was = q1(`SELECT callee, status FROM calls WHERE call_id=?`, callId); run(`UPDATE calls SET ended=COALESCE(ended,?), status=CASE WHEN status='ringing' THEN 'missed' ELSE status END WHERE call_id=?`, now(), callId); if (was && was.status === 'ringing' && was.callee) push(was.callee, { t: 'act' }); }
   if (type === 'ring') {
     // Le téléphone de la personne appelée sonne même si tam-tam est fermé : notification « touchez pour répondre ».
     pendingRings.set(to, { ev, at: now() });
@@ -1131,7 +1146,48 @@ R('GET', /^\/api\/memories\/received$/, async ({ me }) => {
   const rows = qa(`SELECT m.*, a.seen, a.opened FROM memories m JOIN mem_access a ON a.mem_id=m.id AND a.user_id=? WHERE m.user_id<>? ORDER BY m.created_at DESC LIMIT 600`, me.id, me.id).filter(m => !blockedEither(m.user_id, me.id));
   return { items: rows.map(m => ({ ...memOut(m), from: m.user_id, fromUser: userCard(getUser(m.user_id), me.id), seen: !!m.seen, opened: !!m.opened })), unseen: rows.filter(m => !m.seen).length };
 });
-R('POST', /^\/api\/memories\/received\/seen$/, async ({ me }) => { run(`UPDATE mem_access SET seen=1 WHERE user_id=? AND seen=0`, me.id); return { ok: true }; });
+R('POST', /^\/api\/memories\/received\/seen$/, async ({ me, body }) => {
+  if (body && body.id) run(`UPDATE mem_access SET seen=1 WHERE user_id=? AND mem_id=?`, me.id, +body.id);
+  else run(`UPDATE mem_access SET seen=1 WHERE user_id=? AND seen=0`, me.id);
+  return { ok: true };
+});
+/* Activité à signaler par un point lumineux : appels manqués et flammes reçues sur le profil. */
+const actOf = u => ({
+  calls: q1(`SELECT COUNT(*) n FROM calls WHERE callee=? AND kind='direct' AND status='missed' AND started>?`, u.id, u.calls_seen || u.created_at).n,
+  prof: q1(`SELECT COUNT(*) n FROM prof_flames WHERE owner=? AND user_id<>? AND at>?`, u.id, u.id, u.prof_seen || 0).n });
+R('GET', /^\/api\/me\/act$/, async ({ me }) => actOf(me));
+R('POST', /^\/api\/me\/act\/seen$/, async ({ me, body }) => {
+  if (body.k === 'calls') run(`UPDATE users SET calls_seen=? WHERE id=?`, now(), me.id);
+  else if (body.k === 'prof') run(`UPDATE users SET prof_seen=? WHERE id=?`, now(), me.id);
+  else E(400, 'Inconnu.');
+  return actOf(getUser(me.id));
+});
+// Flammes sur les photos et vidéos du profil (publiques ou privées).
+function profMediaOk(owner, mediaId, viewer) {
+  const md = q1(`SELECT id, owner, scope FROM media WHERE id=?`, String(mediaId || '')); if (!md || md.owner !== owner.id) return false;
+  if (viewer === owner.id) return md.scope === 'ppub' || md.scope === 'ppriv';
+  if (md.scope === 'ppub') return !blockedEither(owner.id, viewer);
+  if (md.scope === 'ppriv') return canSeePriv(owner, viewer);
+  return false;
+}
+R('GET', /^\/api\/users\/(\d+)\/flames$/, async ({ me, m }) => {
+  const u = getUser(+m[1]); if (!u) E(404, 'Personne introuvable.');
+  const rows = qa(`SELECT media, user_id, at FROM prof_flames WHERE owner=? ORDER BY at DESC`, u.id).filter(r => profMediaOk(u, r.media, me.id));
+  const items = {};
+  for (const r of rows) { const it = items[r.media] || (items[r.media] = { n: 0, mine: false }); it.n++; if (r.user_id === me.id) it.mine = true;
+    if (u.id === me.id) { const c = userCard(getUser(r.user_id), me.id); if (c) (it.who || (it.who = [])).push({ user: c, at: r.at }); } }
+  return { items };
+});
+R('POST', /^\/api\/users\/(\d+)\/flame$/, async ({ me, m, body }) => {
+  const u = getUser(+m[1]); if (!u) E(404, 'Personne introuvable.'); if (u.id === me.id) E(400, 'Vous ne pouvez pas vous envoyer une flamme.');
+  if (!profMediaOk(u, body.media, me.id)) E(404, 'Photo introuvable.');
+  if (body.on === false) run(`DELETE FROM prof_flames WHERE media=? AND user_id=?`, String(body.media), me.id);
+  else if (run(`INSERT OR IGNORE INTO prof_flames(media,owner,user_id,at) VALUES(?,?,?,?)`, String(body.media), u.id, me.id, now()).changes) {
+    push(u.id, { t: 'act' }); webPush(u.id, { title: nameFor(me, u.id), body: '🔥 a aimé une photo de votre profil', tag: 'pflame-' + u.id, url: '/' });
+  }
+  const n = q1(`SELECT COUNT(*) n FROM prof_flames WHERE media=?`, String(body.media)).n;
+  return { n, mine: body.on !== false };
+});
 // Code à 4 chiffres des souvenirs privés : créé une fois, vérifié par le serveur (essais limités).
 R('POST', /^\/api\/mem\/code$/, async ({ me, body }) => {
   const code = String(body.code || '');

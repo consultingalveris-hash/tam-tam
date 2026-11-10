@@ -1184,3 +1184,47 @@ body.in-cam{overflow:hidden}
 .avb-pt[aria-pressed="true"]{border-color:#12a6b4}
 .avb-pt .av{width:100%;height:auto;aspect-ratio:1}
 .av img.av-pt,.avb-pt img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+
+/* v1.73 — croix des Réglages à droite, zone de suppression à part */
+#pmodal .pm-head .grow{flex:1 1 auto}
+#pmodal .pm-head [data-act="pmClose"]{margin-left:auto}
+.set-block.danger-zone{margin-top:28px;border:1px solid color-mix(in srgb,var(--danger) 35%,transparent);background:color-mix(in srgb,var(--danger) 6%,var(--surface))}
+.set-block.danger-zone h2{color:var(--danger)}
+.auth-new{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:4px 6px;margin-top:6px;padding-top:12px;border-top:1px solid var(--line);font-size:14px;color:var(--fg-2)}
+.linkb.strong{font-weight:700}
+
+/* v1.73 — sélection par point : un anneau turquoise lumineux entoure le point choisi */
+.fwd-row input[type=checkbox],.pick:not(.chk) input[type=checkbox]{-webkit-appearance:none;appearance:none;width:28px;height:28px;margin:0;flex:none;border-radius:50%;display:grid;place-items:center;background:transparent;border:2px solid transparent;cursor:pointer;transition:border-color .18s,box-shadow .18s}
+.fwd-row input[type=checkbox]::before,.pick:not(.chk) input[type=checkbox]::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--fg-2)}
+.fwd-row input[type=checkbox]:checked,.pick:not(.chk) input[type=checkbox]:checked{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent),0 0 14px 2px color-mix(in srgb,var(--accent) 70%,transparent)}
+.fwd-row input[type=checkbox]:focus-visible,.pick:not(.chk) input[type=checkbox]:focus-visible{outline:2px solid var(--accent-strong);outline-offset:2px}
+.pick:not(.chk) input[type=checkbox]{order:9;margin-left:auto}
+.selmark,.mem-chk{font-size:0;color:transparent;border-color:transparent;background:transparent}
+.selmark::before,.mem-chk::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--fg-2)}
+.mem-chk::before{background:#fff}
+.chat-row.sel .selmark,.mem-chk.on{background:transparent;border-color:var(--accent);box-shadow:0 0 12px 2px color-mix(in srgb,var(--accent) 70%,transparent)}
+
+/* v1.73 — points d'activité : sans chiffre, juste un point lumineux en haut à droite de l'icône */
+.act-dot{position:absolute;width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--surface),0 0 10px 2px color-mix(in srgb,var(--accent) 75%,transparent);pointer-events:none}
+.tab{position:relative}.tab .act-dot{top:4px;left:calc(50% + 12px)}
+.ib.dotted .act-dot{top:6px;right:5px}
+.chip{position:relative}.chip .act-dot{position:relative;display:inline-block;width:8px;height:8px;margin-left:6px;vertical-align:middle}
+.act-dot.act-mem{background:#ffd23f;box-shadow:0 0 0 2px var(--surface),0 0 12px 3px rgb(255 210 63/.8);animation:actBlink 1.1s ease-in-out infinite}
+@keyframes actBlink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.25;transform:scale(.8)}}
+@media (prefers-reduced-motion:reduce){.act-dot.act-mem{animation:none}}
+/* souvenir reçu pas encore ouvert : le point d'options clignote en jaune */
+.mem-tile .mem-more.new{background:rgb(0 0 0/.45)!important}
+.mem-tile .mem-more.new i{background:#ffd23f!important;box-shadow:0 0 8px 2px rgb(255 210 63/.85);animation:actBlink 1.1s ease-in-out infinite}
+.mem-tile .mem-more.gone{opacity:0}
+
+/* v1.73 — vidéos du profil et flammes */
+.ph3-vid{position:relative;display:block;width:100%;height:100%;background:#000}
+.ph3-vid video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+.ph3-vid .ph3-play{position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:22px;text-shadow:0 1px 6px rgb(0 0 0/.6)}
+.pf-cell{display:flex;flex-direction:column;gap:6px;min-width:0}
+.pf-bar{display:flex;align-items:center;justify-content:center;gap:6px;min-height:30px}
+.pf-btn{display:inline-flex;align-items:center;gap:4px;min-height:30px;padding:0 10px;border-radius:15px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.pf-btn[aria-pressed="true"]{border-color:#ff7a3c;background:color-mix(in srgb,#ff7a3c 14%,var(--surface));color:#d4521b}
+.pf-btn .fl{filter:grayscale(1);opacity:.6}.pf-btn[aria-pressed="true"] .fl{filter:none;opacity:1}
+.pf-who{background:none;border:0;padding:0 4px;color:var(--accent-strong);font:inherit;font-size:13px;font-weight:700;text-decoration:underline;cursor:pointer}
+.vid-big{width:100%;max-height:70vh;border-radius:12px;background:#000}

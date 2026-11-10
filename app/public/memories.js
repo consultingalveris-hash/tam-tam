@@ -70,7 +70,7 @@ const Mem = {
   async loadRecv(quiet) {
     try { const r = await api('/api/memories/received'); keepUsers(r.items.map(x => x.fromUser).filter(Boolean)); this.recv = await Promise.all(r.items.map(x => this.open(x))); this.unseen = r.unseen; }
     catch (e) { this.recv = this.recv || []; if (!quiet) toast(e.message); }
-    renderTabs(); if (S.tab === 'souvenirs') { renderBody(); if (this.filt === 'friends' && this.unseen) this.markSeen(); }
+    renderTabs(); if (S.tab === 'souvenirs') renderBody();
   },
   markSeen() { if (!this.unseen) return; this.unseen = 0; (this.recv || []).forEach(x => { x.seen = true; }); api('/api/memories/received/seen', {}).catch(() => {}); renderTabs(); },
   async loadFor(uid) {
@@ -115,7 +115,7 @@ const Mem = {
     const un = this.unseen, nSel = this.sel ? this.sel.size : 0;
     const selBar = this.sel ? `<div class="selbar mem-selbar"><button class="ib" type="button" data-act="memSelOff" aria-label="Annuler la sélection">${I.close}</button><b>${nSel} sélectionné${nSel > 1 ? 's' : ''}</b><span class="grow"></span><button class="btn sm ghost" type="button" data-act="memSelAll">Tout</button><button class="ib sel-del" type="button" data-act="memSelDel" aria-label="Supprimer la sélection" title="Supprimer"${nSel ? '' : ' disabled'}>${I.trash}</button></div>` : '';
     return `<div class="mem">${selBar}
-      <div class="mem-top"><div class="chips mem-filts">${[['all', 'Tous'], ['public', 'Publics'], ['friends', 'Mon Tam-Tam'], ['private', 'Privés']].map(([k, l]) => `<button class="chip" type="button" data-act="memFilt" data-f="${k}" aria-pressed="${f === k}">${k === 'private' ? I.lock : ''}${l}${k === 'friends' && un ? ` <span class="cnt">${un}</span>` : ''}</button>`).join('')}</div></div>
+      <div class="mem-top"><div class="chips mem-filts">${[['all', 'Tous'], ['public', 'Publics'], ['friends', 'Mon Tam-Tam'], ['private', 'Privés']].map(([k, l]) => `<button class="chip" type="button" data-act="memFilt" data-f="${k}" aria-pressed="${f === k}">${k === 'private' ? I.lock : ''}${l}${k === 'friends' && un ? actDot('act-mem', `${un} souvenir${un > 1 ? 's' : ''} reçu${un > 1 ? 's' : ''} à voir`) : ''}</button>`).join('')}</div></div>
       ${card}${main}
     </div>`;
   },
@@ -125,8 +125,8 @@ const Mem = {
     const veil = it.locked ? '🔒' : this.hidden(it) ? `<span class="mem-veil vlt"><span class="mv-logo">${BRAND()}</span><b>${I.lock}Privé</b>${it.once ? '<small>① Vue unique</small>' : ''}</span>` : it.once && recv ? `<span class="mem-veil once">${it.opened ? 'Ouvert' : '① Vue unique'}</span>` : '';
     const noTh = !!veil || it.kind === 'doc';
     const docv = !veil && it.kind === 'doc' ? `<span class="mem-doc"><b>${esc(((it.fname || '').split('.').pop() || 'DOC').slice(0, 4).toUpperCase())}</b><small>${esc(it.fname || 'Document')}</small></span>` : '';
-    const badge = recv ? `<span class="mem-b from">${!it.seen ? '<i class="new-dot"></i>' : ''}${esc(first(fu.name))}</span>` : other ? '' : `<span class="mem-b">${ic}${it.aud === 'friends' ? `${(it.to || []).length || ''}` : l}${it.lock ? ' · ' + I.lock : ''}${it.once ? ' · ①' : ''}</span>`;
-    return `<button class="mem-tile${noTh ? ' veiled' : ''}" type="button" data-act="memView" data-id="${it.id}"${other ? ` data-u="${other}"` : ''} aria-label="${it.kind === 'video' ? 'Vidéo' : 'Photo'} ${recv ? 'reçue de ' + esc(fu.name) : l.toLowerCase()} du ${new Date(it.takenAt).toLocaleDateString('fr-FR')}"><span class="mem-th"${noTh ? '' : ` data-memth="${it.id}"`}${other ? ` data-u="${other}"` : ''}>${veil}${docv}</span>${it.kind === 'video' && !noTh ? `<span class="mem-play">▶</span>` : ''}${badge}${!this.sel && !other ? `<span class="mem-more dotb" role="button" tabindex="0" data-act="memMenu" data-id="${it.id}" aria-label="Options : supprimer, sélectionner" title="Options"><i></i></span>` : ''}${this.sel && !other ? `<span class="mem-chk${sel ? ' on' : ''}" aria-hidden="true">${sel ? '✓' : ''}</span>` : ''}</button>`;
+    const badge = recv ? `<span class="mem-b from">${esc(first(fu.name))}</span>` : other ? '' : `<span class="mem-b">${ic}${it.aud === 'friends' ? `${(it.to || []).length || ''}` : l}${it.lock ? ' · ' + I.lock : ''}${it.once ? ' · ①' : ''}</span>`;
+    return `<button class="mem-tile${noTh ? ' veiled' : ''}" type="button" data-act="memView" data-id="${it.id}"${other ? ` data-u="${other}"` : ''} aria-label="${it.kind === 'video' ? 'Vidéo' : 'Photo'} ${recv ? 'reçue de ' + esc(fu.name) : l.toLowerCase()} du ${new Date(it.takenAt).toLocaleDateString('fr-FR')}"><span class="mem-th"${noTh ? '' : ` data-memth="${it.id}"`}${other ? ` data-u="${other}"` : ''}>${veil}${docv}</span>${it.kind === 'video' && !noTh ? `<span class="mem-play">▶</span>` : ''}${badge}${!this.sel && !other ? `<span class="mem-more dotb${recv && !it.seen ? ' new' : ''}${recv && it.once && it.opened ? ' gone' : ''}" role="button" tabindex="0" data-act="memMenu" data-id="${it.id}" aria-label="${recv && !it.seen ? 'Nouveau souvenir, pas encore vu. ' : ''}Options : supprimer, sélectionner" title="Options"><i></i></span>` : ''}${this.sel && !other ? `<span class="mem-chk${sel ? ' on' : ''}" aria-hidden="true">${sel ? '✓' : ''}</span>` : ''}</button>`;
   },
   // Remplit les vignettes déchiffrées après l'affichage.
   async hydrate(root = document) {
@@ -264,8 +264,8 @@ const Mem = {
     if (it.aud !== 'private' && it.lock && this.pass !== it.id) { this.after = () => { this.unlocked = this.filt === 'private' && this.unlocked; this.pass = it.id; this.view(id, uid); this.pass = null; }; return this.codeSheet(S.me.hasMemCode ? 'ask' : 'new'); }
     if (this.hidden(it)) return this.unlockThen(() => { renderBody(); this.view(id, uid); });
     const recv = !uid && !this.mine(it);
-    if (recv && it.once && it.opened) return toast('Souvenir à vue unique déjà ouvert.');
-    if (recv && !it.seen) { it.seen = true; this.unseen = Math.max(0, this.unseen - 1); renderTabs(); api('/api/memories/received/seen', {}).catch(() => {}); }
+    if (recv && it.once && it.opened) { toast('Souvenir à vue unique déjà ouvert.'); return ACT.memMenu && ACT.memMenu({id: String(it.id)}); }
+    if (recv && !it.seen) { it.seen = true; this.unseen = Math.max(0, this.unseen - 1); renderTabs(); renderBody(); api('/api/memories/received/seen', {id: it.id}).catch(() => {}); }
     const mine = !uid && !recv, [l, ic] = MEM_AUD[it.aud] || MEM_AUD.private, prot = it.aud !== 'public';
     layer.innerHTML = `<div class="mem-view${prot ? ' nocopy' : ''}" role="dialog" aria-modal="true" aria-label="Souvenir"><div class="mv-top"><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button>
       <div class="grow"><b>${new Date(it.takenAt).toLocaleDateString('fr-FR', {day: 'numeric', month: 'long', year: 'numeric'})}</b><small>${recv ? `Envoyé par ${esc(uOf(it.from).name)}` : `${ic}${l}`}${it.lock ? ' · privé' : ''}${it.once ? ' · vue unique' : ''}</small></div></div>
@@ -297,7 +297,7 @@ const Mem = {
   },
 };
 Object.assign(ACT, {
-  memFilt(d) { if (d.f !== 'private') Mem.unlocked = false; if (d.f === 'private' && !Mem.unlocked) { Mem.filt = 'private'; renderBody(); return Mem.unlockThen(() => renderBody()); } Mem.filt = d.f; renderBody(); if (d.f === 'friends') Mem.markSeen(); },
+  memFilt(d) { if (d.f !== 'private') Mem.unlocked = false; if (d.f === 'private' && !Mem.unlocked) { Mem.filt = 'private'; renderBody(); return Mem.unlockThen(() => renderBody()); } Mem.filt = d.f; renderBody(); },
   memDocsMenu() {
     const docs = [...(Mem.items || []), ...(Mem.recv || [])].filter(x => x.kind === 'doc' && x.aud !== 'private');
     const sendable = docs.filter(x => !x.lock && !x.once);

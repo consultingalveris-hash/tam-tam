@@ -83,16 +83,11 @@ const avOn = (u, cls) => `<span class="avw">${avatar(u, cls)}${u && u.busy ? '<s
 const presLabel = u => u.busy ? 'occupé' : u.online ? 'en ligne' : seenLabel(u.lastSeen);
 const grpAv = (c, cls = '') => c.photo ? `<span class="av grp ph ${cls}" aria-hidden="true"><img src="${esc(c.photo)}" alt=""></span>` : `<span class="av grp ${cls}" style="--h:${(c.id * 47) % 360}" aria-hidden="true">${I.users}</span>`;
 function avGallery(sel, who) {
-  const a = avNorm(sel), mini = st => avFace(Object.assign({}, a, {st, f: FEM.includes(st) ? true : a.f}));
-  return `<div class="avb" id="avg-${who}"><span class="lbl">Portraits</span><div class="avb-pts">${PORTRAITS.map(p => `<button class="avb-pt" type="button" data-act="avPick" data-who="${who}" data-p="${p}" aria-pressed="${!!(sel && sel.v === 3 && sel.p === p)}" aria-label="Portrait ${+p.slice(1)}"><span class="av"><img src="/avatars/${p}.jpg" alt="" loading="lazy"></span></button>`).join('')}</div><div class="avb-top"><span class="av">${avFace(a)}</span><span class="hint">Ou composez votre avatar : coiffure, teint, couleur de la tenue et détails.</span></div>
-    <span class="lbl">Coiffure</span><div class="avb-row">${AV2.styles.map(([k, l]) => `<button class="avb-st" type="button" data-act="avSet" data-who="${who}" data-k="st" data-v="${k}" aria-pressed="${a.st === k}"><span class="av">${mini(k)}</span>${l}</button>`).join('')}</div>
-    <span class="lbl">Teint</span><div class="avg-sw">${AV2.skins.map(k => `<button class="skin" type="button" data-act="avSet" data-who="${who}" data-k="sk" data-v="${k}" style="--c:${SKIN[k]}" aria-pressed="${a.sk === k}" aria-label="Teint ${k.toUpperCase()}"></button>`).join('')}</div>
-    <span class="lbl">Couleur de la tenue${a.st === 'foulard' ? ' et du foulard' : ''}</span><div class="avg-sw">${AV2.shirts.map(c => `<button class="sw" type="button" data-act="avSet" data-who="${who}" data-k="sh" data-v="${c}" style="--c:${c}" aria-pressed="${a.sh === c}" aria-label="Couleur ${c}"></button>`).join('')}</div>
-    <span class="lbl">Détails</span><div class="chips">${[['f', 'Traits féminins'], ['b', 'Barbe'], ['g', 'Lunettes'], ['e', 'Boucles d’oreilles']].map(([k, l]) => `<button class="chip" type="button" data-act="avSet" data-who="${who}" data-k="${k}" data-v="t" aria-pressed="${!!a[k]}">${l}</button>`).join('')}</div></div>`;
+  return `<div class="avb" id="avg-${who}"><span class="lbl">Portraits</span><div class="avb-pts">${PORTRAITS.map(p => `<button class="avb-pt" type="button" data-act="avPick" data-who="${who}" data-p="${p}" aria-pressed="${!!(sel && sel.v === 3 && sel.p === p)}" aria-label="Portrait ${+p.slice(1)}"><span class="av"><img src="/avatars/${p}.jpg" alt="" loading="lazy"></span></button>`).join('')}</div><p class="hint" style="margin:0">Touchez un portrait, puis « Valider ». D’autres visages du monde arrivent bientôt.</p></div>`;
 }
 
 /* ---------- connexion et inscription ---------- */
-const A = {mode: 'login', avatar: {v: 2, st: 'court', sk: 'c', sh: '#14b8c9', f: false, b: false, g: false, e: false}};
+const A = {mode: 'login', avatar: null};
 async function boot() {
   S.pendingChat = +((/[?&]chat=(\d+)/.exec(location.search) || [])[1] || 0);
   const gj = (/[?&]g=([A-Za-z0-9_-]{6,40})/.exec(location.search) || [])[1]; if (gj) S.pendingJoin = gj;
@@ -125,7 +120,7 @@ function renderAuth(msg) {
     <div class="field"><label for="aPass">Nouveau mot de passe (8 caractères minimum)</label><div class="pw"><input id="aPass" type="password" autocomplete="new-password" minlength="8" required><button type="button" data-act="pwShow">Voir</button></div></div>
     <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Enregistrer et me connecter</button>`;
   else if (A.mode === 'register') h = `<h2>${m.ownerSetup ? 'Créer le compte du propriétaire' : 'Créer mon compte'}</h2>
-    <p class="hint">${A.g && !m.ownerSetup ? (A.g.by ? `${esc(A.g.by)} vous invite sur tam-tam.` : 'Bienvenue sur tam-tam.') : m.ownerSetup ? `Premier compte de tam-tam${m.ownerEmail ? ` : utilisez l’adresse ${esc(m.ownerEmail)}` : ''}.` : m.invite ? `${esc(m.invite.by)} vous invite sur tam-tam.` : 'L’inscription se fait uniquement avec un lien d’invitation envoyé par un membre.'}</p>
+    <p class="hint">${A.g && !m.ownerSetup ? (A.g.by ? `${esc(A.g.by)} vous invite sur tam-tam.` : 'Bienvenue sur tam-tam.') : m.ownerSetup ? `Premier compte de tam-tam${m.ownerEmail ? ` : utilisez l’adresse ${esc(m.ownerEmail)}` : ''}.` : m.invite ? `${esc(m.invite.by)} vous invite sur tam-tam.` : 'Pour créer un compte, il faut un lien d’invitation envoyé par un membre de Tam-Tam : demandez-le à un proche qui utilise déjà l’application, puis ouvrez ce lien. Vous pourrez aussi utiliser « Continuer avec Google » depuis ce lien.'}</p>
     ${m.ownerSetup || m.invite || A.g ? `${A.g ? `<p class="g-ok">${gIcon()}<span>Compte Google confirmé : <b>${esc(A.g.email)}</b>. Il reste à choisir votre pseudo et à accepter les conditions.</span></p>` : gBtn()}
     <div class="field"><label for="aHandle">Pseudo</label><div class="at-in"><span>@</span><input id="aHandle" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="20" required placeholder="ex. lion.du.sahel" pattern="[A-Za-z0-9._]{3,20}"></div><small class="hint">C’est le seul nom que voient les membres qui ne sont pas vos contacts. 3 à 20 caractères : lettres, chiffres, point ou tiret bas.</small></div>
     <div class="field-row"><div class="field"><label for="aName">Prénom</label><input id="aName" autocomplete="given-name" maxlength="30" value="${esc(A.g ? (A.g.name || '').split(' ')[0] : '')}"></div>
@@ -144,8 +139,8 @@ function renderAuth(msg) {
     <div class="field"><label for="aMail">Adresse e-mail</label><input id="aMail" type="email" autocomplete="email" required></div>
     <div class="field"><label for="aPass">Mot de passe</label><div class="pw"><input id="aPass" type="password" autocomplete="current-password" required><button type="button" data-act="pwShow">Voir</button></div></div>
     <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Me connecter</button>
-    ${m.invite || m.ownerSetup ? '<button class="linkb" type="button" data-act="authMode" data-m="register">Créer un compte</button>' : ''}
-    <button class="linkb" type="button" data-act="forgot">Mot de passe oublié ?</button>`;
+    <button class="linkb" type="button" data-act="forgot">Mot de passe oublié ?</button>
+    <div class="auth-new"><span>Pas encore de compte ?</span><button class="linkb strong" type="button" data-act="authMode" data-m="register">Créer un compte</button></div>`;
   root.innerHTML = `<div class="auth"><form class="auth-card" data-form="auth" novalidate>${top}${h}</form></div>`;
   const f = root.querySelector('input'); if (f) f.focus();
 }
@@ -184,6 +179,7 @@ async function startApp() {
   if (S.pendingChat && S.chats.has(S.pendingChat)) openChat(S.pendingChat); S.pendingChat = 0;
   if (S.pendingTab) { S.tab = S.pendingTab; S.pendingTab = null; history.replaceState(null, '', '/'); renderAll(); }
   if (typeof Mem !== 'undefined') Mem.loadRecv(true);
+  loadAct();
   if (S.pendingJoin) { const g = S.pendingJoin; S.pendingJoin = null; history.replaceState(null, '', '/'); joinPreview(g); }
   if (S.qrAdd) { const t = S.qrAdd; S.qrAdd = null; Qr.connect(t); }
 }
@@ -221,12 +217,13 @@ let resync = null;
 function onEvent(ev) {
   if (ev.t === 'hello' && ev.v) { if (!S.ver) S.ver = ev.v; else if (S.ver !== ev.v) S.newVer = true; }
   if (S.newVer && !(typeof Call !== 'undefined' && Call.c) && !(typeof GCall !== 'undefined' && GCall.c) && !document.querySelector('#compose textarea:focus, .sheet')) { location.reload(); return; }
-  if (ev.t === 'hello') { if (resync) { loadChats().then(renderAll); if (S.chatId) loadMessages(S.chatId, true); } resync = true; }
+  if (ev.t === 'hello') { if (resync) { loadChats().then(renderAll); loadAct(); if (S.chatId) loadMessages(S.chatId, true); } resync = true; }
   else if (ev.t === 'msg') onMsg(ev.msg, ev.update);
   else if (ev.t === 'hide') msgHide(ev.chatId, ev.id);
   else if (ev.t === 'read') { if (ev.user === S.me.id) Device.badge(); const c = S.chats.get(ev.chatId); if (c) { const m = c.members.find(x => x.id === ev.user); if (m) m.lastRead = Math.max(m.lastRead, ev.upTo); if (S.chatId === ev.chatId) renderMessages(true); if (S.tab === 'chats') renderBody(); } }
   else if (ev.t === 'typing') { const k = ev.chatId; if (Date.now() - (S.lastFrom.get(k + ':' + ev.user) || 0) < 2500) return; S.typing.set(k, {user: ev.user, until: Date.now() + 4000}); refreshTyping(k); setTimeout(() => refreshTyping(k), 4100); }
   else if (ev.t === 'contacts') { loadContacts().then(() => { renderTabs(); if (S.tab !== 'chats') renderBody(); if (document.getElementById('addSheet') && typeof Add !== 'undefined') Add.loadPeople(); }); loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); }); }
+  else if (ev.t === 'act') { loadAct().then(() => { if (S.tab === 'calls') { Calls.log = null; renderBody(); actSeen('calls'); } }); }
   else if (ev.t === 'mem') { Sound.notif(); if (typeof Mem !== 'undefined') Mem.loadRecv(true); }
   else if (ev.t === 'chats') loadChats().then(() => { if (S.tab === 'chats') renderBody(); if (S.chatId) { renderPin(); renderMessages(true); } });
   else if (ev.t === 'statuses') loadStatuses().then(() => { renderStories(); if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); });
@@ -267,10 +264,15 @@ async function loadStatuses() {
 function renderAll() { renderTabs(); renderHead(); renderBody(); }
 
 /* ---------- liste ---------- */
+const actDot = (cls, label) => `<span class="act-dot ${cls}" aria-hidden="true"></span>${label ? `<span class="sr">, ${label}</span>` : ''}`;
+async function loadAct() { try { S.act = await api('/api/me/act'); } catch {} if (S.me) renderTabs(); }
+function actSeen(k) { if (!S.act || !S.act[k]) return; S.act[k] = 0; renderTabs(); api('/api/me/act/seen', {k}).then(r => { S.act = r; }).catch(() => {}); }
 const TABS = [['chats', 'Discussions', I.chats], ['contacts', 'Contacts', I.users], ['souvenirs', 'Souvenirs', I.image], ['calls', 'Appels', I.dialpad]];
 function renderTabs() {
   const unread = [...S.chats.values()].filter(c => (c.unread > 0 || c.marked) && !c.archived && (!c.hidden || S.showHidden)).length, inc = S.contacts.incoming.length;
-  $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${id === 'chats' && unread ? `<span class="badge" aria-label="${unread} non lues">${unread}</span>` : ''}${id === 'souvenirs' && typeof Mem !== 'undefined' && Mem.unseen ? `<span class="badge" aria-label="${Mem.unseen} souvenir${Mem.unseen > 1 ? 's' : ''} reçu${Mem.unseen > 1 ? 's' : ''}">${Mem.unseen}</span>` : ''}${id === 'contacts' && inc ? `<span class="badge" aria-label="${inc} demande${inc > 1 ? 's' : ''} d’ami">${inc}</span>` : ''}</button>`).join('');
+  const act = S.act || {}, memN = typeof Mem !== 'undefined' ? Mem.unseen : 0;
+  const dotOf = id => id === 'chats' && unread ? actDot('', `${unread} discussion${unread > 1 ? 's' : ''} non lue${unread > 1 ? 's' : ''}`) : id === 'contacts' && inc ? actDot('', `${inc} demande${inc > 1 ? 's' : ''} d’ami`) : id === 'souvenirs' && memN ? actDot('act-mem', 'nouveau souvenir reçu') : id === 'calls' && act.calls ? actDot('', 'appel manqué') : '';
+  $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${dotOf(id)}</button>`).join('');
   $('#fab').hidden = S.tab !== 'chats'; Device.badge(); const fc = $('#filts'); if (fc) fc.innerHTML = filtChips(); const ac = $('.arch-chip'); if (ac) ac.outerHTML = archChip();
   const n = [...S.chats.values()].reduce((a, c) => a + (c.unread || 0), 0); document.title = n ? `(${n}) tam-tam` : 'tam-tam';
 }
@@ -281,12 +283,14 @@ function archChip() {
 }
 function filtChips() {
   const n = [...S.chats.values()].filter(c => (c.unread > 0 || c.marked) && !c.archived && (!c.hidden || S.showHidden)).length;
-  return [['all', 'Toutes'], ['unread', 'Non lues'], ['group', 'Groupes'], ['me', 'Mon profil']].map(([k, l]) => `<button class="chip" type="button" data-act="filt" data-f="${k}" aria-pressed="${(S.filt || 'all') === k || (k === 'all' && S.filt === 'arch')}">${l}${k === 'unread' && n ? ` <span class="cnt">${n}</span>` : ''}</button>`).join('');
+  const g = [...S.chats.values()].some(c => c.type === 'group' && (c.unread > 0 || c.marked) && !c.archived && (!c.hidden || S.showHidden)), pr = !!(S.act && S.act.prof);
+  const dot = k => (k === 'unread' && n) || (k === 'group' && g) || (k === 'me' && pr) ? actDot('', k === 'me' ? 'nouvelle activité sur votre profil' : 'nouveaux messages') : '';
+  return [['all', 'Toutes'], ['unread', 'Non lues'], ['group', 'Groupes'], ['me', 'Mon profil']].map(([k, l]) => `<button class="chip" type="button" data-act="filt" data-f="${k}" aria-pressed="${(S.filt || 'all') === k || (k === 'all' && S.filt === 'arch')}">${l}${dot(k)}</button>`).join('');
 }
 function renderHead() {
   const h = $('#head');
   if (S.tab === 'chats') {
-    h.innerHTML = `<div class="title">${archChip()}<h1 class="brand-h">${BRAND()}</h1><span class="grow"></span><button class="ib dotted" type="button" data-act="addOpen" aria-label="Ajouter des amis${S.contacts.incoming.length ? ` (${S.contacts.incoming.length} demande${S.contacts.incoming.length > 1 ? 's' : ''})` : ''}" title="Ajouter des amis">${I.userplus}${S.contacts.incoming.length ? `<span class="badge">${S.contacts.incoming.length}</span>` : ''}</button><button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button></div>
+    h.innerHTML = `<div class="title">${archChip()}<h1 class="brand-h">${BRAND()}</h1><span class="grow"></span><button class="ib dotted" type="button" data-act="addOpen" aria-label="Ajouter des amis${S.contacts.incoming.length ? ` (${S.contacts.incoming.length} demande${S.contacts.incoming.length > 1 ? 's' : ''})` : ''}" title="Ajouter des amis">${I.userplus}${S.contacts.incoming.length ? actDot() : ''}</button><button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button></div>
       <div class="stories" id="stories" aria-label="Statuts"></div>
       <label class="search">${I.search}<span class="sr">Rechercher</span><input id="q" type="search" placeholder="Rechercher une discussion" value="${esc(S.q)}" autocomplete="off"></label>
       <div class="chips filt" id="filts" role="group" aria-label="Filtrer les discussions">${filtChips()}</div>`;
@@ -304,7 +308,7 @@ function renderBody() {
 }
 /* Sur ordinateur, « Réglages » et « Mon profil » s'ouvrent dans une fenêtre, comme « Ajouter des amis ». */
 const isDesk = () => matchMedia('(min-width:821px)').matches;
-function pmOpen(kind) { S.modal = kind; renderModal(true); }
+function pmOpen(kind) { S.modal = kind; renderModal(true); if (kind === 'me') { actSeen('prof'); Prof.load(true); } }
 function pmRefresh() { const a = document.activeElement, body = $('#pmBody'); if (body && a && body.contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return; renderModal(); }
 function renderModal(first) {
   let el = $('#pmodal'); if (!S.modal) { if (el) el.remove(); return; }
@@ -407,16 +411,16 @@ function dl(rows) { const r = rows.filter(x => x[1]); return r.length ? `<dl cla
 async function fillFp() { const a = $('#myFp'); if (a) a.textContent = await myFingerprint(); }
 async function profSheet(id, back) {
   let u = uOf(id);
-  try { const r = await api('/api/users/' + id); u = r.user; if (u.id !== S.me.id) await PP.reveal(u); else PP.data && PP.attach(u); keepUsers([u]); } catch (e) { return toast(e.message); }
+  try { const r = await api('/api/users/' + id); u = r.user; if (u.id !== S.me.id) await PP.reveal(u); else PP.data && PP.attach(u); keepUsers([u]); Prof.remember(u.vids); Prof.remember(u.privVids); await Prof.loadFor(u.id); } catch (e) { return toast(e.message); }
   const p = u.pub || {}, bd = p.bd && p.bm ? `${p.bd} ${MOIS[p.bm - 1]}` : '';
   sheet(`${back ? `<div class="sheet-head"><button class="ib back-b" type="button" data-act="profBack" aria-label="Retour à la liste">${I.back}</button><h2 style="flex:1">Profil</h2><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>` : head('Profil')}<div class="sheet-body"><div class="prof">${avatar(u, 'xl')}<b>${esc(u.name)}</b>${u.amb ? `<span class="amb-b" title="Ambassadeur des langues Tam-Tam">🌍 Ambassadeur · ${esc(u.amb)}</span>` : ''}${subH(u) ? `<span>${esc(subH(u))}</span>` : ''}${u.rel === 'contact' ? `<small>${presLabel(u).replace(/^./, x => x.toUpperCase())}</small>` : ''}${u.mutual ? `<small>${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun</small>` : ''}</div>
     ${dl(PUB_L.map(([k, l]) => [l, p[k]]).concat([['Anniversaire', bd]])) || '<p class="hint" style="text-align:center">Profil public encore vide.</p>'}
     ${u.rel === 'contact' && u.pubkey ? `<details class="fp-box"><summary>${I.shield}Chiffrement de bout en bout · vérifier le code de sécurité</summary><p class="hint">Ce code n’est pas un secret : il sert seulement à vérifier, en le comparant de vive voix avec ${esc(first(u.name))}, que personne ne s’est glissé entre vous. S’il est identique sur vos deux téléphones, vos échanges sont bien protégés.</p><b class="fp" id="peerFp">…</b></details>` : ''}
     ${u.limTheirs ? `<p class="hint">${I.lock} Ajouté par code QR : vous voyez seulement son profil public.</p>` : ''}
     ${u.limMine ? `<div class="qrnote"><span>${I.lock} Contact ajouté avec votre code QR : ${esc(first(u.name))} ne voit pas votre profil privé (téléphone, adresse…).</span><button class="btn sm ghost" type="button" data-act="sharePriv" data-id="${u.id}">Lui montrer mon profil privé</button></div>` : ''}
-    ${picsView(u.pics, 'Photos publiques')}
+    ${profMedia(u, 'pub')}
     ${u.rel !== 'me' ? '<div id="profMem"></div>' : ''}
-    ${u.priv ? `<div class="nocopy"><span class="lbl">${I.lock} Profil privé</span>${dl(PRIV_L.map(([k, l]) => [l, u.priv[k]])) || '<p class="hint">Rien de renseigné.</p>'}${picsView(u.privPics, 'Photos privées')}${u.id !== S.me.id ? watermark() : ''}</div>` : ''}
+    ${u.priv ? `<div class="nocopy"><span class="lbl">${I.lock} Profil privé</span>${dl(PRIV_L.map(([k, l]) => [l, u.priv[k]])) || '<p class="hint">Rien de renseigné.</p>'}${profMedia(u, 'priv')}${u.id !== S.me.id ? watermark() : ''}</div>` : ''}
     ${u.rel === 'contact' ? `<div class="qrnote"><span>${I.phone || ''} ${u.telMine ? `${esc(first(u.name))} voit votre numéro de téléphone.` : `${esc(first(u.name))} ne voit pas votre numéro de téléphone.`}</span><button class="btn sm ghost" type="button" data-act="shareTel" data-id="${u.id}" data-on="${u.telMine ? '' : '1'}">${u.telMine ? 'Ne plus montrer mon numéro' : 'Lui montrer mon numéro'}</button></div>` : ''}
     ${u.rel === 'sent' ? '<p class="hint">Demande envoyée : vous pourrez échanger quand elle sera acceptée.</p>' : u.rel === 'none' ? '<p class="hint">Après votre demande, cette personne doit l’accepter pour que vous puissiez échanger.</p>' : ''}
     ${u.rel === 'me' ? '<p class="hint" style="text-align:center">C’est ainsi que les autres membres voient votre profil.</p>' : `<div class="actions">${u.rel === 'received' ? `<button class="btn ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button>` : ''}${u.blocked ? '' : relBtn(u).replace(/btn sm/g, 'btn')}</div>
@@ -1387,13 +1391,19 @@ function googleBox() {
     <div class="actions" style="justify-content:flex-start"><button class="btn sm" type="submit">Enregistrer</button>${g.id ? '<button class="btn sm ghost" type="button" data-act="gOff">Désactiver</button>' : ''}</div></form>`;
 }
 function picsEdit(set) {
-  const list = (set === 'pub' ? S.me.pics : S.me.privPics) || [null, null, null];
+  const me = S.me, list = (set === 'pub' ? me.pics : me.privPics) || [null, null, null], vids = Prof.vids(me, set), ids = Prof.ids(me, set);
+  const cell = (inner, i, kind) => `<div class="pf-cell">${inner}${Prof.bar(me.id, kind === 'v' ? (vids[i] || {}).id : ids[i])}</div>`;
   return `<span class="lbl">${set === 'pub' ? 'Mes 3 photos publiques' : 'Mes 3 photos privées'}</span>
-    <p class="hint" style="margin:0">${set === 'pub' ? 'Tous les membres de Tam-Tam peuvent les voir, par exemple avant de vous demander en ami.' : 'Seules les personnes autorisées à voir votre profil privé peuvent les voir.'}</p>
+    <p class="hint" style="margin:0">${set === 'pub' ? 'Tous les membres de Tam-Tam peuvent les voir, par exemple avant de vous demander en ami.' : 'Seules les personnes autorisées à voir votre profil privé peuvent les voir.'} Ceux qui les regardent peuvent vous envoyer une flamme 🔥.</p>
     <div class="ph3">${[0, 1, 2].map(i => list[i]
-      ? `<div class="ph3-it"><button class="ph3-img" type="button" data-act="picView" data-src="${esc(list[i])}" aria-label="Agrandir la photo ${i + 1}"><img src="${esc(list[i])}" alt=""></button><button class="ph3-x" type="button" data-act="picDel" data-set="${set}" data-i="${i}" aria-label="Retirer la photo ${i + 1}">${I.close}</button></div>`
+      ? cell(`<div class="ph3-it"><button class="ph3-img" type="button" data-act="picView" data-src="${esc(list[i])}" aria-label="Agrandir la photo ${i + 1}"><img src="${esc(list[i])}" alt=""></button><button class="ph3-x" type="button" data-act="picDel" data-set="${set}" data-i="${i}" aria-label="Retirer la photo ${i + 1}">${I.close}</button></div>`, i, 'p')
       : `<button class="ph3-add" type="button" data-act="picAdd" data-set="${set}" data-i="${i}"><span aria-hidden="true">+</span>Photo ${i + 1}</button>`).join('')}</div>
-    <input type="file" id="picIn" accept="image/*" hidden>`;
+    <span class="lbl">${set === 'pub' ? 'Mes 3 vidéos publiques' : 'Mes 3 vidéos privées'}</span>
+    <p class="hint" style="margin:0">Une courte vidéo par case (40 Mo au maximum, environ une minute).${set === 'priv' ? ' Elles sont chiffrées pour les seules personnes autorisées.' : ''}</p>
+    <div class="ph3">${[0, 1, 2].map(i => vids[i]
+      ? cell(`<div class="ph3-it">${Prof.vidTile(vids[i], i)}<button class="ph3-x" type="button" data-act="vidDel" data-set="${set}" data-i="${i}" aria-label="Retirer la vidéo ${i + 1}">${I.close}</button></div>`, i, 'v')
+      : `<button class="ph3-add" type="button" data-act="vidAdd" data-set="${set}" data-i="${i}"><span aria-hidden="true">▶</span>Vidéo ${i + 1}</button>`).join('')}</div>
+    <input type="file" id="picIn" accept="image/*" hidden><input type="file" id="vidIn" accept="video/*" hidden>`;
 }
 function closePicker(ok) {
   const cs = S.contacts.contacts, close = new Set(S.me.close || []);
@@ -1435,15 +1445,41 @@ function pendAvatar() {
   const P = S.pp; if (!P) return avatar(S.me, 'xl');
   return P.kind === 'photo' ? `<span class="av xl"><img src="${esc(P.url)}" alt=""></span>` : `<span class="av xl" aria-hidden="true">${avFace(P.av)}</span>`;
 }
-function picsView(list, title) {
-  const l = (list || []).filter(Boolean); if (!l.length) return '';
-  return `<span class="lbl">${title}</span><div class="ph3">${l.map((u, i) => `<button class="ph3-img" type="button" data-act="picView" data-src="${esc(u)}" aria-label="Agrandir la photo ${i + 1}"><img src="${esc(u)}" alt=""></button>`).join('')}</div>`;
+function profMedia(u, set) {
+  const pics = (set === 'pub' ? u.pics : u.privPics) || [], ids = Prof.ids(u, set), vids = Prof.vids(u, set);
+  const ph = [0, 1, 2].filter(i => pics[i]).map(i => `<div class="pf-cell"><button class="ph3-img" type="button" data-act="picView" data-src="${esc(pics[i])}" aria-label="Agrandir la photo ${i + 1}"><img src="${esc(pics[i])}" alt=""></button>${Prof.bar(u.id, ids[i])}</div>`);
+  const vd = [0, 1, 2].filter(i => vids[i]).map(i => `<div class="pf-cell">${Prof.vidTile(vids[i], i)}${Prof.bar(u.id, vids[i].id)}</div>`);
+  return (ph.length ? `<span class="lbl">${set === 'pub' ? 'Photos publiques' : 'Photos privées'}</span><div class="ph3">${ph.join('')}</div>` : '') + (vd.length ? `<span class="lbl">${set === 'pub' ? 'Vidéos publiques' : 'Vidéos privées'}</span><div class="ph3">${vd.join('')}</div>` : '');
 }
+/* ---------- vidéos du profil et flammes 🔥 sur les photos et vidéos ---------- */
+const Prof = {
+  fl: new Map(), urls: new Map(),
+  mid: u => { const m = /\/api\/media\/([A-Za-z0-9_-]+)/.exec(u || ''); return m ? m[1] : null; },
+  ids(u, set) { return set === 'pub' ? (u.pics || []).map(x => this.mid(x)) : (u.privIds || []); },
+  vids(u, set) { return (set === 'pub' ? u.vids : u.privVids) || [null, null, null]; },
+  vidTile(v, i) { if (v && v.id && !this.reg.has(v.id)) this.reg.set(v.id, v); return `<button class="ph3-img ph3-vid" type="button" data-act="vidView" data-vid="${esc(v.id)}" aria-label="Regarder la vidéo ${i + 1}"><video data-pvid="${esc(v.id)}" muted playsinline preload="metadata"></video><span class="ph3-play" aria-hidden="true">▶</span></button>`; },
+  reg: new Map(), // id de la vidéo -> {url chiffrée + clé} ou adresse déjà déchiffrée
+  remember(list) { (list || []).forEach(v => { if (v && v.id) this.reg.set(v.id, v); }); },
+  async src(id) {
+    if (this.urls.has(id)) return this.urls.get(id);
+    const v = this.reg.get(id); if (!v) return null; if (v.blob) return v.blob;
+    const p = (async () => { const u = await PP.decPic(v); if (!u) this.urls.delete(id); return u; })(); this.urls.set(id, p); return p;
+  },
+  async hydrate() { for (const el of document.querySelectorAll('video[data-pvid]:not([data-ok])')) { el.dataset.ok = '1'; const u = await this.src(el.dataset.pvid).catch(() => null); if (u) el.src = u + '#t=0.1'; } },
+  bar(uid, id) {
+    if (!id) return ''; const it = (this.fl.get(uid) || {})[id] || {n: 0, mine: false};
+    if (uid === S.me.id) return `<div class="pf-bar" data-pf="${esc(id)}">${it.n ? `<span>🔥 ${it.n}</span><button class="pf-who" type="button" data-act="pfWho" data-m="${esc(id)}">Voir qui</button>` : '<small class="hint">Pas encore de flamme</small>'}</div>`;
+    return `<div class="pf-bar" data-pf="${esc(id)}"><button class="pf-btn" type="button" data-act="pfFlame" data-u="${uid}" data-m="${esc(id)}" aria-pressed="${it.mine}" aria-label="${it.mine ? 'Retirer ma flamme' : 'Envoyer une flamme'}"><span class="fl" aria-hidden="true">🔥</span>${it.n || ''}</button></div>`;
+  },
+  async loadFor(uid) { try { this.fl.set(uid, (await api(`/api/users/${uid}/flames`)).items || {}); } catch {} },
+  async load(rerender) { await this.loadFor(S.me.id); if (rerender) { if (S.modal === 'me') renderModal(); else if (S.tab === 'chats' && S.filt === 'me') renderBody(); } },
+};
+new MutationObserver(() => { if (document.querySelector('video[data-pvid]:not([data-ok])')) Prof.hydrate(); }).observe(document.documentElement, {childList: true, subtree: true});
 /* ---------- profil privé chiffré de bout en bout ----------
    Téléphone, adresse, famille, photos privées : chiffrés sur l'appareil pour les seules personnes autorisées.
    Le serveur ne garde qu'une enveloppe illisible et une empreinte du numéro (pour le répertoire). */
 const PP = {
-  data: null, tel: '', urls: [null, null, null],
+  data: null, tel: '', urls: [null, null, null], vurls: [null, null, null],
   async open(env) { if (!env || !E2E.ready()) return null; const r = await E2E.open(env, S.me.id); return r.err ? null : r.payload; },
   aud() {
     const me = S.me, cs = (S.contacts.contacts || []).filter(u => u.pubkey && !u.blocked && !u.limMine);
@@ -1451,14 +1487,16 @@ const PP = {
     return [[me.id, E2E.pubJwk], ...list.map(u => [u.id, u.pubkey])];
   },
   telAud() { return [[S.me.id, E2E.pubJwk], ...(S.contacts.contacts || []).filter(u => u.pubkey && u.telMine).map(u => [u.id, u.pubkey])]; },
-  attach(me) { me.priv = Object.assign({}, this.data.f, {tel: this.tel}); me.privPics = this.urls.slice(); },
+  attach(me) { me.priv = Object.assign({}, this.data.f, {tel: this.tel}); me.privPics = this.urls.slice(); me.privIds = this.data.pics.map(p => p && p.id); me.privVids = this.vlist(this.data.vids, this.vurls); Prof.remember(me.privVids); Prof.remember(me.vids); },
+  vlist(vids, urls) { return (vids || [null, null, null]).map((v, i) => v && urls[i] ? {id: v.id, blob: urls[i]} : null); },
   async init() {
     if (!E2E.ready() || !S.me) return;
     const me = S.me;
-    if (me.privEnv) { const p = await this.open(me.privEnv); this.data = p ? {f: p.f || {}, pics: p.pics || [null, null, null]} : {f: {}, pics: [null, null, null]}; }
+    if (me.privEnv) { const p = await this.open(me.privEnv); this.data = p ? {f: p.f || {}, pics: p.pics || [null, null, null], vids: p.vids || [null, null, null]} : {f: {}, pics: [null, null, null], vids: [null, null, null]}; }
     if (me.telEnv) { const t = await this.open(me.telEnv); this.tel = (t && t.tel) || ''; }
     if (!me.privEnv || me.legacyPriv) await this.migrate();
-    this.urls = await this.picUrls(this.data.pics); this.attach(S.me);
+    this.data.vids = this.data.vids || [null, null, null];
+    this.urls = await this.picUrls(this.data.pics); this.vurls = await this.picUrls(this.data.vids); this.attach(S.me);
     await this.check();
   },
   // Ancien profil privé en clair : on le chiffre une fois, puis le serveur l'efface.
@@ -1468,7 +1506,7 @@ const PP = {
     this.tel = this.tel || old.tel || '';
     const pics = [null, null, null];
     for (let i = 0; i < 3; i++) { const u = (me.privPics || [])[i]; if (!u) continue; try { const r = await fetch(u, {credentials: 'same-origin'}); if (r.ok) pics[i] = await this.encPic(await r.arrayBuffer()); } catch {} }
-    this.data = {f, pics}; await this.save();
+    this.data = {f, pics, vids: [null, null, null]}; await this.save();
   },
   async encPic(bytes) {
     const raw = crypto.getRandomValues(new Uint8Array(32)), iv = crypto.getRandomValues(new Uint8Array(12)), key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt']);
@@ -1476,18 +1514,19 @@ const PP = {
     const up = await upMedia(new Blob([ct], {type: 'application/octet-stream'}));
     return {id: up.id, k: Tr.b64(raw), iv: Tr.b64(iv)};
   },
+  async encVid(bytes, type) { return Object.assign(await this.encPic(bytes), {t: /^video\//.test(type || '') ? type : 'video/mp4'}); },
   async decPic(p) {
     if (!p) return null; const r = await fetch('/api/media/' + p.id, {credentials: 'same-origin'}); if (!r.ok) return null;
     const key = await crypto.subtle.importKey('raw', Tr.unb64(p.k), 'AES-GCM', false, ['decrypt']);
-    return URL.createObjectURL(new Blob([await crypto.subtle.decrypt({name: 'AES-GCM', iv: Tr.unb64(p.iv)}, key, await r.arrayBuffer())], {type: 'image/jpeg'}));
+    return URL.createObjectURL(new Blob([await crypto.subtle.decrypt({name: 'AES-GCM', iv: Tr.unb64(p.iv)}, key, await r.arrayBuffer())], {type: p.t || 'image/jpeg'}));
   },
   picUrls(pics) { return Promise.all((pics || [null, null, null]).map(p => this.decPic(p).catch(() => null))); },
   async save() {
     if (!this.data || !E2E.ready()) return;
-    const privEnv = (await E2E.seal({f: this.data.f, pics: this.data.pics}, this.aud())).env;
+    const vids = this.data.vids || [null, null, null], privEnv = (await E2E.seal({f: this.data.f, pics: this.data.pics, vids}, this.aud())).env;
     const telEnv = this.tel ? (await E2E.seal({tel: this.tel}, this.telAud())).env : null;
     const d = String(this.tel || '').replace(/\D/g, ''), telHash = d.length >= 6 ? await Book.hash(d.slice(-9)) : null;
-    const r = await api('/api/me/privenv', {privEnv, telEnv, telHash, mediaIds: this.data.pics.filter(Boolean).map(p => p.id)});
+    const r = await api('/api/me/privenv', {privEnv, telEnv, telHash, mediaIds: this.data.pics.concat(vids).filter(Boolean).map(p => p.id)});
     S.me = r.me; this.attach(S.me); keepUsers([S.me]);
   },
   // Quand les personnes autorisées changent (nouveau contact, groupe privé, numéro partagé…), on rechiffre pour elles.
@@ -1501,10 +1540,11 @@ const PP = {
     clearTimeout(this.t); this.t = setTimeout(() => this.save().catch(e => toast(e.message)), 900);
   },
   async setPic(i, bytes) { this.data.pics[i] = bytes ? await this.encPic(bytes) : null; this.urls = await this.picUrls(this.data.pics); await this.save(); },
+  async setVid(i, bytes, type) { this.data.vids = this.data.vids || [null, null, null]; this.data.vids[i] = bytes ? await this.encVid(bytes, type) : null; this.vurls = await this.picUrls(this.data.vids); await this.save(); },
   // Profil d'un contact : on ouvre ses enveloppes avec notre propre clé.
   async reveal(u) {
     if (!u) return u;
-    if (u.privEnv) { const p = await this.open(u.privEnv); if (p) { u.priv = Object.assign({}, p.f || {}); u.privPics = await this.picUrls(p.pics); } else { u.priv = null; u.privPics = null; } }
+    if (u.privEnv) { const p = await this.open(u.privEnv); if (p) { u.priv = Object.assign({}, p.f || {}); u.privPics = await this.picUrls(p.pics); u.privIds = (p.pics || []).map(x => x && x.id); u.privVids = this.vlist(p.vids, await this.picUrls(p.vids)); } else { u.priv = null; u.privPics = null; } }
     if (u.telEnv) { const t = await this.open(u.telEnv); if (t && t.tel) { u.priv = u.priv || {}; u.priv.tel = t.tel; } }
     return u;
   },
@@ -1668,7 +1708,7 @@ function settingsBody() {
   const me = S.me, p = me.pub || {}, pv = me.priv || {};
   return `<div class="set">
     <div class="set-block" id="phBlock"><h2 class="ph-h"><span>Photo de profil</span><b class="me-first">${esc(me.name.split(' ')[0])}</b></h2>
-      <div class="ph-pick"><span class="pp-prev">${pendAvatar()}</span><p class="hint" style="margin:0">${S.pp ? 'Aperçu de votre nouveau choix. Il ne remplace votre photo actuelle qu’après « Valider ».' : 'Choisissez une photo ou un avatar dessiné. Rien ne change tant que vous n’avez pas validé.'}</p></div>
+      <div class="ph-pick"><span class="pp-prev">${pendAvatar()}</span><p class="hint" style="margin:0">${S.pp ? 'Aperçu de votre nouveau choix. Il ne remplace votre photo actuelle qu’après « Valider ».' : 'Choisissez une photo ou un portrait. Rien ne change tant que vous n’avez pas validé.'}</p></div>
       <div class="actions" style="justify-content:flex-start"><button class="btn sm" type="button" data-act="mePhoto">${I.camera}Prendre ou choisir une photo</button><button class="btn sm ghost" type="button" data-act="avShow" aria-pressed="${!!S.showAv}">Utiliser un avatar</button><input type="file" id="meIn" accept="image/*" hidden></div>
       ${S.showAv ? `${avGallery(S.pp && S.pp.kind === 'av' ? S.pp.av : me.avatar, 'me')}` : ''}
       ${S.pp ? `<div class="actions"><button class="btn ghost" type="button" data-act="pendCancel">Annuler</button><button class="btn" type="button" data-act="pendOk">Valider et changer ma photo de profil</button></div>` : ''}</div>
@@ -1688,15 +1728,15 @@ function settingsBody() {
     ${Device.settingsHtml()}
     <div class="set-block"><h2>Personnes bloquées</h2>${(me.blocked || []).length ? me.blocked.map(u => `<div class="adm-row">${avatar(u, 'xs')}<span>${esc(u.name)}</span><button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button></div>`).join('') : '<p class="hint">Personne n’est bloqué.</p>'}</div>
     <div class="set-block"><h2>${I.shield} Appareils connectés</h2><p class="hint">Un téléphone perdu ou prêté ? Déconnectez-le à distance. Changer votre mot de passe déconnecte aussi tous les autres appareils.</p><div><button class="btn sm ghost" type="button" data-act="devList">Voir mes appareils connectés</button></div></div>
-    <div class="set-block"><h2>Compte</h2><div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="pwSheet">${I.key}Changer le mot de passe</button><a class="btn sm ghost" href="/conditions" target="_blank" rel="noopener">Conditions et confidentialité</a><a class="btn sm ghost" href="/demo/" target="_blank" rel="noopener">Voir la maquette</a></div>
-      <div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="logout">Se déconnecter</button><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte</button></div></div>
+    <div class="set-block"><h2>Compte</h2><div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="pwSheet">${I.key}Changer le mot de passe</button><a class="btn sm ghost" href="/conditions" target="_blank" rel="noopener">Conditions et confidentialité</a><button class="btn sm ghost" type="button" data-act="logout">Se déconnecter</button></div></div>
     ${Tr.settingsHtml()}
     <p class="hint set-mail">Connecté avec ${esc(me.email)} · @${esc(me.handle)}</p>
     ${me.admin ? mailBox() : ''}
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.72</p></div>`;
+    <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.73</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1751,7 +1791,7 @@ const ACT = {
     if (d.who === 'auth') { A.avatar = a; $('#avg-auth').outerHTML = avGallery(a, 'auth'); }
     else { if (S.pp && S.pp.url) URL.revokeObjectURL(S.pp.url); S.pp = {kind: 'av', av: a}; renderBody(); }
   },
-  tab(d) { if (d.t === 'settings' && isDesk()) { closeLayer(); return pmOpen('settings'); } if (d.t !== 'souvenirs' && typeof Mem !== 'undefined') Mem.unlocked = false; if (d.t === 'calls') Calls.log = null; S.tab = d.t; closeLayer(); renderAll(); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
+  tab(d) { if (d.t === 'settings' && isDesk()) { closeLayer(); return pmOpen('settings'); } if (d.t !== 'souvenirs' && typeof Mem !== 'undefined') Mem.unlocked = false; if (d.t === 'calls') Calls.log = null; S.tab = d.t; closeLayer(); renderAll(); if (d.t === 'calls') actSeen('calls'); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
   fab() { newChatSheet(); },
   open(d) { if (S.sel) { const id = +d.id; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); if (!S.sel.size) S.sel = null; return renderBody(); } openChat(+d.id); },
   chatRowMenu(d) { chatListMenu(+d.id); },
@@ -2059,11 +2099,29 @@ const ACT = {
     } catch (e) { el.disabled = false; toast(e.message); }
   },
   picAdd(d) { S.picSlot = {set: d.set, i: +d.i}; $('#picIn').click(); },
+  vidAdd(d) { S.vidSlot = {set: d.set, i: +d.i}; $('#vidIn').click(); },
+  async vidDel(d) {
+    try { if (d.set === 'priv') { if (!PP.data) return; await PP.setVid(+d.i, null); } else { const r = await api('/api/me/pics', {set: 'pub', slot: 3 + +d.i, media: null}); S.me = r.me; if (PP.data) PP.attach(S.me); }
+      Prof.load(); pmRefresh(); renderBody(); toast('Vidéo retirée'); } catch (e) { toast(e.message); }
+  },
+  async vidView(d) {
+    const v = Prof.reg.get(d.vid), priv = !!(v && v.blob); const u = await Prof.src(d.vid).catch(() => null); if (!u) return toast('Vidéo indisponible.');
+    sheet(`${head('Vidéo')}<div class="sheet-body${priv ? ' nocopy' : ''}" style="align-items:center;position:relative"><video class="vid-big" src="${esc(u)}" controls autoplay playsinline controlslist="nodownload noremoteplayback" disablepictureinpicture></video>${priv ? watermark() : ''}</div>`, 'Vidéo');
+  },
+  async pfFlame(d, el) {
+    const uid = +d.u, map = Prof.fl.get(uid) || {}, it = map[d.m] || {n: 0, mine: false}, on = !it.mine; el.disabled = true;
+    try { const r = await api(`/api/users/${uid}/flame`, {media: d.m, on}); map[d.m] = {n: r.n, mine: on}; Prof.fl.set(uid, map); if (on) toast('🔥 Flamme envoyée');
+      document.querySelectorAll(`.pf-bar[data-pf="${CSS.escape(d.m)}"]`).forEach(b => { b.outerHTML = Prof.bar(uid, d.m); }); } catch (e) { toast(e.message); el.disabled = false; }
+  },
+  pfWho(d) {
+    const it = (Prof.fl.get(S.me.id) || {})[d.m]; const who = (it && it.who) || [];
+    sheet(`${head('Ils ont aimé 🔥')}<div class="sheet-scroll">${who.length ? who.map(w => `<button class="row" type="button" data-act="prof" data-id="${w.user.id}">${avatar(w.user, 'sm')}<span class="row-name">${esc(w.user.name)}</span><span class="row-time">${listTime(w.at)}</span></button>`).join('') : '<p class="empty">Personne pour l’instant.</p>'}</div>`, 'Flammes');
+  },
   async picDel(d) { if (d.set === 'priv' && PP.data) { try { await PP.setPic(+d.i, null); renderBody(); toast('Photo retirée'); } catch (e) { toast(e.message); } return; } try { const r = await api('/api/me/pics', {set: d.set, slot: +d.i, media: null}); S.me = r.me; renderBody(); toast('Photo retirée'); } catch (e) { toast(e.message); } },
   picView(d) { const priv = /^blob:/.test(d.src); sheet(`${head('Photo')}<div class="sheet-body${priv ? ' nocopy' : ''}" style="align-items:center;position:relative"><img class="pic-big" src="${esc(d.src)}" alt="Photo du profil" draggable="false">${priv ? watermark() : ''}</div>`, 'Photo'); },
   avHide() { S.showAv = false; renderBody(); },
   profTab(d) { S.profTab = d.t; renderBody(); },
-  goProfile() { if (isDesk()) return pmOpen('me'); S.tab = 'chats'; S.filt = 'me'; renderAll(); },
+  goProfile() { if (isDesk()) return pmOpen('me'); S.tab = 'chats'; S.filt = 'me'; renderAll(); actSeen('prof'); Prof.load(true); },
   pmClose() { S.modal = null; renderModal(); }, pmScrim() { S.modal = null; renderModal(); },
   notif() { if (!('Notification' in window)) return toast('Votre navigateur ne permet pas les notifications.'); Notification.requestPermission().then(p => { renderBody(); toast(p === 'granted' ? 'Notifications activées' : 'Notifications refusées dans le navigateur'); }); },
   async devList() {
@@ -2189,6 +2247,12 @@ document.addEventListener('change', async e => {
     (async () => { try { toast('Envoi de la photo…'); const b = await shrink(f, 1280);
       if (sl.set === 'priv' && PP.data) { await PP.setPic(sl.i, await b.arrayBuffer()); renderBody(); return toast('Photo privée ajoutée, chiffrée pour les seules personnes autorisées'); }
       const up = await upload(b); const r = await api('/api/me/pics', {set: sl.set, slot: sl.i, media: up.id}); S.me = r.me; renderBody(); toast('Photo ajoutée à votre profil'); } catch (e) { toast(e.message); } })(); }
+  else if (t.id === 'vidIn') { const f = t.files[0]; t.value = ''; const sl = S.vidSlot; if (!f || !sl) return;
+    if (!/^video\//.test(f.type)) return toast('Choisissez une vidéo.'); if (f.size > 40_000_000) return toast('Vidéo trop lourde : 40 Mo au maximum (environ une minute).');
+    (async () => { try { toast('Envoi de la vidéo…'); const bytes = await f.arrayBuffer();
+      if (sl.set === 'priv') { if (!PP.data) return toast('Profil privé indisponible sur cet appareil.'); await PP.setVid(sl.i, bytes, f.type); toast('Vidéo privée ajoutée, chiffrée pour les seules personnes autorisées'); }
+      else { const e = await PP.encVid(bytes, f.type); const r = await api('/api/me/pics', {set: 'pub', slot: 3 + sl.i, media: e.id, k: e.k, iv: e.iv, t: e.t}); S.me = r.me; if (PP.data) PP.attach(S.me); else Prof.remember(S.me.vids); toast('Vidéo ajoutée à votre profil'); }
+      pmRefresh(); renderBody(); } catch (e) { toast(e.message); } })(); }
   else if (t.id === 'meIn') { const f = t.files[0]; t.value = ''; if (!f) return; cropPhoto(f); }
   else if (t.id === 'cropZoom') { S.crop.z = +t.value; drawCrop(); }
   else if (t.name === 'closeAll') { const box = t.closest('.grp-box') || document; box.querySelectorAll('input[name="close"]').forEach(i => { i.checked = t.checked; }); const ids = [...box.querySelectorAll('input[name="close"]:checked')].map(i => +i.value); const c = box.querySelector('#cgCount'); if (c) c.textContent = `${ids.length} sur ${box.querySelectorAll('input[name="close"]').length}`; saveNow({close: ids}, t.checked ? 'Tous vos amis sont dans le groupe privé' : 'Groupe privé vidé').then(() => PP.check()); }
