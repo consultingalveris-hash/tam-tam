@@ -87,12 +87,16 @@ const pair = (x, y) => x < y ? [x, y] : [y, x];
 const J = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 const AV_D = /^[fm][1-6]$/, AV_C = ['turq', 'bleu', 'violet', 'rouge', 'orange', 'vert', 'rose', 'brun', 'noir'];
 const AV_ST = ['court', 'afro', 'tresses', 'foulard', 'locks', 'chignon', 'carre', 'chauve'], AV_SH = ['#14b8c9', '#1d4e89', '#2f9e66', '#f2b705', '#e2531f', '#c8102e', '#7b2cbf', '#db2777', '#475569'];
+// Depuis la v1.78, seuls les portraits illustrés existent : les anciens avatars dessinés sont remplacés une fois pour toutes.
+const PORTRAITS_ONLY = true, PORTRAIT_N = 12;
+const portraitFor = id => JSON.stringify({ v: 3, p: 'p' + String((id % PORTRAIT_N) + 1).padStart(2, '0') });
 function avatarJson(a) {
   if (a && a.v === 3) { const p = String(a.p || ''); return /^p(0[1-9]|1[0-2])$/.test(p) ? JSON.stringify({ v: 3, p }) : null; }
-  if (a && a.v === 2) { if (!AV_ST.includes(a.st) || !/^[a-f]$/.test(a.sk) || !AV_SH.includes(a.sh)) return null; return JSON.stringify({ v: 2, st: a.st, sk: a.sk, sh: a.sh, f: !!a.f, b: !!a.b, g: !!a.g, e: !!a.e }); }
-  if (a && AV_D.test(a.d) && AV_C.includes(a.c)) return JSON.stringify({ d: a.d, c: a.c });
+  if (a && a.v === 2 && !PORTRAITS_ONLY) { if (!AV_ST.includes(a.st) || !/^[a-f]$/.test(a.sk) || !AV_SH.includes(a.sh)) return null; return JSON.stringify({ v: 2, st: a.st, sk: a.sk, sh: a.sh, f: !!a.f, b: !!a.b, g: !!a.g, e: !!a.e }); }
+  if (a && !PORTRAITS_ONLY && AV_D.test(a.d) && AV_C.includes(a.c)) return JSON.stringify({ d: a.d, c: a.c });
   return null;
 }
+for (const u of db.prepare(`SELECT id, avatar FROM users`).all()) { let a = null; try { a = JSON.parse(u.avatar || 'null'); } catch {} if (!(a && a.v === 3)) db.prepare(`UPDATE users SET avatar=? WHERE id=?`).run(portraitFor(u.id), u.id); }
 const PUB_K = ['bio', 'metier', 'ville', 'langues', 'interets', 'bd', 'bm'];
 const PRIV_K = ['tel', 'annee', 'mail', 'adresse', 'travail', 'famille'];
 function slugHandle(name) {
@@ -350,10 +354,11 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   if (!body.handle) E(400, 'Choisissez un pseudo : c’est lui que voient les membres.');
   const handle = normHandle(body.handle);
   if (q1(`SELECT 1 FROM users WHERE handle=?`, handle)) E(409, 'Ce pseudo est déjà pris. Choisissez-en un autre.');
-  const av = avatarJson(body.avatar) || JSON.stringify({ v: 2, st: 'court', sk: 'c', sh: '#14b8c9' });
+  const av = avatarJson(body.avatar);
   const id = run(`INSERT INTO users(email,pass,name,handle,avatar,admin,invited_by,cgu_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
     email, hashPass(pass), name, handle, av, first ? 1 : 0, inv ? inv.by_user : null, now(), now()).lastInsertRowid;
   run(`UPDATE users SET tr_consent=?, handle_set=1 WHERE id=?`, body.trc ? 1 : 0, Number(id));
+  if (!av) run(`UPDATE users SET avatar=? WHERE id=?`, portraitFor(Number(id)), Number(id));
   if (gp) { run(`UPDATE users SET google_sub=? WHERE id=?`, gp.sub, Number(id)); run(`DELETE FROM gpending WHERE token=?`, gp.token); }
   if (inv) {
     if (!inv.qr) run(`UPDATE invites SET uses=uses+1 WHERE code=?`, inv.code);

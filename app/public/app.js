@@ -77,8 +77,10 @@ function toast(t) { let el = $('.toast'); if (!el) { el = document.createElement
 function avatar(u, cls = '') {
   if (!u) return `<span class="av ${cls}"></span>`;
   if (u.photo) return `<span class="av ${cls}"><img src="${esc(u.photo)}" alt=""></span>`;
-  return `<span class="av ${cls}" aria-hidden="true">${avFace(u.avatar)}</span>`;
+  return `<span class="av ${cls}" aria-hidden="true">${avFace(avOf(u))}</span>`;
 }
+// Seuls les portraits illustrés existent : un ancien avatar dessiné est remplacé par un portrait fixe.
+const avOf = u => isPortrait(u && u.avatar) ? u.avatar : {v: 3, p: PORTRAITS[((u && u.id) || 0) % 12]};
 const avOn = (u, cls) => `<span class="avw">${avatar(u, cls)}${u && u.busy ? '<span class="dot-on busy" aria-label="occupé"></span>' : u && u.online ? '<span class="dot-on" aria-label="en ligne"></span>' : ''}</span>`;
 const presLabel = u => u.busy ? 'occupé' : u.online ? 'en ligne' : seenLabel(u.lastSeen);
 const grpAv = (c, cls = '') => c.photo ? `<span class="av grp ph ${cls}" aria-hidden="true"><img src="${esc(c.photo)}" alt=""></span>` : `<span class="av grp ${cls}" style="--h:${(c.id * 47) % 360}" aria-hidden="true">${I.users}</span>`;
@@ -1758,7 +1760,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.77</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.78</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -2113,7 +2115,7 @@ const ACT = {
   },
   soundToggle() { Sound.set(!Sound.on()); renderBody(); if (Sound.on()) Sound.msg(true); },
   meNoPhoto() { saveNow({photo: null}, 'Avatar rétabli'); },
-  avShow() { S.showAv = !S.showAv; if (S.showAv && !(S.pp && S.pp.kind === 'av')) { if (S.pp && S.pp.url) URL.revokeObjectURL(S.pp.url); S.pp = {kind: 'av', av: avNorm(S.me.avatar)}; } renderBody(); },
+  avShow() { S.showAv = !S.showAv; if (S.showAv && !(S.pp && S.pp.kind === 'av')) { if (S.pp && S.pp.url) URL.revokeObjectURL(S.pp.url); S.pp = {kind: 'av', av: avOf(S.me)}; } renderBody(); },
   pendCancel() { if (S.pp && S.pp.url) URL.revokeObjectURL(S.pp.url); S.pp = null; S.showAv = false; renderBody(); },
   async pendOk(d, el) {
     const P = S.pp; if (!P) return; el.disabled = true;
