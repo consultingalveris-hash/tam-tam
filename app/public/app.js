@@ -409,7 +409,7 @@ async function profSheet(id, back) {
   let u = uOf(id);
   try { const r = await api('/api/users/' + id); u = r.user; if (u.id !== S.me.id) await PP.reveal(u); else PP.data && PP.attach(u); keepUsers([u]); } catch (e) { return toast(e.message); }
   const p = u.pub || {}, bd = p.bd && p.bm ? `${p.bd} ${MOIS[p.bm - 1]}` : '';
-  sheet(`${back ? `<div class="sheet-head"><button class="ib back-b" type="button" data-act="profBack" aria-label="Retour à la liste">${I.back}</button><h2 style="flex:1">Profil</h2><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>` : head('Profil')}<div class="sheet-body"><div class="prof">${avatar(u, 'xl')}<b>${esc(u.name)}</b>${subH(u) ? `<span>${esc(subH(u))}</span>` : ''}${u.rel === 'contact' ? `<small>${presLabel(u).replace(/^./, x => x.toUpperCase())}</small>` : ''}${u.mutual ? `<small>${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun</small>` : ''}</div>
+  sheet(`${back ? `<div class="sheet-head"><button class="ib back-b" type="button" data-act="profBack" aria-label="Retour à la liste">${I.back}</button><h2 style="flex:1">Profil</h2><button class="ib" type="button" data-act="close" aria-label="Fermer">${I.close}</button></div>` : head('Profil')}<div class="sheet-body"><div class="prof">${avatar(u, 'xl')}<b>${esc(u.name)}</b>${u.amb ? `<span class="amb-b" title="Ambassadeur des langues Tam-Tam">🌍 Ambassadeur · ${esc(u.amb)}</span>` : ''}${subH(u) ? `<span>${esc(subH(u))}</span>` : ''}${u.rel === 'contact' ? `<small>${presLabel(u).replace(/^./, x => x.toUpperCase())}</small>` : ''}${u.mutual ? `<small>${u.mutual} ami${u.mutual > 1 ? 's' : ''} en commun</small>` : ''}</div>
     ${dl(PUB_L.map(([k, l]) => [l, p[k]]).concat([['Anniversaire', bd]])) || '<p class="hint" style="text-align:center">Profil public encore vide.</p>'}
     ${u.rel === 'contact' && u.pubkey ? `<details class="fp-box"><summary>${I.shield}Chiffrement de bout en bout · vérifier le code de sécurité</summary><p class="hint">Ce code n’est pas un secret : il sert seulement à vérifier, en le comparant de vive voix avec ${esc(first(u.name))}, que personne ne s’est glissé entre vous. S’il est identique sur vos deux téléphones, vos échanges sont bien protégés.</p><b class="fp" id="peerFp">…</b></details>` : ''}
     ${u.limTheirs ? `<p class="hint">${I.lock} Ajouté par code QR : vous voyez seulement son profil public.</p>` : ''}
@@ -1680,6 +1680,7 @@ function settingsBody() {
       ${(S.contacts.contacts || []).length ? `<div class="picks">${S.contacts.contacts.slice().sort((x, y) => x.name.localeCompare(y.name, 'fr')).map(u => `<label class="pick"><input type="checkbox" name="locTo" value="${u.id}"${(me.locTo || []).includes(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint">Ajoutez d’abord des contacts.</p>'}
       <p class="hint">${(me.locTo || []).length ? `✅ Partagée avec ${(me.locTo || []).length} personne${(me.locTo || []).length > 1 ? 's' : ''}. Sur ordinateur et dans le navigateur, la position est envoyée tant que Tam-Tam est ouvert.` : 'Partage désactivé : cochez une personne pour l’activer.'}</p></details></div>
     ${Tones.settingsHtml()}
+    <div class="set-block"><h2>🌍 Ambassadeurs des langues</h2><p class="hint">Des bénévoles font vivre leur langue maternelle sur Tam-Tam en corrigeant les traductions. Ils portent le badge « Ambassadeur » sur leur profil.</p><div class="actions"><button class="btn sm ghost" type="button" data-act="ambList">Voir les ambassadeurs</button><a class="btn sm ghost" href="/ambassadeurs" target="_blank" rel="noopener">Devenir ambassadeur</a></div></div>
     <div class="set-block"><h2>${I.download || ''} Économie de données</h2><p class="hint">Pour les petits forfaits : photos et vidéos envoyées plus légères, et Tam-Tam ne télécharge rien à l’avance (le statut suivant se charge quand vous y arrivez).</p>
       <label class="pick chk"><input type="checkbox" data-act="saverTog"${dataSaver() ? ' checked' : ''}><span>Activer l’économie de données sur cet appareil</span></label></div>
     ${lockSettingsHtml()}
@@ -1695,7 +1696,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.70</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.71</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1708,7 +1709,7 @@ async function adminLoad() {
     const r = await api('/api/admin'), el = $('#adm');
     el.innerHTML = `<h2>${I.shield} Administration</h2><p class="hint">${r.counts.users} membres · ${r.counts.chats} discussions · ${r.counts.messages} messages</p>
       <span class="lbl">Signalements à traiter</span>${r.reports.length ? r.reports.map(x => `<div class="adm-row"><span><b>${esc(x.reason)}</b><small>par ${esc(x.by)}${x.target ? ' · contre ' + esc(x.target) : ''}${x.chat ? ' · discussion ' + esc(x.chat.name || 'à deux') : ''} · ${listTime(x.created_at)}${x.note ? ' · « ' + esc(x.note) + ' »' : ''}</small></span><button class="btn sm ghost" type="button" data-act="admDone" data-id="${x.id}">Traité</button></div>`).join('') : '<p class="hint">Aucun signalement.</p>'}
-      <span class="lbl">Membres</span>${r.users.map(u => `<div class="adm-row"><span><b>${esc(u.name)}</b>${u.online ? ' · en ligne' : ''}<small>@${esc(u.handle)} · ${esc(u.email)} · inscrit le ${new Date(u.created_at).toLocaleDateString('fr-FR')}</small></span>${u.id !== S.me.id ? `<button class="btn sm ghost" type="button" data-act="admReset" data-id="${u.id}">Lien mot de passe</button>` : ''}</div>`).join('')}`;
+      <span class="lbl">Membres</span>${r.users.map(u => `<div class="adm-row"><span><b>${esc(u.name)}</b>${u.online ? ' · en ligne' : ''}<small>@${esc(u.handle)} · ${esc(u.email)} · inscrit le ${new Date(u.created_at).toLocaleDateString('fr-FR')}</small></span><span class="adm-acts"><button class="btn sm ghost" type="button" data-act="admAmb" data-id="${u.id}" data-l="${esc(u.amb || '')}">${u.amb ? '🌍 ' + esc(u.amb) : 'Ambassadeur'}</button>${u.id !== S.me.id ? `<button class="btn sm ghost" type="button" data-act="admReset" data-id="${u.id}">Lien mot de passe</button>` : ''}</span></div>`).join('')}`;
   } catch (e) { toast(e.message); }
 }
 
@@ -2077,12 +2078,15 @@ const ACT = {
   async logout() { await Device.disableHere(); await api('/api/logout', {}).catch(() => {}); if (es) es.close(); S.me = null; location.href = '/'; },
   admLoad() { adminLoad(); },
   async admDone(d) { await api('/api/admin/report-done', {id: +d.id}).catch(e => toast(e.message)); adminLoad(); },
+  async ambList() { try { const r = await api('/api/ambassadors'); const g = {}; r.list.forEach(a => (g[a.lang] = g[a.lang] || []).push(a)); sheet(`${head('Ambassadeurs des langues')}<div class="sheet-body">${r.list.length ? Object.keys(g).sort().map(l => `<p class="lbl">${esc(l)}</p><p>${g[l].map(a => '@' + esc(a.handle)).join(' · ')}</p>`).join('') : '<p class="hint">Les premiers ambassadeurs arrivent bientôt. Vous parlez bien votre langue maternelle ? Rejoignez-nous !</p>'}<div class="actions"><a class="btn sm ghost" href="/ambassadeurs" target="_blank" rel="noopener">Devenir ambassadeur</a><button class="btn" type="button" data-act="close">Fermer</button></div></div>`, 'Ambassadeurs'); } catch (e) { toast(e.message); } },
+  admAmb(d) { sheet(`${head('Ambassadeur des langues')}<form data-form="amb" data-id="${d.id}"><div class="sheet-body"><p class="hint">Indiquez la langue que cette personne représente (ex. : wolof, lingala, yoruba). Laissez vide pour retirer le badge.</p><div class="field"><label for="ambL">Langue</label><input id="ambL" maxlength="40" value="${esc(d.l || '')}"></div><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Ambassadeur', '#ambL'); },
   async admReset(d) { try { const r = await api('/api/admin/reset', {userId: +d.id}); sheet(`${head('Lien de réinitialisation')}<div class="sheet-body"><p>Envoyez ce lien à la personne (valable 2 jours). Il lui permet de choisir un nouveau mot de passe.</p><div class="invite-url">${esc(r.url)}</div><div class="actions"><button class="btn" type="button" data-act="copyTxt" data-t="${esc(r.url)}">${I.copy}Copier</button></div></div>`, 'Lien'); } catch (e) { toast(e.message); } },
   copyTxt(d) { navigator.clipboard && navigator.clipboard.writeText(d.t).then(() => toast('Copié')); },
 };
 function keepSt() { const t = ($('#stText') || $('#stCap') || {}).value; if (t != null && S.sc) S.sc.text = t; }
 
 const FORMS = {
+  async amb(f) { const l = ($('#ambL').value || '').trim(); try { await api('/api/admin/amb', {userId: +f.dataset.id, lang: l}); closeLayer(); toast(l ? `Badge « Ambassadeur · ${l} » attribué` : 'Badge retiré'); adminLoad(); } catch (e) { toast(e.message); } },
   async svReply() { const i = $('#svrIn'), t = (i && i.value || '').trim(); if (!t) return; i.value = ''; const rf = i.closest('.sv-reply'); if (rf) rf.classList.remove('typed'); i.blur(); try { await svSend({t}); toast('Réponse envoyée'); } catch (e) { toast(e.message); } },
   async lockPass(f) { const i = $('#lkPass'), b = f.querySelector('button'); if (!i.value) return; b.disabled = true; try { await api('/api/me/unlock', {pass: i.value}); unlock(); } catch (e) { b.disabled = false; i.value = ''; const er = $('#lkErr'); er.textContent = e.message; er.hidden = false; } },
   auth: submitAuth,
