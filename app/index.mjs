@@ -88,6 +88,7 @@ const J = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 const AV_D = /^[fm][1-6]$/, AV_C = ['turq', 'bleu', 'violet', 'rouge', 'orange', 'vert', 'rose', 'brun', 'noir'];
 const AV_ST = ['court', 'afro', 'tresses', 'foulard', 'locks', 'chignon', 'carre', 'chauve'], AV_SH = ['#14b8c9', '#1d4e89', '#2f9e66', '#f2b705', '#e2531f', '#c8102e', '#7b2cbf', '#db2777', '#475569'];
 function avatarJson(a) {
+  if (a && a.v === 3) { const p = String(a.p || ''); return /^p(0[1-9]|1[0-2])$/.test(p) ? JSON.stringify({ v: 3, p }) : null; }
   if (a && a.v === 2) { if (!AV_ST.includes(a.st) || !/^[a-f]$/.test(a.sk) || !AV_SH.includes(a.sh)) return null; return JSON.stringify({ v: 2, st: a.st, sk: a.sk, sh: a.sh, f: !!a.f, b: !!a.b, g: !!a.g, e: !!a.e }); }
   if (a && AV_D.test(a.d) && AV_C.includes(a.c)) return JSON.stringify({ d: a.d, c: a.c });
   return null;
@@ -246,7 +247,7 @@ backup(); setInterval(backup, 3600_000);
 
 /* ---------- HTTP ---------- */
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.mp3': 'audio/mpeg' };
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.mp3': 'audio/mpeg', '.jpg': 'image/jpeg' };
 function send(res, code, body, headers = {}) {
   const isObj = typeof body === 'object' && !Buffer.isBuffer(body);
   res.writeHead(code, { 'Content-Type': isObj ? 'application/json; charset=utf-8' : 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
@@ -258,7 +259,7 @@ const E = (code, msg) => { throw new HttpError(code, msg); };
 function serveFile(res, file, extra = {}) {
   fs.readFile(file, (err, buf) => {
     if (err) return send(res, 404, 'Page introuvable');
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', ...extra, 'Cache-Control': path.extname(file) === '.mp3' ? 'public, max-age=604800' : 'no-cache' }); res.end(buf);
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', ...extra, 'Cache-Control': ['.mp3', '.jpg'].includes(path.extname(file)) ? 'public, max-age=604800' : 'no-cache' }); res.end(buf);
   });
 }
 async function readBody(req, max) {

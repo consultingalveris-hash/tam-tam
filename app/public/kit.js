@@ -135,13 +135,18 @@ const AV2 = {
 };
 const FEM = ['tresses', 'foulard', 'chignon', 'carre'];
 /* ancien format {d,c} vers le nouveau */
+/* portraits illustrés (fichiers /avatars/pNN.jpg) */
+const PORTRAITS = Array.from({length: 12}, (_, i) => 'p' + String(i + 1).padStart(2, '0'));
+const isPortrait = a => !!(a && a.v === 3 && PORTRAITS.includes(a.p));
 function avNorm(a) {
   if (a && a.v === 2) return a;
+  if (a && a.v === 3) return {v: 2, st: 'court', sk: 'c', sh: '#14b8c9', f: false, b: false, g: false, e: false};
   const d = (a && a.d) || 'm2', c = colOf(a && a.c)[2];
   const map = {f1: 'carre', f2: 'afro', f3: 'foulard', f4: 'tresses', f5: 'chignon', f6: 'carre', m1: 'court', m2: 'chauve', m3: 'court', m4: 'locks', m5: 'court', m6: 'court'};
   return {v: 2, st: map[d] || 'court', sk: 'c', sh: c, b: d === 'm3', g: d === 'm6', e: false, f: d[0] === 'f'};
 }
 function avFace(a) {
+  if (isPortrait(a)) return `<img src="/avatars/${a.p}.jpg" alt="" loading="lazy" class="av-pt">`;
   const n = avNorm(a), foul = n.st === 'foulard';
   return face({skin: n.sk, hair: '#1b1210', style: n.st, shirt: foul ? shade(n.sh, .75) : n.sh, wrap: n.sh, f: n.f, beard: n.b, glasses: n.g, earring: n.e});
 }

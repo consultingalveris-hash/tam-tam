@@ -84,7 +84,7 @@ const presLabel = u => u.busy ? 'occupé' : u.online ? 'en ligne' : seenLabel(u.
 const grpAv = (c, cls = '') => c.photo ? `<span class="av grp ph ${cls}" aria-hidden="true"><img src="${esc(c.photo)}" alt=""></span>` : `<span class="av grp ${cls}" style="--h:${(c.id * 47) % 360}" aria-hidden="true">${I.users}</span>`;
 function avGallery(sel, who) {
   const a = avNorm(sel), mini = st => avFace(Object.assign({}, a, {st, f: FEM.includes(st) ? true : a.f}));
-  return `<div class="avb" id="avg-${who}"><div class="avb-top"><span class="av">${avFace(a)}</span><span class="hint">Composez votre avatar : coiffure, teint, couleur de la tenue et détails.</span></div>
+  return `<div class="avb" id="avg-${who}"><span class="lbl">Portraits</span><div class="avb-pts">${PORTRAITS.map(p => `<button class="avb-pt" type="button" data-act="avPick" data-who="${who}" data-p="${p}" aria-pressed="${!!(sel && sel.v === 3 && sel.p === p)}" aria-label="Portrait ${+p.slice(1)}"><span class="av"><img src="/avatars/${p}.jpg" alt="" loading="lazy"></span></button>`).join('')}</div><div class="avb-top"><span class="av">${avFace(a)}</span><span class="hint">Ou composez votre avatar : coiffure, teint, couleur de la tenue et détails.</span></div>
     <span class="lbl">Coiffure</span><div class="avb-row">${AV2.styles.map(([k, l]) => `<button class="avb-st" type="button" data-act="avSet" data-who="${who}" data-k="st" data-v="${k}" aria-pressed="${a.st === k}"><span class="av">${mini(k)}</span>${l}</button>`).join('')}</div>
     <span class="lbl">Teint</span><div class="avg-sw">${AV2.skins.map(k => `<button class="skin" type="button" data-act="avSet" data-who="${who}" data-k="sk" data-v="${k}" style="--c:${SKIN[k]}" aria-pressed="${a.sk === k}" aria-label="Teint ${k.toUpperCase()}"></button>`).join('')}</div>
     <span class="lbl">Couleur de la tenue${a.st === 'foulard' ? ' et du foulard' : ''}</span><div class="avg-sw">${AV2.shirts.map(c => `<button class="sw" type="button" data-act="avSet" data-who="${who}" data-k="sh" data-v="${c}" style="--c:${c}" aria-pressed="${a.sh === c}" aria-label="Couleur ${c}"></button>`).join('')}</div>
@@ -1696,7 +1696,7 @@ function settingsBody() {
     ${me.admin ? trBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.71</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.72</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1739,6 +1739,11 @@ const ACT = {
   async mailLoad() { try { const m = await api('/api/admin/mail'); S.mail = m; const el = $('#mailBox'); if (el) el.outerHTML = mailBox(); } catch (e) { toast(e.message); } },
   authMode(d) { A.mode = d.m; renderAuth(); },
   pwShow(d, el) { const i = el.parentNode.querySelector('input'); i.type = i.type === 'password' ? 'text' : 'password'; el.textContent = i.type === 'password' ? 'Voir' : 'Masquer'; },
+  avPick(d) {
+    const a = {v: 3, p: d.p};
+    if (d.who === 'auth') { A.avatar = a; $('#avg-auth').outerHTML = avGallery(a, 'auth'); }
+    else { if (S.pp && S.pp.url) URL.revokeObjectURL(S.pp.url); S.pp = {kind: 'av', av: a}; renderBody(); }
+  },
   avSet(d) {
     const base = avNorm(d.who === 'auth' ? A.avatar : S.me.avatar), a = Object.assign({}, base);
     if (d.v === 't') a[d.k] = !a[d.k]; else a[d.k] = d.v;
