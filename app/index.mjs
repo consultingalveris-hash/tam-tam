@@ -1519,6 +1519,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/demo' ) { res.writeHead(301, { Location: '/demo/' }); return res.end(); }
     if (p === '/demo/') return serveFile(res, path.join(PUB, 'demo/index.html'), { 'X-Robots-Tag': 'noindex' });
     if (p === '/conditions') return serveFile(res, path.join(PUB, 'conditions.html'), SEC);
+    if (p === '/supprimer-compte') return serveFile(res, path.join(PUB, 'supprimer-compte.html'), SEC);
     if (p === '/' || /^\/(invite|reset|add)\/[A-Za-z0-9_-]+$/.test(p)) return serveFile(res, path.join(PUB, 'app.html'), SEC);
     const f = path.normalize(path.join(PUB, p)); if (!f.startsWith(PUB + path.sep) || f.includes(path.join(PUB, 'demo'))) return send(res, 404, 'Page introuvable');
     if (fs.existsSync(f) && fs.statSync(f).isFile()) return serveFile(res, f, SEC);
