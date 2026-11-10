@@ -271,7 +271,7 @@ const TABS = [['chats', 'Discussions', I.chats], ['contacts', 'Contacts', I.user
 function renderTabs() {
   const unread = [...S.chats.values()].filter(c => (c.unread > 0 || c.marked) && !c.archived && (!c.hidden || S.showHidden)).length, inc = S.contacts.incoming.length;
   const act = S.act || {}, memN = typeof Mem !== 'undefined' ? Mem.unseen : 0;
-  const dotOf = id => id === 'chats' && unread ? actDot('', `${unread} discussion${unread > 1 ? 's' : ''} non lue${unread > 1 ? 's' : ''}`) : id === 'contacts' && inc ? actDot('', `${inc} demande${inc > 1 ? 's' : ''} d’ami`) : id === 'souvenirs' && memN ? actDot('act-mem', 'nouveau souvenir reçu') : id === 'calls' && act.calls ? actDot('', 'appel manqué') : '';
+  const dotOf = id => id === 'chats' && unread ? actDot('', `${unread} discussion${unread > 1 ? 's' : ''} non lue${unread > 1 ? 's' : ''}`) : id === 'contacts' && inc ? actDot('', `${inc} demande${inc > 1 ? 's' : ''} d’ami`) : id === 'souvenirs' && memN ? actDot('', 'nouveau souvenir reçu') : id === 'calls' && act.calls ? actDot('', 'appel manqué') : '';
   $('#tabs').innerHTML = TABS.map(([id, l, ic]) => `<button class="tab" type="button" data-act="tab" data-t="${id}"${S.tab === id ? ' aria-current="page"' : ''}><span class="pill">${ic}</span>${l}${dotOf(id)}</button>`).join('');
   $('#fab').hidden = S.tab !== 'chats'; Device.badge(); const fc = $('#filts'); if (fc) fc.innerHTML = filtChips(); const ac = $('.arch-chip'); if (ac) ac.outerHTML = archChip();
   const n = [...S.chats.values()].reduce((a, c) => a + (c.unread || 0), 0); document.title = n ? `(${n}) tam-tam` : 'tam-tam';
@@ -283,8 +283,9 @@ function archChip() {
 }
 function filtChips() {
   const n = [...S.chats.values()].filter(c => (c.unread > 0 || c.marked) && !c.archived && (!c.hidden || S.showHidden)).length;
-  const g = [...S.chats.values()].some(c => c.type === 'group' && (c.unread > 0 || c.marked) && !c.archived && (!c.hidden || S.showHidden)), pr = !!(S.act && S.act.prof);
-  const dot = k => (k === 'unread' && n) || (k === 'group' && g) || (k === 'me' && pr) ? actDot('', k === 'me' ? 'nouvelle activité sur votre profil' : 'nouveaux messages') : '';
+  const g = [...S.chats.values()].filter(c => c.type === 'group' && (c.unread > 0 || c.marked) && !c.archived && (!c.hidden || S.showHidden)).length, pr = (S.act && S.act.prof) || 0;
+  const cnt = (v, l) => v ? ` <span class="cnt dk" aria-label="${v} ${l}">${v}</span>` : '';
+  const dot = k => k === 'unread' ? cnt(n, n > 1 ? 'discussions non lues' : 'discussion non lue') : k === 'group' ? cnt(g, g > 1 ? 'groupes avec des messages' : 'groupe avec des messages') : k === 'me' ? cnt(pr, pr > 1 ? 'personnes vous ont envoyé une flamme' : 'personne vous a envoyé une flamme') : '';
   return [['all', 'Toutes'], ['unread', 'Non lues'], ['group', 'Groupes'], ['me', 'Mon profil']].map(([k, l]) => `<button class="chip" type="button" data-act="filt" data-f="${k}" aria-pressed="${(S.filt || 'all') === k || (k === 'all' && S.filt === 'arch')}">${l}${dot(k)}</button>`).join('');
 }
 function renderHead() {
@@ -433,8 +434,13 @@ async function profSheet(id, back) {
 async function openChat(id) {
   S.msel = null;
   S.chatId = id; S.replyTo = null;
-  $('.app').dataset.view = 'chat'; renderMain(); if (S.tab === 'chats') renderBody();
-  await loadMessages(id);
+  $('.app').dataset.view = 'chat'; renderMain(); if (S.tab === 'chats') renderBody(); focusComposer();
+  await loadMessages(id); if (S.chatId === id) focusComposer();
+}
+// À l'ouverture d'une discussion (liste, statut, groupe…), le curseur se place tout seul dans la zone d'écriture.
+function focusComposer() {
+  const i = $('#msgIn'); if (!i || i.disabled || S.locked || document.getElementById('lockScreen') || (layer && layer.innerHTML.trim())) return;
+  if (document.activeElement === i) return; try { i.focus({preventScroll: true}); } catch { i.focus(); }
 }
 async function loadMessages(id, fresh) {
   try {
@@ -770,7 +776,7 @@ if (window.TamTamAndroid) {
 }
 document.addEventListener('keyup', e => { if (e.key === 'PrintScreen' && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
 document.addEventListener('keydown', e => { if (e.metaKey && e.shiftKey && ['3', '4', '5', 's', 'S'].includes(e.key) && S.chatId) api(`/api/chats/${S.chatId}/shot`, {once: !!S.onceMsg}).catch(() => {}); });
-function closeLayer() { popClose(); if (S.svRec) svRecStop(false); if (S.onceMsg) return onceDone(); clearTimeout(svT); if (S.sv) setTimeout(svCacheClear, 500); layer.innerHTML = ''; S.sv = null; if (S.pend) { URL.revokeObjectURL(S.pend.url); S.pend = null; } }
+function closeLayer() { popClose(); if (S.svRec) svRecStop(false); if (S.onceMsg) return onceDone(); clearTimeout(svT); const wasSv = !!S.sv; if (S.sv) setTimeout(svCacheClear, 500); layer.innerHTML = ''; S.sv = null; if (wasSv && S.chatId) setTimeout(focusComposer, 60); if (S.pend) { URL.revokeObjectURL(S.pend.url); S.pend = null; } }
 function confirmSheet(title, text, yes, act, id) {
   sheet(`${head(title)}<div class="sheet-body"><p>${text}</p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="button" data-act="${act}" data-id="${id || ''}">${yes}</button></div></div>`, title);
 }
@@ -1405,13 +1411,17 @@ function picsEdit(set) {
       : `<button class="ph3-add" type="button" data-act="vidAdd" data-set="${set}" data-i="${i}"><span aria-hidden="true">▶</span>Vidéo ${i + 1}</button>`).join('')}</div>
     <input type="file" id="picIn" accept="image/*" hidden><input type="file" id="vidIn" accept="video/*" hidden>`;
 }
+function closeSummary() {
+  const n = (S.me.close || []).length;
+  return `<div class="grp-box"><b>${I.users} Mon groupe privé</b><p class="hint" style="margin:0">${n ? `${n} ami${n > 1 ? 's' : ''} dans votre groupe privé.` : 'Personne pour l’instant.'} Ces amis voient vos statuts privés${S.me.privTo === 'grp' ? ' et votre profil privé verrouillé' : ''}.</p><div><button class="btn sm ghost" type="button" data-act="cgOpen">Choisir les amis</button></div></div>`;
+}
 function closePicker(ok) {
   const cs = S.contacts.contacts, close = new Set(S.me.close || []);
   return `<div class="grp-box"><b>${I.users} Mon groupe privé</b><p class="hint" style="margin:0">Ces amis voient vos statuts privés${S.me.privTo === 'grp' ? ' et votre profil privé verrouillé' : ''}.</p>
-    ${cs.length ? `<div class="cg-tools"><label class="pick cg-all"><input type="checkbox" name="closeAll"${cs.every(u => close.has(u.id)) ? ' checked' : ''}><span><b>Tout cocher</b></span></label><span class="hint" id="cgCount">${cs.filter(u => close.has(u.id)).length} sur ${cs.length}</span>${ok ? '<button class="btn sm" type="button" data-act="stGrpOk">Valider</button>' : ''}</div>
+    ${cs.length ? `<div class="cg-tools"><label class="pick cg-all"><input type="checkbox" name="closeAll"${cs.every(u => close.has(u.id)) ? ' checked' : ''}><span><b>Tout cocher</b></span></label><span class="hint" id="cgCount">${cs.filter(u => close.has(u.id)).length} sur ${cs.length}</span>${ok ? `<button class="btn sm" type="button" data-act="${ok === 'prof' ? 'cgClose' : 'stGrpOk'}">Valider</button>` : ''}</div>
     ${cs.length > 8 ? `<label class="search" style="margin:0">${I.search}<span class="sr">Chercher un ami</span><input id="cgq" type="search" placeholder="Chercher un ami" autocomplete="off"></label>` : ''}
     <p class="hint" style="margin:0">Astuce : cochez tout, puis décochez seulement les personnes qui ne doivent pas voir.</p>` : ''}
-    ${cs.length ? `<div class="picks">${cs.slice().sort((a, b) => a.name.localeCompare(b.name, 'fr')).map(u => `<label class="pick"><input type="checkbox" name="close" value="${u.id}"${close.has(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint" style="margin:0">Ajoutez d’abord des amis.</p>'}${ok && !cs.length ? '<div><button class="btn sm" type="button" data-act="stGrpOk">Fermer</button></div>' : ''}</div>`;
+    ${cs.length ? `<div class="picks">${cs.slice().sort((a, b) => a.name.localeCompare(b.name, 'fr')).map(u => `<label class="pick"><input type="checkbox" name="close" value="${u.id}"${close.has(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint" style="margin:0">Ajoutez d’abord des amis.</p>'}${ok && !cs.length ? `<div><button class="btn sm" type="button" data-act="${ok === 'prof' ? 'cgClose' : 'stGrpOk'}">Fermer</button></div>` : ''}</div>`;
 }
 function profileEditor() {
   const me = S.me, p = me.pub || {}, pv = me.priv || {}, t = S.profTab || 'pub';
@@ -1433,7 +1443,7 @@ function profileEditor() {
     <div class="set-block">
       <span class="lbl">Qui peut voir mon profil privé</span>
       <div class="locks">${LOCKS.map(([v, ic, l, h]) => `<button class="lockopt" type="button" data-act="privTo" data-v="${v}" aria-pressed="${me.privTo === v}">${ic}<b>${l}</b><small>${h}</small></button>`).join('')}</div>
-      ${closePicker()}
+      ${S.cgOpen ? closePicker('prof') : closeSummary()}
     </div>
     <div class="set-block">
       ${f('priv', 'tel', 'Téléphone (caché sauf accord)', '+221 …', 'tel')}${f('priv', 'annee', 'Année de naissance', 'Ex. : 1985', 'number')}${f('priv', 'mail', 'E-mail de contact', '', 'email')}${f('priv', 'adresse', 'Quartier ou adresse')}${f('priv', 'travail', 'Lieu de travail')}${f('priv', 'famille', 'Famille')}
@@ -1736,7 +1746,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.73</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.74</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -2037,7 +2047,9 @@ const ACT = {
   stMus() { keepSt(); $('#stMusIn').click(); },
   stMusOff() { keepSt(); if (S.sc.music) URL.revokeObjectURL(S.sc.music.url); S.sc.music = null; stComposer(); },
   stGrp() { keepSt(); S.sc.grp = true; stComposer(); },
-  stGrpOk() { keepSt(); S.sc.grp = false; stComposer(); }, stGrpBg() { ACT.stGrpOk(); },
+  stGrpOk() { keepSt(); S.sc.grp = false; stComposer(); },
+  cgOpen() { S.cgOpen = true; pmRefresh(); renderBody(); },
+  cgClose() { S.cgOpen = false; pmRefresh(); renderBody(); toast('Groupe privé enregistré'); }, stGrpBg() { ACT.stGrpOk(); },
   stNoPhoto() { keepSt(); if (S.sc.url) URL.revokeObjectURL(S.sc.url); Object.assign(S.sc, {kind: 'text', blob: null, url: null}); stComposer(); },
   stPublish() { stPublish(); },
   closeEdit() { keepSt(); closeLayer(); if (isDesk()) pmOpen('settings'); else { S.tab = 'settings'; renderAll(); } setTimeout(() => { const el = document.querySelector('input[name="close"]'); if (el) el.scrollIntoView({block: 'center'}); }, 50); toast('Cochez les personnes de votre groupe privé, puis revenez publier votre statut.'); },

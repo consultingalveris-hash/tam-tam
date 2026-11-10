@@ -1228,3 +1228,11 @@ body.in-cam{overflow:hidden}
 .pf-btn .fl{filter:grayscale(1);opacity:.6}.pf-btn[aria-pressed="true"] .fl{filter:none;opacity:1}
 .pf-who{background:none;border:0;padding:0 4px;color:var(--accent-strong);font:inherit;font-size:13px;font-weight:700;text-decoration:underline;cursor:pointer}
 .vid-big{width:100%;max-height:70vh;border-radius:12px;background:#000}
+/* v1.74 — points de sélection deux fois plus petits ; chiffres turquoise foncé dans les filtres */
+.fwd-row input[type=checkbox],.pick:not(.chk) input[type=checkbox]{width:16px;height:16px;border-width:1.5px}
+.fwd-row input[type=checkbox]::before,.pick:not(.chk) input[type=checkbox]::before{width:6px;height:6px}
+.fwd-row input[type=checkbox]:checked,.pick:not(.chk) input[type=checkbox]:checked{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent),0 0 8px 1px color-mix(in srgb,var(--accent) 70%,transparent)}
+.selmark,.mem-chk{width:14px;height:14px}
+.selmark::before,.mem-chk::before{width:6px;height:6px}
+.chat-row.sel .selmark,.mem-chk.on{box-shadow:0 0 8px 1px color-mix(in srgb,var(--accent) 70%,transparent)}
+.chip .cnt.dk{background:#0a6f7b;color:#fff}

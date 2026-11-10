@@ -1154,7 +1154,7 @@ R('POST', /^\/api\/memories\/received\/seen$/, async ({ me, body }) => {
 /* Activité à signaler par un point lumineux : appels manqués et flammes reçues sur le profil. */
 const actOf = u => ({
   calls: q1(`SELECT COUNT(*) n FROM calls WHERE callee=? AND kind='direct' AND status='missed' AND started>?`, u.id, u.calls_seen || u.created_at).n,
-  prof: q1(`SELECT COUNT(*) n FROM prof_flames WHERE owner=? AND user_id<>? AND at>?`, u.id, u.id, u.prof_seen || 0).n });
+  prof: q1(`SELECT COUNT(DISTINCT user_id) n FROM prof_flames WHERE owner=? AND user_id<>? AND at>?`, u.id, u.id, u.prof_seen || 0).n });
 R('GET', /^\/api\/me\/act$/, async ({ me }) => actOf(me));
 R('POST', /^\/api\/me\/act\/seen$/, async ({ me, body }) => {
   if (body.k === 'calls') run(`UPDATE users SET calls_seen=? WHERE id=?`, now(), me.id);
