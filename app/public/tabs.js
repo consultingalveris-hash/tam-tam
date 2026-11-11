@@ -41,8 +41,10 @@ const Calls = {
     const f = this.found(), list = (this.log || []).map(c => this.row(c)).join('');
     return `<div class="calls">
       <div style="padding:6px 16px 4px"><label class="search">${I.search}<span class="sr">Chercher quelqu’un à appeler</span><input id="cq" type="search" placeholder="Appeler quelqu’un : nom ou @pseudo" autocomplete="off" value="${esc(this.q)}"></label></div>
-      <div class="cl-list" id="clList">${f != null ? f : this.log ? (list || '<p class="empty">Aucun appel pour l’instant. Vos appels vocaux et vidéo apparaîtront ici.</p>') : '<p class="empty">Chargement…</p>'}</div>
-      <div class="dial" aria-label="Clavier">
+      <div class="cl-list${this.open ? '' : ' roomy'}" id="clList">${f != null ? f : this.log ? (list || '<p class="empty">Aucun appel pour l’instant. Vos appels vocaux et vidéo apparaîtront ici.</p>') : '<p class="empty">Chargement…</p>'}</div>
+      ${this.open ? '' : `<button class="dial-fab" type="button" data-act="dialOpen" aria-label="Composer ou coller un numéro" title="Composer un numéro">${I.phone}</button>`}
+      <div class="dial${this.open ? ' open' : ''}" aria-label="Clavier"${this.open ? '' : ' hidden'}>
+        <div class="dial-grab" aria-hidden="true"><i></i></div>
         <div class="dial-sug" id="dialSug">${this.suggest()}</div>
         <div class="dial-top"><input id="dialIn" type="tel" inputmode="none" autocomplete="off" placeholder="Composez ou collez un numéro" value="${esc(this.num)}" aria-label="Numéro">
           <button class="ib" type="button" data-act="dialBack" aria-label="Effacer">${I.backspace}</button></div>
@@ -52,7 +54,23 @@ const Calls = {
           <button class="dgo paste" type="button" data-act="dialPaste" aria-label="Coller un numéro">Coller</button></div>
       </div></div>`;
   },
-  after() {},
+  open: false,
+  // Glisser le clavier vers le bas, la gauche ou la droite le referme ; il ne reste que le bouton vert.
+  after() {
+    const el = document.querySelector('.dial.open'); if (!el) return; let st = null;
+    el.addEventListener('pointerdown', e => { st = {x: e.clientX, y: e.clientY, on: false}; });
+    el.addEventListener('pointermove', e => { if (!st) return; const dx = e.clientX - st.x, dy = e.clientY - st.y;
+      if (!st.on && Math.hypot(dx, dy) > 12) { st.on = true; try { el.setPointerCapture(e.pointerId); } catch {} }
+      if (!st.on) return; const mx = Math.abs(dx) > Math.max(0, dy) ? dx : 0, my = mx ? 0 : Math.max(0, dy);
+      el.style.transition = 'none'; el.style.transform = `translate(${mx}px,${my}px)`; el.style.opacity = String(Math.max(.3, 1 - Math.hypot(mx, my) / 400)); });
+    const end = e => { if (!st) return; const s = st; st = null; if (!s.on) return; const dx = e.clientX - s.x, dy = e.clientY - s.y; Calls.dragged = Date.now();
+      el.style.transition = 'transform .2s, opacity .2s';
+      if (dy > 70 || Math.abs(dx) > 90) { el.style.transform = Math.abs(dx) > 90 ? `translateX(${dx > 0 ? 110 : -110}%)` : 'translateY(110%)'; el.style.opacity = '0'; setTimeout(() => Calls.close(), 180); }
+      else { el.style.transform = ''; el.style.opacity = ''; } };
+    el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+    el.addEventListener('click', e => { if (Date.now() - (Calls.dragged || 0) < 300) { e.preventDefault(); e.stopPropagation(); } }, true);
+  },
+  close() { this.open = false; if (S.tab === 'calls') renderBody(); },
   setNum(v) { this.num = String(v).replace(/[^\d+*#]/g, '').slice(0, 20); const i = $('#dialIn'); if (i) i.value = this.num; const s = $('#dialSug'); if (s) s.innerHTML = this.suggest(); },
   // Appel par numéro sans être amis : on appelle sans ouvrir de discussion (pas de messages possibles).
   callLine(chat, video) {
@@ -67,6 +85,7 @@ const Calls = {
   async dial(video) {
     const n = this.num.replace(/\D/g, '');
     if (n.length < 6) return toast('Tapez ou collez un numéro complet.');
+    this.open = false; if (S.tab === 'calls') renderBody(); // appel lancé : le clavier se range, seul le bouton vert reste
     let r; try { r = await api('/api/calls/bynum', {num: this.num}); } catch (e) { return toast(e.message); }
     if (r.user && r.contact) { try { await this.openDirect(r.user.id); Call.start(!!video); } catch (e) { toast(e.message); } return; }
     if (r.user && r.chat) return this.callLine(r.chat, video);
@@ -82,6 +101,7 @@ document.addEventListener('input', e => {
 });
 Object.assign(ACT, {
   dialKey(d) { Calls.setNum(Calls.num + d.k); if (navigator.vibrate && navigator.userActivation && navigator.userActivation.hasBeenActive) try { navigator.vibrate(10); } catch {} },
+  dialOpen() { Calls.open = true; renderBody(); },
   dialBack() { Calls.setNum(Calls.num.slice(0, -1)); },
   async dialPaste() { try { Calls.setNum(await navigator.clipboard.readText()); } catch { const i = $('#dialIn'); if (i) { i.setAttribute('inputmode', 'tel'); i.focus(); toast('Appuyez longuement dans la case, puis « Coller ».'); } } },
   dialCall(d) { Calls.dial(!!d.video); },

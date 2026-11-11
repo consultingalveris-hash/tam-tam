@@ -91,7 +91,7 @@ const AV_ST = ['court', 'afro', 'tresses', 'foulard', 'locks', 'chignon', 'carre
 const PORTRAITS_ONLY = true, PORTRAIT_N = 12;
 const portraitFor = id => JSON.stringify({ v: 3, p: 'p' + String((id % PORTRAIT_N) + 1).padStart(2, '0') });
 function avatarJson(a) {
-  if (a && a.v === 3) { const p = String(a.p || ''); return /^p(0[1-9]|1[0-2])$/.test(p) ? JSON.stringify({ v: 3, p }) : null; }
+  if (a && a.v === 3) { const p = String(a.p || ''); return /^p(0[1-9]|1[0-9]|2[0-4])$/.test(p) ? JSON.stringify({ v: 3, p }) : null; }
   if (a && a.v === 2 && !PORTRAITS_ONLY) { if (!AV_ST.includes(a.st) || !/^[a-f]$/.test(a.sk) || !AV_SH.includes(a.sh)) return null; return JSON.stringify({ v: 2, st: a.st, sk: a.sk, sh: a.sh, f: !!a.f, b: !!a.b, g: !!a.g, e: !!a.e }); }
   if (a && !PORTRAITS_ONLY && AV_D.test(a.d) && AV_C.includes(a.c)) return JSON.stringify({ d: a.d, c: a.c });
   return null;

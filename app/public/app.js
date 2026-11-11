@@ -85,7 +85,8 @@ const avOn = (u, cls) => `<span class="avw">${avatar(u, cls)}${u && u.busy ? '<s
 const presLabel = u => u.busy ? 'occupé' : u.online ? 'en ligne' : seenLabel(u.lastSeen);
 const grpAv = (c, cls = '') => c.photo ? `<span class="av grp ph ${cls}" aria-hidden="true"><img src="${esc(c.photo)}" alt=""></span>` : `<span class="av grp ${cls}" style="--h:${(c.id * 47) % 360}" aria-hidden="true">${I.users}</span>`;
 function avGallery(sel, who) {
-  return `<div class="avb" id="avg-${who}"><span class="lbl">Portraits</span><div class="avb-pts">${PORTRAITS.map(p => `<button class="avb-pt" type="button" data-act="avPick" data-who="${who}" data-p="${p}" aria-pressed="${!!(sel && sel.v === 3 && sel.p === p)}" aria-label="Portrait ${+p.slice(1)}"><span class="av"><img src="/avatars/${p}.jpg" alt="" loading="lazy"></span></button>`).join('')}</div><p class="hint" style="margin:0">Touchez un portrait, puis « Valider ». D’autres visages du monde arrivent bientôt.</p></div>`;
+  const btn = p => `<button class="avb-pt" type="button" data-act="avPick" data-who="${who}" data-p="${p}" aria-pressed="${!!(sel && sel.v === 3 && sel.p === p)}" aria-label="Portrait ${+p.slice(1)}"><span class="av"><img src="/avatars/${p}.jpg" alt="" loading="lazy"></span></button>`;
+  return `<div class="avb" id="avg-${who}"><span class="lbl">Portraits d’Afrique</span><div class="avb-pts">${PORTRAITS.slice(0, 12).map(btn).join('')}</div><span class="lbl">Portraits du monde</span><div class="avb-pts">${PORTRAITS.slice(12).map(btn).join('')}</div><p class="hint" style="margin:0">Touchez un portrait, puis « Valider ».</p></div>`;
 }
 
 /* ---------- connexion et inscription ---------- */
@@ -326,6 +327,8 @@ function renderModal(first) {
   if (set) fillFp();
   const b = $('#pmBody'); if (b) b.scrollTop = y;
 }
+// Les chiffres d'un nom (ex. « Test 2222 ») sont légèrement réduits pour ne pas paraître plus gros que les lettres.
+const numSm = t => String(t || '').split(/(\d+)/).map((p, i) => i % 2 ? `<span class="num">${p}</span>` : esc(p)).join('');
 const chatTitle = c => c.type === 'group' ? c.name : uOf(c.peer).name;
 function snippet(m) {
   if (!m) return 'Aucun message';
@@ -374,7 +377,7 @@ function chatRows() {
     const sel = S.sel && S.sel.has(c.id);
     return `<button class="row chat-row${c.id === S.chatId && !S.sel ? ' active' : ''}${sel ? ' sel' : ''}" type="button" data-act="open" data-id="${c.id}"${S.sel ? ` aria-pressed="${!!sel}"` : ''}>
       ${S.sel ? `<span class="selmark" aria-hidden="true">${sel ? '✓' : ''}</span>` : ''}<span class="avm">${c.type === 'group' ? grpAv(c) : stRing(u, avOn(u))}${c.muted ? `<span class="mute-b" title="Son coupé" aria-label="Son coupé">${BELL_OFF}</span>` : ''}</span>
-      <span class="row-name">${esc(chatTitle(c))}</span><span class="row-time${c.unread || c.marked ? ' new' : ''}">${m ? listTime(m.at) : ''}</span>
+      <span class="row-name">${numSm(chatTitle(c))}</span><span class="row-time${c.unread || c.marked ? ' new' : ''}">${m ? listTime(m.at) : ''}</span>
       <span class="row-prev">${mine && !tu ? tick(readState(c, m)) : ''}<span>${prev}</span><span class="row-flags">${c.pinned ? '<span class="pin-f" title="Épinglée">📌</span>' : ''}${c.unread ? `<span class="badge">${c.unread}</span>` : c.marked ? '<span class="badge dot" title="Marquée comme non lue"></span>' : ''}</span></span>
       ${S.sel ? '' : `<span class="row-more" role="button" tabindex="-1" data-act="chatRowMenu" data-id="${c.id}" aria-label="Options de la discussion" title="Options">${I.chev}</span>`}</button>`;
   }).join('');
@@ -512,7 +515,7 @@ function renderChatHead() {
   if (c.type === 'group') sub = tu ? `<small class="on">${esc(first(uOf(tu).name))} écrit…</small>` : `<small>${c.members.map(m => m.id === S.me.id ? 'Vous' : first(uOf(m.id).name)).join(', ')}</small>`;
   else { const u = uOf(c.peer); sub = tu ? '<small class="on">écrit…</small>' : `<small class="${u.busy ? 'busy' : u.online ? 'on' : ''}">${presLabel(u)}</small>`; }
   h.innerHTML = `<button class="ib back" type="button" data-act="back" aria-label="Retour">${I.back}</button>
-    <button class="chat-id" type="button" data-act="chatInfo">${c.type === 'group' ? grpAv(c, 'sm') : stRing(uOf(c.peer), avatar(uOf(c.peer), 'sm'))}<span style="min-width:0"><b>${esc(chatTitle(c))}</b>${sub}</span></button>
+    <button class="chat-id" type="button" data-act="chatInfo">${c.type === 'group' ? grpAv(c, 'sm') : stRing(uOf(c.peer), avatar(uOf(c.peer), 'sm'))}<span style="min-width:0"><b>${numSm(chatTitle(c))}</b>${sub}</span></button>
     ${c.type === 'direct' && !c.blocked ? `<button class="ib" type="button" data-act="callVideo" aria-label="Appel vidéo">${I.video}</button><button class="ib" type="button" data-act="callAudio" aria-label="Appel vocal">${I.phone}</button>` : ''}
     ${c.type === 'group' ? (GCall.active(c.id) && !(GCall.c && GCall.c.chatId === c.id) ? `<button class="btn sm gjoin" type="button" data-act="gcallJoin" data-id="${GCall.active(c.id).callId}">${I.phone}Rejoindre</button>` : `<button class="ib" type="button" data-act="gcallVideo" aria-label="Appel vidéo de groupe">${I.video}</button><button class="ib" type="button" data-act="gcallAudio" aria-label="Appel vocal de groupe">${I.phone}</button>`) : ''}
     <button class="ib dotb" type="button" data-act="chatMenu" aria-label="Options de la discussion" title="Options">${DOT(c.hidden)}</button>`;
@@ -741,6 +744,7 @@ async function sendText() {
   i.value = ''; autoGrow(i); syncSend(); const reply = S.replyTo; S.replyTo = null; renderReplyBar();
   try {
     let payload = {t}; const out = Tr.outL(c.id);
+    if (out && !Tr.st) { try { Tr.st = await api('/api/translate/status'); } catch {} }
     if (out && Tr.st && Tr.st.on && S.me.trConsent && !S.once) {
       try {
         const ctx = (S.msgs.get(c.id) || []).filter(x => x.kind === 'text' && x.text && !x.once).slice(-4).map(x => x.text);
@@ -809,7 +813,7 @@ const DOT = (priv, cls = '') => `<span class="dot1${priv ? ' priv' : ''}${cls ? 
 // Les menus ouverts depuis ce point s'affichent dans une petite fenêtre près du point (pas en bas de l'écran),
 // et ne ferment pas ce qui est derrière (une photo ou une vidéo en grand continue de s'afficher).
 let popFrom = null, popAt = 0, popRect = null;
-function popClose() { const p = document.getElementById('pop'); if (p) p.remove(); }
+function popClose() { const p = document.getElementById('pop'); if (p) p.remove(); document.querySelectorAll('#msgs .msg.menu-on').forEach(e => e.classList.remove('menu-on')); }
 function popOpen(html, label, a) {
   popClose();
   const el = document.createElement('div'); el.id = 'pop'; el.className = 'pop-scrim';
@@ -907,7 +911,7 @@ function groupInfo() {
   const mem = c.members.slice().sort((a, b) => (b.id === c.createdBy) - (a.id === c.createdBy) || (b.admin - a.admin) || (a.id === S.me.id ? -1 : b.id === S.me.id ? 1 : 0));
   sheet(`${head('Infos du groupe')}<div class="sheet-scroll"><div class="sheet-body">
     <div class="prof"><span class="grp-ph">${grpAv(c, 'xl')}${ed ? `<button class="ib grp-ph-b" type="button" data-act="grpPhoto" aria-label="Changer la photo du groupe">${I.camera}</button>` : ''}</span>
-      <b class="grp-title">${ed ? `<button class="grp-ren" type="button" data-act="grpRename" aria-label="Renommer le groupe" title="Renommer le groupe">${I.pencil}</button>` : ''}${esc(c.name)}</b><span>Groupe · ${c.members.length} membre${c.members.length > 1 ? 's' : ''}</span></div>
+      <b class="grp-title">${ed ? `<button class="grp-ren" type="button" data-act="grpRename" aria-label="Renommer le groupe" title="Renommer le groupe">${I.pencil}</button>` : ''}${numSm(c.name)}</b><span>Groupe · ${c.members.length} membre${c.members.length > 1 ? 's' : ''}</span></div>
     <div class="grp-acts">
       <button type="button" class="ga" data-act="gcallVideo">${I.video}<span>Appel vidéo</span></button><button type="button" class="ga" data-act="gcallAudio">${I.phone}<span>Appel vocal</span></button>
       ${can(c, 'add') ? `<button type="button" class="ga" data-act="grpLink">${I.copy}<span>Lien d’invitation</span></button><button type="button" class="ga" data-act="groupAddOpen">${I.userplus}<span>Ajouter</span></button>` : ''}
@@ -1216,6 +1220,7 @@ async function locFollow(uid) {
 }
 function msgMenu(id) {
   const list = S.msgs.get(S.chatId) || [], m = list.find(x => x.id === id); if (!m) return;
+  document.querySelectorAll('#msgs .msg.menu-on').forEach(e => e.classList.remove('menu-on')); const row = document.querySelector(`#msgs .msg[data-mid="${id}"]`); if (row) queueMicrotask(() => { if (layer.innerHTML.trim() || document.getElementById('pop')) row.classList.add('menu-on'); });
   if (m.deleted) return sheet(`<div class="menu" style="padding-top:12px"><button type="button" class="danger" data-act="hideAsk" data-id="${id}">${I.trash}Supprimer pour moi</button></div>`, 'Message');
   const c = S.chats.get(S.chatId) || {}, modo = c.type === 'group' && c.admin && m.from !== S.me.id && (c.gset || {}).del === 'admins', canAll = (m.from === S.me.id && Date.now() - m.at < DEL_ALL_MAX) || modo, myR = (m.reacts || []).find(r => r.u === S.me.id);
   const canFwd = !m.once && !m.locked && !c.hidden && m.kind !== 'sys', pinned = c.pinMsg && c.pinMsg.id === m.id;
@@ -1701,11 +1706,12 @@ const Tr = {
     catch (e) { toast(e.message); return false; }
   },
   async autoRun(c) {
-    const l = c && this.inL(c.id); if (!l || this.busy || !this.st || !this.st.on || !S.me.trConsent || this.learn(c.id)) return;
+    // Tout message reçu qui n'est pas dans ma langue est traduit ici, même si l'expéditeur ne l'a pas fait (ancienne version, réseau coupé…).
+    const l = c && this.inL(c.id); if (!l || !this.st || !this.st.on || !S.me.trConsent) return; if (this.busy) { this.again = c; return; }
     const todo = (S.msgs.get(c.id) || []).filter(m => m.from && m.from !== S.me.id && !m.once && !m.deleted && !m.locked && m.kind === 'text' && m.text && m.text.trim().length > 1 && m.tlang !== l && !this.shown.has(m.id) && !this.off.has(m.id)).slice(-30);
     if (!todo.length) return; this.busy = true;
     try { for (const m of todo) { if (S.chatId !== c.id || this.inL(c.id) !== l) break; if (this.get(m.id, l)) { this.shown.add(m.id); continue; } if (!await this.run(m.id, true, l)) break; } }
-    finally { this.busy = false; } if (S.chatId === c.id) renderMessages(true);
+    finally { this.busy = false; } if (S.chatId === c.id) renderMessages(true); const ag = this.again; this.again = null; if (ag && ag.id === S.chatId && ag !== c) this.autoRun(ag);
   },
   // Envoie une paire « texte d'origine → traduction » à la base de Tam-Tam (le serveur vérifie les accords).
   give(src, sl, tgt, tl, kind, author) { const a = author === S.me.id ? S.me : uOf(author); if (!a || !(author === S.me.id ? S.me.trConsent : a.trc) || (kind === 'fix' && !S.me.trConsent)) return; api('/api/corpus', {src, sl: sl || '', tgt, tl, kind, author}).catch(() => {}); },
@@ -1714,7 +1720,7 @@ const Tr = {
   fixBtn(id, lbl) { return ` · <button class="linkb" type="button" data-act="trFix" data-id="${id}">✎ ${lbl || 'Corriger'}</button>`; },
   from(l) { const n = l && LANG_FR[l]; return n ? (/^[aeiouhé]/.test(n) ? 'de l’' : 'du ') + n.replace(/ \(essai\)$/, '') : ''; },
   // Mode apprentissage : le message reste dans sa langue, la traduction est cachée jusqu'à ce qu'on la demande.
-  learn(cid) { return this.ls('tt-trlearn:' + cid) === '1'; },
+  learn() { return false; }, // mode apprentissage retiré (v1.86)
   // Proposer des corrections : voir le message d'origine sous la traduction, avec « Votre correction ».
   contrib() { const v = this.ls('tt-trcontrib'); return v ? v === '1' : !!(S.me && S.me.amb); },
   once: new Set(),
@@ -1864,7 +1870,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.87</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.88</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1919,7 +1925,7 @@ const ACT = {
     if (d.who === 'auth') { A.avatar = a; $('#avg-auth').outerHTML = avGallery(a, 'auth'); }
     else { if (S.pp && S.pp.url) URL.revokeObjectURL(S.pp.url); S.pp = {kind: 'av', av: a}; renderBody(); }
   },
-  tab(d) { if (d.t === 'settings' && isDesk()) { closeLayer(); return pmOpen('settings'); } if (d.t === 'chats' && S.filt === 'arch') S.filt = 'all'; if (d.t !== 'souvenirs' && typeof Mem !== 'undefined') Mem.unlocked = false; if (d.t === 'calls') Calls.log = null; S.tab = d.t; closeLayer(); renderAll(); if (d.t === 'calls') actSeen('calls'); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
+  tab(d) { if (d.t === 'settings' && isDesk()) { closeLayer(); return pmOpen('settings'); } if (d.t === 'chats' && S.filt === 'arch') S.filt = 'all'; if (d.t !== 'souvenirs' && typeof Mem !== 'undefined') Mem.unlocked = false; if (d.t === 'calls') { Calls.log = null; Calls.open = false; } S.tab = d.t; closeLayer(); renderAll(); if (d.t === 'calls') actSeen('calls'); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
   fab() { newChatSheet(); },
   open(d) { if (S.sel) { const id = +d.id; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); if (!S.sel.size) S.sel = null; return renderBody(); } openChat(+d.id); },
   chatRowMenu(d) { chatListMenu(+d.id); },
@@ -2115,7 +2121,8 @@ const ACT = {
   },
   editCancel() { S.editId = null; renderReplyBar(); const i = $('#msgIn'); if (i) { i.value = ''; autoGrow(i); syncSend(); } },
   mselStart(d) { closeLayer(); mselToggle(+d.id); },
-  mselOff() { S.msel = null; document.querySelectorAll('.msg.msel').forEach(e => e.classList.remove('msel')); renderChatHead(); },
+  mselOff() { S.msel = null; document.querySelectorAll('.msg.msel').forEach(e => e.classList.remove('msel')); renderChatHead(); reactRail(); },
+  railReact(d) { ACT.mselOff(); ACT.react(d); },
   mselMenu() {
     const ids = [...(S.msel || [])]; if (!ids.length) return;
     if (ids.length === 1) return msgMenu(ids[0]);   // un seul message : le menu complet (réactions, répondre, transférer…), il reste sélectionné
@@ -2409,11 +2416,20 @@ document.addEventListener('contextmenu', e => {
 });
 let pressT, pressXY = [0, 0], pressFired = 0, pressDone = true, swipe = null, lastTouch = 0;
 // Sélection de messages : appui long sur un message, puis toucher les autres pour les ajouter ; le point en haut à droite donne les actions.
+// Appui long sur un message : une barre verticale d'émojis à droite, pour réagir tout de suite (sans passer par le point en haut).
+function reactRail() {
+  let el = document.getElementById('rrail'); const one = S.msel && S.msel.size === 1 ? [...S.msel][0] : null;
+  const m = one && (S.msgs.get(S.chatId) || []).find(x => x.id === one);
+  if (!m || m.deleted || m.pending || m.kind === 'sys') { if (el) el.remove(); return; }
+  const list = [...new Set(QUICK.concat(typeof EMO !== 'undefined' ? EMO[1][2].slice(0, 30) : []))];
+  if (!el) { el = document.createElement('div'); el.id = 'rrail'; el.className = 'rrail'; el.setAttribute('role', 'group'); el.setAttribute('aria-label', 'Réagir'); document.body.appendChild(el); }
+  el.innerHTML = list.map(e => `<button type="button" data-act="railReact" data-id="${m.id}" data-e="${e}">${e}</button>`).join('');
+}
 function mselToggle(id) {
   const m = (S.msgs.get(S.chatId) || []).find(x => x.id === id); if (!m || m.kind === 'sys') return;
   S.msel = S.msel || new Set(); S.msel.has(id) ? S.msel.delete(id) : S.msel.add(id); if (!S.msel.size) S.msel = null;
   document.querySelectorAll('#msgs .msg[data-mid]').forEach(el => el.classList.toggle('msel', !!S.msel && S.msel.has(+el.dataset.mid)));
-  renderChatHead();
+  renderChatHead(); reactRail();
 }
 // À la souris, cliquer dans la zone vide à côté d'un message ouvre son menu, comme le petit crochet.
 document.addEventListener('click', e => {

@@ -136,7 +136,7 @@ const AV2 = {
 const FEM = ['tresses', 'foulard', 'chignon', 'carre'];
 /* ancien format {d,c} vers le nouveau */
 /* portraits illustrés (fichiers /avatars/pNN.jpg) */
-const PORTRAITS = Array.from({length: 12}, (_, i) => 'p' + String(i + 1).padStart(2, '0'));
+const PORTRAITS = Array.from({length: 24}, (_, i) => 'p' + String(i + 1).padStart(2, '0'));
 const isPortrait = a => !!(a && a.v === 3 && PORTRAITS.includes(a.p));
 function avNorm(a) {
   if (a && a.v === 2) return a;

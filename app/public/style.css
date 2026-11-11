@@ -1316,3 +1316,20 @@ body.in-cam{overflow:hidden}
 .dgo{width:50px;height:50px}.dgo svg{width:23px;height:23px}
 a.btn,a.btn:hover{text-decoration:none}
 #msgs .msg{cursor:default}
+/* v1.88 — appels : le clavier se range, seul le bouton vert reste par-dessus la liste */
+.dial-fab{position:absolute;left:50%;bottom:84px;z-index:5;transform:translateX(-50%);width:62px;height:62px;border:0;border-radius:50%;background:#2fb36b;display:grid;place-items:center;box-shadow:0 8px 22px rgb(0 0 0/.28);cursor:pointer}
+.dial-fab svg{width:27px;height:27px;stroke:#fff}
+.dial-fab:active{transform:translateX(-50%) scale(.95)}
+.cl-list.roomy{padding-bottom:96px}
+.dial.open{animation:dialUp .22s ease-out;touch-action:none;box-shadow:0 -10px 30px var(--shadow);border-radius:18px 18px 0 0}
+@keyframes dialUp{from{transform:translateY(40%);opacity:.3}}
+.dial-grab{display:flex;justify-content:center;padding:2px 0 4px}.dial-grab i{width:40px;height:4px;border-radius:2px;background:var(--line)}
+/* v1.88 — appui long : pas de sélection de texte ; barre d'émojis verticale ; message du menu surligné */
+@media (pointer:coarse){#msgs .msg,#msgs .msg *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}}
+.rrail{position:fixed;right:max(8px,env(safe-area-inset-right,0px));top:50%;transform:translateY(-50%);z-index:30;display:flex;flex-direction:column;gap:4px;max-height:min(60vh,420px);overflow-y:auto;overscroll-behavior:contain;padding:6px;border-radius:26px;background:var(--surface);box-shadow:0 8px 28px var(--shadow);scrollbar-width:none;animation:railIn .18s ease-out}
+.rrail::-webkit-scrollbar{display:none}
+.rrail button{flex:none;width:42px;height:42px;border:0;border-radius:50%;background:none;font-size:24px;line-height:1;cursor:pointer}
+.rrail button:active{background:var(--accent-soft);transform:scale(1.15)}
+@keyframes railIn{from{opacity:0;transform:translate(20px,-50%)}}
+#msgs .msg.menu-on{background:color-mix(in srgb,var(--accent) 12%,transparent);border-radius:12px;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 22%,transparent)}
+.num{font-size:.86em;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
