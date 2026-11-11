@@ -102,6 +102,7 @@ document.addEventListener('input', e => {
 Object.assign(ACT, {
   dialKey(d) { Calls.setNum(Calls.num + d.k); if (navigator.vibrate && navigator.userActivation && navigator.userActivation.hasBeenActive) try { navigator.vibrate(10); } catch {} },
   dialOpen() { Calls.open = true; renderBody(); },
+  czTog(d) { const k = d.k, on = !Book.shut(k); try { localStorage.setItem('tt-cz-' + k, on ? '1' : ''); } catch {} const z = document.querySelector(`.cz-h[data-k="${k}"]`); if (z) { z.parentElement.classList.toggle('shut', on); z.setAttribute('aria-expanded', String(!on)); } },
   dialClose() { const el = document.querySelector('.dial.open'); if (!el) return Calls.close(); el.style.transition = 'transform .2s, opacity .2s'; el.style.transform = 'translateY(110%)'; el.style.opacity = '0'; setTimeout(() => Calls.close(), 180); },
   // Fiche ouverte en touchant la photo ou le nom dans l'historique des appels.
   clCard(d) {
@@ -337,12 +338,15 @@ const Book = {
     const inc = C.incoming.filter(f), fr = C.contacts.filter(f), out = C.outgoing.filter(f);
     const row = u => `<div class="row">${avOn(u)}<button class="row-name linkless" type="button" data-act="prof" data-id="${u.id}" style="border:0;background:none;padding:0;text-align:left;min-width:0;flex:1"><b>${esc(u.name)}</b></button><span class="row-end" style="display:flex;gap:4px;align-items:center">
       <button class="ib" type="button" data-act="clContact" data-id="${u.id}" aria-label="Appel vocal avec ${esc(u.name)}" title="Appel vocal">${I.phone}</button><button class="ib" type="button" data-act="clContact" data-id="${u.id}" data-video="1" aria-label="Appel vidéo avec ${esc(u.name)}" title="Appel vidéo">${I.video}</button><button class="btn sm" type="button" data-act="write" data-id="${u.id}">Discuter</button></span></div>`;
-    return `${inc.length ? `<div class="sec">Demandes reçues · ${inc.length}</div>${inc.map(u => userRow(u, `<button class="btn sm ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button><button class="btn sm" type="button" data-act="cAccept" data-id="${u.id}">Accepter</button>`)).join('')}` : ''}
-      ${fr.length ? `<div class="sec">Mes amis sur Tam-Tam · ${fr.length}</div><div id="frList">${fr.map(row).join('')}</div>` : ''}
-      ${out.length ? `<div class="sec">Demandes envoyées · en attente</div>${out.map(u => userRow(u, '<span class="hint">En attente</span>')).join('')}` : ''}
+    // Chaque groupe dans sa propre zone, séparée des autres : elle défile seule et se replie en touchant son titre.
+    const zone = (k, t, inner) => { const shut = this.shut(k); return `<section class="cz${shut ? ' shut' : ''}"><button class="cz-h" type="button" data-act="czTog" data-k="${k}" aria-expanded="${!shut}"><span>${t}</span>${I.chev}</button><div class="cz-b">${inner}</div></section>`; };
+    return `${inc.length ? zone('inc', `Demandes reçues · ${inc.length}`, inc.map(u => userRow(u, `<button class="btn sm ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button><button class="btn sm" type="button" data-act="cAccept" data-id="${u.id}">Accepter</button>`)).join('')) : ''}
+      ${fr.length ? zone('fr', `Mes amis sur Tam-Tam · ${fr.length}`, `<div id="frList">${fr.map(row).join('')}</div>`) : ''}
+      ${out.length ? zone('out', `Demandes envoyées · en attente · ${out.length}`, out.map(u => userRow(u, '<span class="hint">En attente</span>')).join('')) : ''}
       ${!C.contacts.length && !inc.length && !out.length ? `<p class="hint" style="padding:8px 16px">Vos amis Tam-Tam apparaîtront ici dès qu’ils auront accepté votre demande. Pour en ajouter, touchez <b>+</b> en haut.</p>` : ''}
       <div class="sec">Répertoire du téléphone</div>`;
   },
+  shut(k) { try { return localStorage.getItem('tt-cz-' + k) === '1'; } catch { return false; } },
   body() { return this.friends() + this.book(); },
   book() {
     if (!this.loaded) { this.load(); return '<p class="empty">Chargement…</p>'; }

@@ -1115,7 +1115,7 @@ body.in-cam{overflow:hidden}
 .st-ring.seen{background:conic-gradient(var(--accent) 0 180deg,rgb(20 184 201/.18) 180deg 360deg);box-shadow:none}
 /* le point unique */
 .dot1{display:block;width:7px;height:7px;border-radius:50%;background:#fff;box-shadow:0 0 0 7px rgb(0 0 0/.38)}
-.dot1.priv{background:var(--accent)}
+.dot1.priv,:root .head .dot1.priv,:root #chatHead .dot1.priv,:root:not([data-theme="dark"]) .head .dot1.priv,:root:not([data-theme="dark"]) #chatHead .dot1.priv{background:var(--accent)}
 .ib.dotb{display:grid;place-items:center}
 :root:not([data-theme="dark"]) .head .dot1,:root:not([data-theme="dark"]) #chatHead .dot1{box-shadow:0 0 0 7px rgb(15 36 48/.55)}
 #chatHead .grow,.selbar .grow{flex:1 1 auto}
@@ -1351,3 +1351,18 @@ a.btn,a.btn:hover{text-decoration:none}
 .mv-stage>img,.mv-stage>video{position:absolute;inset:0;width:100%;height:100%;max-width:none;max-height:none;object-fit:contain}
 /* téléphone : la barre d'émojis s'efface quand le menu du point est ouvert */
 body:has(#pop) .rrail,body:has(#layer .layer) .rrail{display:none}
+/* v1.90 — le point : anneau jaune (celui des messages d'information) au lieu du gris */
+.dot1,:root:not([data-theme="dark"]) .head .dot1,:root:not([data-theme="dark"]) #chatHead .dot1{background:#7a5c0e;box-shadow:0 0 0 7px #fcf0c6}
+.dot1.priv,:root .head .dot1.priv,:root #chatHead .dot1.priv,:root:not([data-theme="dark"]) .head .dot1.priv,:root:not([data-theme="dark"]) #chatHead .dot1.priv{background:var(--accent)}
+/* Contacts : zones séparées, chacune défile seule et se replie */
+.cz{margin:10px 12px;border:1px solid var(--line);border-radius:16px;background:var(--surface);overflow:hidden;box-shadow:0 1px 3px var(--shadow)}
+.cz-h{display:flex;align-items:center;gap:8px;width:100%;padding:12px 14px;border:0;background:var(--surface-2);color:var(--fg-2);font:700 12.5px/1.2 Figtree,sans-serif;letter-spacing:.06em;text-transform:uppercase;text-align:left;cursor:pointer}
+.cz-h span{flex:1;min-width:0}
+.cz-h svg{width:16px;height:16px;transition:transform .2s}
+.cz.shut .cz-h svg{transform:rotate(-90deg)}
+.cz-b{max-height:min(42vh,360px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.cz.shut .cz-b{display:none}
+.cz .row{padding-left:12px;padding-right:12px}
+.tr-imp{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 10px;margin:0 10px 8px;padding:10px 12px;border-radius:14px;background:var(--notice);color:var(--notice-fg);font-size:13.5px;line-height:1.4}
+.tr-imp>svg{width:18px;height:18px;flex:none;margin-top:1px}.tr-imp>span{flex:1;min-width:0}
+.tr-imp-a{display:flex;flex-wrap:wrap;gap:6px;width:100%;justify-content:flex-end}
