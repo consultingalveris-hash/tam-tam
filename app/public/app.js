@@ -624,11 +624,11 @@ function markRead() {
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.chatId) markRead(); });
 /* ---------- recadrer la photo de profil ---------- */
-function cropPhoto(file) {
+function cropPhoto(file, target) {
   const url = URL.createObjectURL(file), im = new Image();
   im.onload = () => {
-    S.crop = {im, url, z: 1, x: 0, y: 0, rot: 0};
-    sheet(`${head('Ajuster la photo')}<div class="sheet-body crop-body"><p class="hint">Faites glisser la photo avec le doigt et zoomez pour bien cadrer votre visage.</p>
+    S.crop = {im, url, z: 1, x: 0, y: 0, rot: 0, target: target || 'me'};
+    sheet(`${head('Ajuster la photo')}<div class="sheet-body crop-body"><p class="hint">${target === 'grp' ? 'Faites glisser la photo avec le doigt et zoomez pour bien cadrer la photo du groupe.' : 'Faites glisser la photo avec le doigt et zoomez pour bien cadrer votre visage.'}</p>
       <div class="crop-stage"><canvas id="cropCv" width="560" height="560" aria-label="Aperçu de la photo"></canvas></div>
       <div class="crop-tools"><span aria-hidden="true">−</span><input id="cropZoom" type="range" min="1" max="4" step="0.01" value="1" aria-label="Zoom"><span aria-hidden="true">+</span><button class="ib" type="button" data-act="cropRot" aria-label="Tourner la photo">${I.rotate || '⟳'}</button></div>
       <div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="button" data-act="cropOk">Utiliser cette photo</button></div></div>`, 'Ajuster la photo');
@@ -1769,7 +1769,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.79</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.80</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1892,7 +1892,7 @@ const ACT = {
   },
   mgDoc(d) { const m = S.mg && S.mg.map.get(+d.id); if (m) docOpen(m); },
   async joinGo() { try { const r = await api('/api/groups/join', {code: S.joinCode}); keepUsers(Object.values(r.chat.users)); S.chats.set(r.chat.id, r.chat); closeLayer(); S.tab = 'chats'; renderAll(); openChat(r.chat.id); toast('Bienvenue dans le groupe'); } catch (e) { toast(e.message); } },
-  grpPhoto() { let i = $('#grpIn'); if (!i) { i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.id = 'grpIn'; i.hidden = true; document.body.appendChild(i); i.addEventListener('change', async () => { const f = i.files[0]; i.value = ''; if (!f) return; try { toast('Envoi de la photo…'); const up = await upload(await shrink(f, 800)); await grpUpd({photo: up.id}); toast('Photo du groupe changée'); } catch (e) { toast(e.message); } }); } i.click(); },
+  grpPhoto() { let i = $('#grpIn'); if (!i) { i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.id = 'grpIn'; i.hidden = true; document.body.appendChild(i); i.addEventListener('change', () => { const f = i.files[0]; i.value = ''; if (f) cropPhoto(f, 'grp'); }); } i.click(); },
   grpRename() { const c = S.chats.get(S.chatId); sheet(`${head('Renommer le groupe')}<form data-form="grpName"><div class="sheet-body"><div class="field"><label for="grpN">Nom du groupe</label><input id="grpN" maxlength="50" required value="${esc(c.name)}"></div><div class="actions"><button class="btn ghost" type="button" data-act="chatInfo">Annuler</button><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Renommer', '#grpN'); },
   async grpSet(d) { try { await grpUpd({gset: {[d.k]: d.v}}, true); groupInfo(); const det = $('.grp-set'); if (det) det.open = true; } catch (e) { toast(e.message); } },
   async grpLink(d) {
@@ -2117,7 +2117,8 @@ const ACT = {
     if (!S.crop) return; el.disabled = true;
     const cv = document.createElement('canvas'); cv.width = cv.height = 640; paintCrop(cv.getContext('2d'), 640, false);
     try { const b = await new Promise((res, rej) => cv.toBlob(x => x ? res(x) : rej(new Error('Photo illisible.')), 'image/jpeg', .88));
-      URL.revokeObjectURL(S.crop.url); S.crop = null; closeLayer();
+      const tg = S.crop.target; URL.revokeObjectURL(S.crop.url); S.crop = null; closeLayer();
+      if (tg === 'grp') { toast('Envoi de la photo…'); const up = await upload(b); await grpUpd({photo: up.id}); return toast('Photo du groupe changée'); }
       if (S.pp && S.pp.url) URL.revokeObjectURL(S.pp.url); S.pp = {kind: 'photo', blob: b, url: URL.createObjectURL(b)}; S.showAv = false; renderBody();
       setTimeout(() => { const el = $('#phBlock'); if (el) el.scrollIntoView({block: 'center'}); }, 50); toast('Vérifiez l’aperçu, puis touchez « Valider ».'); }
     catch (e) { el.disabled = false; toast(e.message); }
