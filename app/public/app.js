@@ -480,7 +480,18 @@ function renderMain() {
   if (!c) { main.innerHTML = `<div class="chat-empty">${BRAND('empty')}<span>Choisissez une discussion, ou invitez vos proches depuis l’onglet Contacts.</span></div>`; return; }
   main.innerHTML = `<header class="chat-head" id="chatHead"></header><div id="pinBar"></div><div class="msgs${c.hidden ? ' nocopy' : ''}" id="msgs" tabindex="0" aria-label="Messages"></div><div id="replyBar"></div><div id="compose"></div>`;
   renderChatHead(); renderPin(); renderComposer(); renderMessages();
+  stickBottom($('#msgs'));
   $('#msgs').addEventListener('scroll', e => { if (e.target.scrollTop < 40 && S.more.get(S.chatId) && !S.loadingOld) { S.loadingOld = true; loadOlder().finally(() => { S.loadingOld = false; }); } });
+}
+// Le dernier message reste toujours visible au-dessus de la zone d'écriture, même quand une traduction,
+// une photo ou un aperçu s'ajoute après coup, ou quand la zone d'écriture grandit.
+function stickBottom(box) {
+  if (!box) return; box._stick = true;
+  const go = () => { if (box._stick) box.scrollTop = box.scrollHeight; };
+  box.addEventListener('scroll', () => { box._stick = box.scrollHeight - box.scrollTop - box.clientHeight < 80; }, {passive: true});
+  new MutationObserver(() => requestAnimationFrame(go)).observe(box, {childList: true, subtree: true, characterData: true});
+  box.addEventListener('load', () => requestAnimationFrame(go), true);
+  if (window.ResizeObserver) new ResizeObserver(() => go()).observe(box);
 }
 function renderPin() {
   const c = S.chats.get(S.chatId), el = $('#pinBar'); if (!c || !el) return; const m = c.pinMsg;
@@ -853,7 +864,7 @@ function groupInfo() {
   const mem = c.members.slice().sort((a, b) => (b.id === c.createdBy) - (a.id === c.createdBy) || (b.admin - a.admin) || (a.id === S.me.id ? -1 : b.id === S.me.id ? 1 : 0));
   sheet(`${head('Infos du groupe')}<div class="sheet-scroll"><div class="sheet-body">
     <div class="prof"><span class="grp-ph">${grpAv(c, 'xl')}${ed ? `<button class="ib grp-ph-b" type="button" data-act="grpPhoto" aria-label="Changer la photo du groupe">${I.camera}</button>` : ''}</span>
-      <b>${esc(c.name)}${ed ? ` <button class="linkless grp-ren" type="button" data-act="grpRename" aria-label="Renommer le groupe">✎</button>` : ''}</b><span>Groupe · ${c.members.length} membre${c.members.length > 1 ? 's' : ''}</span></div>
+      <b class="grp-title">${ed ? `<button class="grp-ren" type="button" data-act="grpRename" aria-label="Renommer le groupe" title="Renommer le groupe">${I.pencil}</button>` : ''}${esc(c.name)}</b><span>Groupe · ${c.members.length} membre${c.members.length > 1 ? 's' : ''}</span></div>
     <div class="grp-acts">
       <button type="button" class="ga" data-act="gcallVideo">${I.video}<span>Appel vidéo</span></button><button type="button" class="ga" data-act="gcallAudio">${I.phone}<span>Appel vocal</span></button>
       ${can(c, 'add') ? `<button type="button" class="ga" data-act="grpLink">${I.copy}<span>Lien d’invitation</span></button><button type="button" class="ga" data-act="groupAddOpen">${I.userplus}<span>Ajouter</span></button>` : ''}
@@ -1661,6 +1672,8 @@ const Tr = {
   from(l) { const n = l && LANG_FR[l]; return n ? (/^[aeiouhé]/.test(n) ? 'de l’' : 'du ') + n.replace(/ \(essai\)$/, '') : ''; },
   // Mode apprentissage : le message reste dans sa langue, la traduction est cachée jusqu'à ce qu'on la demande.
   learn(cid) { return this.ls('tt-trlearn:' + cid) === '1'; },
+  // Proposer des corrections : voir le message d'origine sous la traduction, avec « Votre correction ».
+  contrib() { const v = this.ls('tt-trcontrib'); return v ? v === '1' : !!(S.me && S.me.amb); },
   setLearn(cid, on) { this.ls('tt-trlearn:' + cid, on ? '1' : ''); },
   open: new Set(),
   // Texte d'une bulle : le message, la traduction juste en dessous et « Votre correction » (modèle unique).
@@ -1685,19 +1698,20 @@ const Tr = {
       return `<span class="txt">${escL(m.text)}</span>` + (shown ? box(`Traduction (${esc(L(inL))})${fx ? ' · corrigée par vous' : ''} :`, fx ? fx.text : t.text)
         : `<span class="tr-recv tr-hide"><button class="linkb" type="button" data-act="trReveal" data-id="${m.id}">${I.eye}Voir la traduction en ${esc(L(inL))}</button></span>`);
     }
-    if (m.orig != null && m.tlang && (!inL || inL === m.tlang)) {
-      // Traduit par l'expéditeur : l'original en haut, la traduction reçue en dessous.
-      return `<span class="trl-txt">${escL(m.orig)}</span>${box(`Traduction (${esc(L(m.tlang))})${fx ? ' · corrigée par vous' : m.fx ? ' · corrigée par l’expéditeur' : ''} :`, fx ? fx.text : m.text)}`;
-    }
+    // Le message arrive d'abord dans MA langue. Le message d'origine (langue de l'expéditeur) et « Votre correction »
+    // apparaissent en dessous seulement pour ceux qui ont choisi de proposer des corrections.
+    const show = (main, orig, ol, note) => `<span class="txt">${escL(main)}</span>` + (this.contrib() ? box(`Message d’origine${ol ? ` (${esc(L(ol))})` : ''}${note} :`, orig) : '');
+    if (m.orig != null && m.tlang && (!inL || inL === m.tlang)) return show(fx ? fx.text : m.text, m.orig, m.olang, fx ? ' · votre correction appliquée' : m.fx ? ' · corrigé par l’expéditeur' : '');
     const src = m.orig != null ? m.orig : m.text, tl = inL || (this.shown.has(m.id) ? this.lang() : ''), t = tl && this.get(m.id, tl);
     if (!t || t.from === tl || t.text.trim() === src.trim()) return plain;
-    return `<span class="trl-txt">${escL(src)}</span>${box(`Traduction (${esc(L(tl))})${fx ? ' · corrigée par vous' : ''} :`, fx ? fx.text : t.text)}`;
+    return show(fx ? fx.text : t.text, src, t.from, fx ? ' · votre correction appliquée' : '');
   },
   label(cid) { const a = this.inL(cid), b = this.outL(cid); if (!S.me.trConsent) return ''; return a || b ? `<span>${a ? a.toUpperCase() : '—'}</span><i aria-hidden="true">⇄</i><span>${b ? b.toUpperCase() : '—'}</span>` : ''; },
   settingsHtml() {
     if (!this.st || !this.st.on) return '';
     return `<div class="set-block"><h2>${I.translate} Traduction</h2><p class="hint">Dans une discussion, touchez le bouton 文A à gauche de la zone d’écriture pour choisir les langues.</p>
       <label class="pick chk"><input type="checkbox" data-act="trConsentTog"${S.me.trConsent ? ' checked' : ''}><span><b>Utiliser la traduction</b></span></label>
+      <label class="pick chk"><input type="checkbox" data-act="trContribTog"${this.contrib() ? ' checked' : ''}><span><b>Proposer des corrections</b> : sous chaque message traduit, voir le message d’origine et « Votre correction ». Décoché, vous recevez seulement le message dans votre langue.</span></label>
       <div class="field"><label for="trLang">Langue pour « Traduire » sur un message</label><select id="trLang">${this.st.langs.map(l => `<option value="${l}"${l === this.lang() ? ' selected' : ''}>${LANG_FR[l] || l}</option>`).join('')}</select></div></div>`;
   },
 };
@@ -1792,7 +1806,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.83</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.84</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1847,7 +1861,7 @@ const ACT = {
     if (d.who === 'auth') { A.avatar = a; $('#avg-auth').outerHTML = avGallery(a, 'auth'); }
     else { if (S.pp && S.pp.url) URL.revokeObjectURL(S.pp.url); S.pp = {kind: 'av', av: a}; renderBody(); }
   },
-  tab(d) { if (d.t === 'settings' && isDesk()) { closeLayer(); return pmOpen('settings'); } if (d.t !== 'souvenirs' && typeof Mem !== 'undefined') Mem.unlocked = false; if (d.t === 'calls') Calls.log = null; S.tab = d.t; closeLayer(); renderAll(); if (d.t === 'calls') actSeen('calls'); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
+  tab(d) { if (d.t === 'settings' && isDesk()) { closeLayer(); return pmOpen('settings'); } if (d.t === 'chats' && S.filt === 'arch') S.filt = 'all'; if (d.t !== 'souvenirs' && typeof Mem !== 'undefined') Mem.unlocked = false; if (d.t === 'calls') Calls.log = null; S.tab = d.t; closeLayer(); renderAll(); if (d.t === 'calls') actSeen('calls'); $('#body').scrollTop = 0; if (matchMedia('(max-width:820px)').matches) $('.app').dataset.view = 'list'; },
   fab() { newChatSheet(); },
   open(d) { if (S.sel) { const id = +d.id; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); if (!S.sel.size) S.sel = null; return renderBody(); } openChat(+d.id); },
   chatRowMenu(d) { chatListMenu(+d.id); },
@@ -2008,6 +2022,7 @@ const ACT = {
   async trConsentYes(d) { closeLayer(); await saveNow({trConsent: true}, 'Traduction activée. Merci de contribuer à la base de Tam-Tam !'); renderComposer(); if (S.chatId) { renderMessages(true); if (d.open) { S.trSide = 'in'; trSheet(); } } },
   async trConsentNo() { closeLayer(); await saveNow({trConsent: false}, 'Pas de traduction : vous recevez les messages tels qu’ils ont été écrits.'); if (S.chatId) { renderComposer(); renderMessages(true); } },
   trConsentTog() { saveNow({trConsent: !S.me.trConsent}); },
+  trContribTog() { Tr.ls('tt-trcontrib', Tr.contrib() ? '0' : '1'); toast(Tr.contrib() ? 'Le message d’origine et « Votre correction » s’affichent sous les traductions' : 'Vous recevez seulement le message dans votre langue'); if (S.chatId) renderMessages(true); },
   trNone(d) { const c = S.chats.get(S.chatId); if (!c) return; if (d.side === 'out') { if (!Tr.setOut(c.id, '')) return; } else { Tr.setIn(c.id, ''); Tr.setLearn(c.id, false); } S.trSide = d.side; renderComposer(); renderMessages(true); trSheet(); },
   trFlip(d) { const id = +d.id; Tr.flip.has(id) ? Tr.flip.delete(id) : Tr.flip.add(id); renderMessages(true); },
   async trLoad() { try { S.trset = await api('/api/admin/translate'); const el = $('#trBox'); if (el) el.outerHTML = trBox(); } catch (e) { toast(e.message); } },

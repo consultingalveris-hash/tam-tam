@@ -116,7 +116,7 @@ const GCall = {
   // Appui long sur une petite caméra, puis glisser sur la grande : elles échangent leur place.
   dragInit(root) {
     const c = this.c, main = root.querySelector('.g-main');
-    root.querySelectorAll('.g-secs .gt').forEach(el => {
+    root.querySelectorAll('.g-secs .gt:not(.wait)').forEach(el => {
       let t = null, ghost = null, sx = 0, sy = 0;
       const end = (e, drop) => { clearTimeout(t); t = null; if (!ghost) return; const r = main.getBoundingClientRect(), x = e.clientX, y = e.clientY; ghost.remove(); ghost = null; el.classList.remove('lift'); main.classList.remove('drop');
         if (drop && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) { c.main = +el.dataset.uid; this.render(); } };
@@ -144,19 +144,21 @@ const GCall = {
     const here = new Set([S.me.id, ...c.peers.keys()]), waiting = chat ? (chat.members || []).map(m => m.id).filter(id => !here.has(id)) : [];
     const ids = [S.me.id, ...c.peers.keys()];
     if (!ids.includes(c.main)) c.main = ids.find(id => id !== S.me.id) || S.me.id;
-    const T = uid => uid === S.me.id ? this.tile(S.me.id, c.local, c.cam, c.mic, true) : (p => this.tile(p.uid, p.stream, p.cam, p.mic, false, p.state))(c.peers.get(uid));
-    const lay = n > 1 ? c.lay : 'grid';
+    // Les membres qui n'ont pas encore décroché ont déjà leur case (photo de profil) ; ils prennent leur place à leur arrivée.
+    const W = uid => `<div class="gt wait" data-uid="${uid}"><div class="gt-av">${avatar(uOf(uid), 'xl')}</div><span class="gt-name">${esc(first(uOf(uid).name))} · appel…</span></div>`;
+    const T = uid => uid === S.me.id ? this.tile(S.me.id, c.local, c.cam, c.mic, true) : c.peers.has(uid) ? (p => this.tile(p.uid, p.stream, p.cam, p.mic, false, p.state))(c.peers.get(uid)) : W(uid);
+    const all = ids.concat(waiting.slice(0, 7)), lay = all.length > 1 ? c.lay : 'grid', tot = all.length;
     const stage = lay === 'grid'
-      ? `<div class="g-grid n${Math.min(n, 8)}">${ids.map(T).join('')}</div>`
-      : `<div class="g-stage ${lay}"><div class="g-main">${T(c.main)}</div><div class="g-secs">${ids.filter(id => id !== c.main).map(T).join('')}</div></div>`;
+      ? `<div class="g-grid n${Math.min(tot, 8)}">${all.map(T).join('')}</div>`
+      : `<div class="g-stage l-${lay}"><div class="g-main">${T(c.main)}</div><div class="g-secs">${all.filter(id => id !== c.main).map(T).join('')}</div></div>`;
     const LAYS = [['grid', 'Équilibré', 'Toutes les caméras de la même taille'], ['side', 'Principale à gauche', 'Une grande caméra, les autres à droite'], ['top', 'Principale en haut', 'Une grande caméra, les autres en dessous']];
     root.className = 'call gcall';
     root.innerHTML = `<div class="call-in" role="dialog" aria-modal="true" aria-label="Appel de groupe">
       <div class="g-top"><b>${esc(chat ? chat.name : 'Groupe')}</b><span><span id="gTime">0:00</span> · ${n} personne${n > 1 ? 's' : ''}</span></div>
       ${stage}
       ${lay !== 'grid' ? '<p class="g-hint">Appui long sur une petite caméra, puis glissez-la sur la grande pour les échanger.</p>' : ''}
-      ${waiting.length ? `<div class="g-waiting"><span>${n === 1 ? 'En attente des autres membres du groupe…' : 'Pas encore arrivés'}</span><div class="g-wav">${waiting.slice(0, 12).map(id => `<span class="g-w" title="${esc(first(uOf(id).name))}">${avatar(uOf(id), 'sm')}</span>`).join('')}${waiting.length > 12 ? `<small>+${waiting.length - 12}</small>` : ''}</div></div>` : n === 1 ? '<p class="g-wait">En attente des autres membres du groupe…</p>' : ''}
-      ${c.layMenu ? `<div class="g-laymenu" role="menu" aria-label="Disposition des caméras">${LAYS.map(([k, l, h]) => `<button type="button" role="menuitemradio" aria-checked="${c.lay === k}" data-act="gcallLaySet" data-k="${k}"><span class="g-ico ${k}" aria-hidden="true"><i></i><i></i><i></i></span><b>${l}</b><small>${h}</small></button>`).join('')}</div>` : ''}
+      ${n === 1 ? '<p class="g-wait">En attente des autres membres du groupe…</p>' : ''}
+      ${c.layMenu ? `<div class="g-laymenu" role="menu" aria-label="Disposition des caméras">${LAYS.map(([k, l, h]) => `<button type="button" role="menuitemradio" aria-checked="${c.lay === k}" data-act="gcallLaySet" data-k="${k}"><span class="g-ico ${k}" aria-hidden="true"><i></i><i></i><i></i><i></i></span><b>${l}</b><small>${h}</small></button>`).join('')}</div>` : ''}
       <div class="call-bar"><button class="cb lay-dot" type="button" data-act="gcallLay" aria-label="Disposition des caméras" aria-expanded="${!!c.layMenu}"><i aria-hidden="true"></i><span>Disposition</span></button>${btn('gcallMic', I.mic, c.mic ? 'Micro' : 'Micro coupé', c.mic ? '' : 'off')}${btn('gcallCam', I.video, c.cam ? 'Caméra' : 'Caméra coupée', c.cam ? '' : 'off')}${btn('gcallLeave', I.phone, 'Quitter', 'red down')}</div></div>`;
     if (lay !== 'grid') this.dragInit(root);
     root.querySelectorAll('video[data-v]').forEach(v => { const uid = +v.dataset.v; v.srcObject = uid === S.me.id ? c.local : c.peers.get(uid)?.stream || null; });
