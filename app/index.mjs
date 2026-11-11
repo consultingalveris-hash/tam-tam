@@ -130,6 +130,8 @@ function push(uid, ev) {
   for (const res of s) { try { res.write(data); } catch {} }
 }
 const pushMany = (ids, ev) => ids.forEach(id => push(id, ev));
+// Mise à jour d'un message : chacun reçoit sa propre version (un message à vue unique déjà ouvert ne renvoie plus son contenu).
+const pushMsg = (chatId, msgId) => { const row = q1(`SELECT * FROM messages WHERE id=?`, msgId); for (const id of memberIds(chatId)) push(id, { t: 'msg', msg: msgFor(row, id), update: true }); };
 // Le vrai nom (facultatif) n'est montré qu'à soi-même et à ses contacts acceptés ; les autres ne voient que le pseudo.
 const nameFor = (u, viewer) => { if (!u) return ''; const r = viewer == null ? 'none' : relation(viewer, u.id); return (r === 'me' || r === 'contact') && u.name ? u.name : '@' + u.handle; };
 const firstFor = (u, viewer) => { const n = nameFor(u, viewer); return n.startsWith('@') ? n : n.split(' ')[0]; };
@@ -163,7 +165,7 @@ function userCard(u, me) {
   for (const k of PUB_K) if (pub[k] != null && pub[k] !== '') card.pub[k] = pub[k];
   card.pics = picsOf(u, 'pub'); card.vids = vidsOf(u); card.trc = !!u.tr_consent;
   // partage de position permanent : seules les personnes choisies par le membre le voient
-  if (me && me !== u.id && rel === 'contact' && (J(u.loc_to, null) || []).includes(me)) card.locMe = true;
+  if (me && me !== u.id && rel === 'contact' && locTargets(u).includes(me)) card.locMe = true;
   if (me && me !== u.id) {
     const mine = new Set(contactIds(me)); card.mutual = contactIds(u.id).filter(x => mine.has(x)).length;
     card.blocked = iBlocked(me, u.id);
@@ -305,13 +307,20 @@ function currentUser(req) {
   if (now() - u.s_seen > 3600_000) run(`UPDATE sessions SET seen=?, expires=? WHERE token=?`, now(), now() + SESSION_DAYS * DAY, h);
   return u;
 }
+// Vérification du mot de passe d'un membre déjà connecté (changer, supprimer le compte, code des souvenirs) : essais limités,
+// pour qu'un cookie volé ne permette pas de deviner le mot de passe à l'infini.
+function passGuard(me, pass) {
+  if (blockedNow('pw:' + me.id, 8)) E(429, 'Trop d’essais. Réessayez dans 15 minutes.');
+  if (!checkPass(String(pass ?? ''), me.pass)) { tooMany('pw:' + me.id, 8); return false; }
+  return true;
+}
 function blockedNow(key, max = 10, win = 15 * 60_000) { const t = now(); return (attempts.get(key) || []).filter(x => t - x < win).length >= max; }
 function tooMany(key, max = 10, win = 15 * 60_000) {
   const t = now(), a = (attempts.get(key) || []).filter(x => t - x < win); a.push(t); attempts.set(key, a); return a.length > max;
 }
 const ipOf = req => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
 function meOut(u) {
-  return { ...userCard(u, u.id), locTo: (J(u.loc_to, null) || []), rawName: u.name || '', handleSet: !!u.handle_set, handleAt: u.handle_at || null, email: u.email, priv: u.priv_env ? {} : J(u.priv, {}), privPics: u.priv_env ? [null, null, null] : picsOf(u, 'priv'), privEnv: u.priv_env ? J(u.priv_env, null) : null, telEnv: u.tel_env ? J(u.tel_env, null) : null, legacyPriv: !u.priv_env, listed: !!u.listed, avail: u.avail || 'on', trConsent: u.tr_consent == null ? null : !!u.tr_consent, privTo: u.priv_to, admin: !!u.admin, hasHideCode: !!u.hide_code, hasMemCode: !!u.mem_code,
+  return { ...userCard(u, u.id), locTo: locTargets(u), rawName: u.name || '', handleSet: !!u.handle_set, handleAt: u.handle_at || null, email: u.email, priv: u.priv_env ? {} : J(u.priv, {}), privPics: u.priv_env ? [null, null, null] : picsOf(u, 'priv'), privEnv: u.priv_env ? J(u.priv_env, null) : null, telEnv: u.tel_env ? J(u.tel_env, null) : null, legacyPriv: !u.priv_env, listed: !!u.listed, avail: u.avail || 'on', trConsent: u.tr_consent == null ? null : !!u.tr_consent, privTo: u.priv_to, admin: !!u.admin, hasHideCode: !!u.hide_code, hasMemCode: !!u.mem_code,
     close: qa(`SELECT member FROM close_group WHERE owner=?`, u.id).map(r => r.member),
     blocked: qa(`SELECT blocked FROM blocks WHERE user_id=?`, u.id).map(r => userCard(getUser(r.blocked), u.id)).filter(Boolean),
     cguAt: u.cgu_at, createdAt: u.created_at };
@@ -322,6 +331,9 @@ function inviteValid(code) {
   // le code QR personnel d'un membre vaut aussi invitation
   const o = q1(`SELECT id FROM users WHERE qr_token=?`, code); return o ? { code, by_user: o.id, qr: true } : null;
 }
+// Partage de position : seulement avec des contacts actuels, jamais avec une personne bloquée.
+const locTargets = u => { const cs = new Set(contactIds(u.id)); return (J(u.loc_to, null) || []).filter(id => cs.has(id) && !blockedEither(u.id, id)); };
+function locDrop(x, y) { for (const [a, b] of [[x, y], [y, x]]) { const u = getUser(a); if (!u) continue; const l = J(u.loc_to, null) || []; if (l.includes(b)) { const n = l.filter(i => i !== b); run(`UPDATE users SET loc_to=?${n.length ? '' : ', loc_env=NULL, loc_at=NULL'} WHERE id=?`, JSON.stringify(n), a); push(a, { t: 'contacts' }); } } }
 const limOf = (x, y) => { const [a, b] = pair(x, y); return q1(`SELECT lim FROM contacts WHERE a=? AND b=?`, a, b)?.lim || 0; };
 
 /* ---------- routes ---------- */
@@ -389,7 +401,7 @@ R('POST', /^\/api\/reset$/, async ({ req, res, body }) => {
   if (tooMany('reset:' + ipOf(req))) E(429, 'Trop de tentatives.');
   const r = q1(`SELECT * FROM resets WHERE token=? AND expires>?`, sha(String(body.token || '')), now());
   if (!r) E(400, 'Ce lien n’est plus valable. Demandez-en un nouveau.');
-  if (String(body.pass || '').length < 8) E(400, 'Le mot de passe doit contenir au moins 8 caractères.');
+  passOk(body.pass, getUser(r.user_id)?.email);
   run(`UPDATE users SET pass=? WHERE id=?`, hashPass(body.pass), r.user_id); run(`DELETE FROM resets WHERE user_id=?`, r.user_id);
   run(`DELETE FROM sessions WHERE user_id=?`, r.user_id); setSession(res, r.user_id); return { me: meOut(getUser(r.user_id)) };
 }, false);
@@ -486,7 +498,7 @@ R('POST', /^\/api\/messages\/(\d+)\/opened$/, async ({ me, m }) => {
   run(`INSERT OR IGNORE INTO once_views(msg_id,user_id,at) VALUES(?,?,?)`, msg.id, me.id, now());
   const others = memberIds(msg.chat_id).filter(x => x !== msg.sender), seen = new Set(qa(`SELECT user_id FROM once_views WHERE msg_id=?`, msg.id).map(r => r.user_id));
   if (others.every(x => seen.has(x))) { if (msg.media) dropMedia(msg.media); run(`UPDATE messages SET text=NULL WHERE id=?`, msg.id); }
-  pushMany(memberIds(msg.chat_id), { t: 'msg', msg: msgOut(q1(`SELECT * FROM messages WHERE id=?`, msg.id)), update: true });
+  pushMsg(msg.chat_id, msg.id);
   return { ok: true };
 });
 // Capture d'écran repérée sur l'appareil : on prévient tout le monde dans la discussion.
@@ -501,7 +513,7 @@ R('POST', /^\/api\/me\/unlock$/, async ({ me, body }) => {
   return { ok: true };
 });
 R('POST', /^\/api\/me\/password$/, async ({ me, body }) => {
-  if (!checkPass(body.old, me.pass)) E(400, 'Le mot de passe actuel est incorrect.');
+  if (!passGuard(me, body.old)) E(400, 'Le mot de passe actuel est incorrect.');
   passOk(body.pass, me.email);
   run(`UPDATE users SET pass=? WHERE id=?`, hashPass(body.pass), me.id);
   run(`DELETE FROM sessions WHERE user_id=? AND rowid<>?`, me.id, me.s_id); return { ok: true };
@@ -514,7 +526,7 @@ R('POST', /^\/api\/sessions\/revoke$/, async ({ me, body }) => {
   return { ok: true };
 });
 R('POST', /^\/api\/me\/delete$/, async ({ me, body, res }) => {
-  if (!checkPass(body.pass, me.pass)) E(400, 'Mot de passe incorrect.');
+  if (!passGuard(me, body.pass)) E(400, 'Mot de passe incorrect.');
   for (const m of qa(`SELECT id FROM media WHERE owner=?`, me.id)) dropMedia(m.id);
   run(`UPDATE messages SET sender=NULL, text=NULL, media=NULL, deleted=1 WHERE sender=?`, me.id);
   run(`DELETE FROM users WHERE id=?`, me.id);
@@ -563,13 +575,13 @@ R('POST', /^\/api\/contacts\/(request|accept|decline|remove)$/, async ({ me, m, 
   } else if (m[1] === 'accept') {
     if (!r || r.status !== 'pending' || r.requester === me.id) E(400, 'Aucune demande à accepter.');
     run(`UPDATE contacts SET status='accepted' WHERE a=? AND b=?`, a, b);
-  } else { run(`DELETE FROM contacts WHERE a=? AND b=?`, a, b); run(`DELETE FROM tel_share WHERE (owner=? AND viewer=?) OR (owner=? AND viewer=?)`, me.id, id, id, me.id); }
+  } else { run(`DELETE FROM contacts WHERE a=? AND b=?`, a, b); locDrop(me.id, id); run(`DELETE FROM tel_share WHERE (owner=? AND viewer=?) OR (owner=? AND viewer=?)`, me.id, id, id, me.id); }
   push(id, { t: 'contacts' }); push(me.id, { t: 'contacts' });
   return { user: userCard(u, me.id) };
 });
 R('POST', /^\/api\/block$/, async ({ me, body }) => {
   const id = +body.id; if (!getUser(id) || id === me.id) E(404, 'Personne introuvable.');
-  if (body.on) { run(`INSERT OR IGNORE INTO blocks(user_id,blocked,created_at) VALUES(?,?,?)`, me.id, id, now()); const [a, b] = pair(me.id, id); run(`DELETE FROM contacts WHERE a=? AND b=? AND status='pending'`, a, b); }
+  if (body.on) { run(`INSERT OR IGNORE INTO blocks(user_id,blocked,created_at) VALUES(?,?,?)`, me.id, id, now()); const [a, b] = pair(me.id, id); run(`DELETE FROM contacts WHERE a=? AND b=? AND status='pending'`, a, b); locDrop(me.id, id); }
   else run(`DELETE FROM blocks WHERE user_id=? AND blocked=?`, me.id, id);
   push(id, { t: 'contacts' }); push(me.id, { t: 'contacts' });
   return { me: meOut(getUser(me.id)) };
@@ -633,7 +645,7 @@ R('POST', /^\/api\/call\/signal$/, async ({ me, body }) => {
   const data = body.data == null ? null : JSON.parse(JSON.stringify(body.data).slice(0, 60_000));
   const ev = { t: 'call', type, callId, chatId: cid, from: me.id, video: !!body.video, data };
   if (type === 'ring') { ev.fromUser = userCard(me, to); if (c.expires) run(`UPDATE chats SET expires=? WHERE id=?`, now() + NUM_TTL, c.id); }
-  const wasOffline = type === 'ring' && !online(to);
+  const wasOffline = type === 'ring' && !shownOnline(to);
   // journal des appels (onglet « Appels »)
   if (type === 'ring' && !q1(`SELECT 1 FROM calls WHERE call_id=?`, callId)) run(`INSERT INTO calls(call_id,kind,chat_id,caller,callee,video,status,started) VALUES(?,?,?,?,?,?,?,?)`, callId, 'direct', cid, me.id, to, body.video ? 1 : 0, 'ringing', now());
   else if (type === 'accept') run(`UPDATE calls SET status='answered', answered=? WHERE call_id=? AND answered IS NULL`, now(), callId);
@@ -675,14 +687,18 @@ function webPush(uid, payload, always = false) {
   if (!always && online(uid)) return;
   if (payload.badge === undefined) payload.badge = unreadCount(uid);
   for (const sub of qa(`SELECT * FROM push_subs WHERE user_id=?`, uid)) {
+    if (!pushHostOk(sub.endpoint)) { run(`DELETE FROM push_subs WHERE endpoint=?`, sub.endpoint); continue; }
     webpush.sendNotification({ endpoint: sub.endpoint, keys: J(sub.keys, {}) }, JSON.stringify(payload), { TTL: 6 * 3600, urgency: 'high' })
       .catch(e => { if (e && (e.statusCode === 404 || e.statusCode === 410)) run(`DELETE FROM push_subs WHERE endpoint=?`, sub.endpoint); });
   }
 }
+// Seuls les services de notification des navigateurs sont acceptés : le serveur n'envoie jamais de requête vers une adresse choisie par un membre.
+const PUSH_HOSTS = /^(fcm\.googleapis\.com|android\.googleapis\.com|updates\.push\.services\.mozilla\.com|[a-z0-9-]+\.push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com)$/;
+const pushHostOk = ep => { try { const u = new URL(ep); return u.protocol === 'https:' && !u.port && PUSH_HOSTS.test(u.hostname); } catch { return false; } };
 R('GET', /^\/api\/push\/key$/, async () => ({ key: VAPID.publicKey }));
 R('POST', /^\/api\/push\/sub$/, async ({ me, body }) => {
   const s = body.sub || {}, ep = String(s.endpoint || '');
-  if (!/^https:\/\/[^\s]{10,800}$/.test(ep) || !s.keys || typeof s.keys.p256dh !== 'string' || typeof s.keys.auth !== 'string') E(400, 'Abonnement invalide.');
+  if (!/^https:\/\/[^\s]{10,800}$/.test(ep) || !pushHostOk(ep) || !s.keys || typeof s.keys.p256dh !== 'string' || typeof s.keys.auth !== 'string') E(400, 'Abonnement invalide.');
   run(`INSERT OR REPLACE INTO push_subs(endpoint,user_id,keys,created_at) VALUES(?,?,?,?)`, ep, me.id, JSON.stringify({ p256dh: s.keys.p256dh.slice(0, 200), auth: s.keys.auth.slice(0, 100) }), now());
   return { ok: true };
 });
@@ -1010,10 +1026,11 @@ R('POST', /^\/api\/chats\/(\d+)\/typing$/, async ({ me, m }) => {
 // Réaction : une émoticône par personne et par message (la même une seconde fois l'enlève).
 R('POST', /^\/api\/messages\/(\d+)\/react$/, async ({ me, m, body }) => {
   const msg = q1(`SELECT * FROM messages WHERE id=?`, +m[1]); if (!msg || msg.deleted || msg.kind === 'sys') E(404, 'Message introuvable.'); const c = chatFor(me, msg.chat_id);
-  const e = String(body.emo || '').trim().slice(0, 16), cur = q1(`SELECT emo FROM reactions WHERE msg_id=? AND user_id=?`, msg.id, me.id);
+  const e = String(body.emo || '').trim().slice(0, 16); if (/[<>&"'`=\\/\s]/.test(e) || /^[\x20-\x7e]+$/.test(e)) E(400, 'Réaction inconnue.');
+  const cur = q1(`SELECT emo FROM reactions WHERE msg_id=? AND user_id=?`, msg.id, me.id);
   if (!e || (cur && cur.emo === e)) run(`DELETE FROM reactions WHERE msg_id=? AND user_id=?`, msg.id, me.id);
   else run(`INSERT INTO reactions(msg_id,user_id,emo,at) VALUES(?,?,?,?) ON CONFLICT(msg_id,user_id) DO UPDATE SET emo=excluded.emo, at=excluded.at`, msg.id, me.id, e, now());
-  pushMany(memberIds(c.id), { t: 'msg', msg: msgOut(q1(`SELECT * FROM messages WHERE id=?`, msg.id)), update: true }); return { ok: true };
+  pushMsg(c.id, msg.id); return { ok: true };
 });
 // Message épinglé en haut de la discussion (un seul à la fois, visible par tous les membres).
 R('POST', /^\/api\/chats\/(\d+)\/pinmsg$/, async ({ me, m, body }) => {
@@ -1068,15 +1085,15 @@ R('POST', /^\/api\/loc\/settings$/, async ({ me, body }) => {
   return { locTo: to };
 });
 R('POST', /^\/api\/loc$/, async ({ me, body }) => {
-  if (!(J(me.loc_to, null) || []).length) E(400, 'Le partage de position est désactivé.');
+  const targets = locTargets(me); if (!targets.length) E(400, 'Le partage de position est désactivé.');
   if (tooMany('loc:' + me.id, 240, 3600_000)) E(429, 'Trop de mises à jour de position.');
   const env = JSON.stringify(body.env || null); if (env.length > 20000) E(413, 'Trop lourd.');
   run(`UPDATE users SET loc_env=?, loc_at=? WHERE id=?`, env, now(), me.id);
-  for (const id of (J(me.loc_to, null) || [])) push(id, { t: 'loc', id: me.id });
+  for (const id of targets) push(id, { t: 'loc', id: me.id });
   return { ok: true };
 });
 R('GET', /^\/api\/loc\/(\d+)$/, async ({ me, m }) => {
-  const u = getUser(+m[1]); if (!u || blockedEither(me.id, u.id) || !(J(u.loc_to, null) || []).includes(me.id)) E(404, 'Cette personne ne partage pas sa position avec vous.');
+  const u = getUser(+m[1]); if (!u || !locTargets(u).includes(me.id)) E(404, 'Cette personne ne partage pas sa position avec vous.');
   return { env: J(u.loc_env, null), at: u.loc_at || null };
 });
 
@@ -1085,6 +1102,7 @@ R('POST', /^\/api\/media$/, async ({ me, req }) => {
   const ct = String(req.headers['content-type'] || ''), enc = ct === 'application/octet-stream';
   if (!enc && !/^image\/(jpeg|png|webp)$/.test(ct)) E(415, 'Seules les photos (JPEG, PNG, WebP) sont acceptées.');
   if (tooMany('up:' + me.id, 60, 10 * 60_000)) E(429, 'Trop de photos envoyées. Patientez un peu.');
+  upQuota(me, Math.min(+req.headers['content-length'] || (enc ? 42_000_000 : 6_000_000), enc ? 42_000_000 : 6_000_000));
   const id = rnd(18), tmp = path.join(MEDIA, id + '.part');
   let r; try { r = await bodyToFile(req, tmp, enc ? 42_000_000 : 6_000_000); } catch (e) { try { fs.rmSync(tmp); } catch {} throw e; }
   const bad = msg => { try { fs.rmSync(tmp); } catch {} E(400, msg); };
@@ -1098,11 +1116,21 @@ R('POST', /^\/api\/media$/, async ({ me, req }) => {
 /* Envoi par morceaux avec reprise : si le réseau coupe, on reprend là où on s'était arrêté.
    Réservé aux fichiers chiffrés (vidéos, documents…) ; le serveur ne voit que des octets illisibles. */
 const UP_MAX = 42_000_000, CHUNK_MAX = 2_200_000;
+// Garde-fou contre le remplissage du disque : fichiers en attente (pas encore envoyés dans un message) et volume envoyé par jour.
+const PEND_MAX = 400_000_000, DAY_MAX = 3_000_000_000, upDay = new Map();
+function upQuota(me, size) {
+  const pend = (q1(`SELECT COALESCE(SUM(size),0) n FROM media WHERE owner=? AND scope IS NULL`, me.id).n || 0) + [...ups.values()].filter(u => u.owner === me.id).reduce((t, u) => t + u.size, 0);
+  if (pend + size > PEND_MAX) E(429, 'Trop de fichiers en attente d’envoi. Patientez un peu ou envoyez d’abord ceux en cours.');
+  const day = new Date().toISOString().slice(0, 10), d = upDay.get(me.id), used = d && d.day === day ? d.n : 0;
+  if (used + size > DAY_MAX) E(429, 'Vous avez envoyé beaucoup de fichiers aujourd’hui. Réessayez demain.');
+  upDay.set(me.id, { day, n: used + size });
+}
 const upPart = id => path.join(MEDIA, id + '.part');
 const upHave = id => { try { return fs.statSync(upPart(id)).size; } catch { return -1; } };
 R('POST', /^\/api\/media\/up$/, async ({ me, body }) => {
   const size = +body.size; if (!(size >= 17 && size <= UP_MAX)) E(413, 'Fichier trop lourd pour être envoyé (40 Mo au maximum).');
   if (tooMany('up:' + me.id, 60, 10 * 60_000)) E(429, 'Trop de fichiers envoyés. Patientez un peu.');
+  upQuota(me, size);
   const id = rnd(18); fs.writeFileSync(upPart(id), ''); ups.set(id, { owner: me.id, size, at: now() });
   return { id, have: 0 };
 });
@@ -1210,7 +1238,8 @@ R('POST', /^\/api\/mem\/code$/, async ({ me, body }) => {
   const code = String(body.code || '');
   if (body.set != null) {
     const nc = String(body.set); if (!/^\d{4}$/.test(nc)) E(400, 'Le code doit faire exactement 4 chiffres.');
-    if (me.mem_code && !(body.pass ? checkPass(String(body.pass), me.pass) : checkPass(code, me.mem_code))) { tooMany('memc:' + me.id, 8, 15 * 60_000); E(403, body.pass ? 'Mot de passe incorrect.' : 'Code actuel incorrect.'); }
+    if (me.mem_code && !body.pass && blockedNow('memc:' + me.id, 8)) E(429, 'Trop d’essais. Réessayez dans 15 minutes, ou changez le code avec votre mot de passe.');
+    if (me.mem_code && !(body.pass ? passGuard(me, body.pass) : checkPass(code, me.mem_code))) { tooMany('memc:' + me.id, 8, 15 * 60_000); E(403, body.pass ? 'Mot de passe incorrect.' : 'Code actuel incorrect.'); }
     run(`UPDATE users SET mem_code=? WHERE id=?`, hashPass(nc), me.id); return { ok: true };
   }
   if (!me.mem_code) return { ok: false, none: true };
@@ -1568,7 +1597,9 @@ R('GET', /^\/api\/stream$/, async ({ me, req, res }) => {
   res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
   res.write(`retry: 3000\ndata: ${JSON.stringify({ t: 'hello', v: APP_VER })}\n\n`);
   if (!streams.has(me.id)) streams.set(me.id, new Set());
-  const set = streams.get(me.id), first = set.size === 0; set.add(res);
+  const set = streams.get(me.id), first = set.size === 0;
+  if (set.size >= 12) { const old = set.values().next().value; set.delete(old); try { old.end(); } catch {} }
+  set.add(res);
   if (first) presence(me.id);
   req.on('close', () => {
     set.delete(res);
