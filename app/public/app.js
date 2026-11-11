@@ -488,7 +488,7 @@ function renderMain() {
 function stickBottom(box) {
   if (!box) return; box._stick = true;
   const go = () => { if (box._stick) box.scrollTop = box.scrollHeight; };
-  box.addEventListener('scroll', () => { box._stick = box.scrollHeight - box.scrollTop - box.clientHeight < 80; }, {passive: true});
+  box.addEventListener('scroll', () => { box._stick = box.scrollHeight - box.scrollTop - box.clientHeight < 150; }, {passive: true});
   new MutationObserver(() => requestAnimationFrame(go)).observe(box, {childList: true, subtree: true, characterData: true});
   box.addEventListener('load', () => requestAnimationFrame(go), true);
   if (window.ResizeObserver) new ResizeObserver(() => go()).observe(box);
@@ -1176,7 +1176,7 @@ function msgMenu(id) {
   if (m.deleted) return sheet(`<div class="menu" style="padding-top:12px"><button type="button" class="danger" data-act="hideAsk" data-id="${id}">${I.trash}Supprimer pour moi</button></div>`, 'Message');
   const c = S.chats.get(S.chatId) || {}, modo = c.type === 'group' && c.admin && m.from !== S.me.id && (c.gset || {}).del === 'admins', canAll = (m.from === S.me.id && Date.now() - m.at < DEL_ALL_MAX) || modo, myR = (m.reacts || []).find(r => r.u === S.me.id);
   const canFwd = !m.once && !m.locked && !c.hidden && m.kind !== 'sys', pinned = c.pinMsg && c.pinMsg.id === m.id;
-  sheet(`<div class="react-bar" role="group" aria-label="Réagir">${QUICK.map(e => `<button type="button" data-act="react" data-id="${id}" data-e="${e}" aria-pressed="${!!myR && myR.e === e}">${e}</button>`).join('')}<button type="button" class="more" data-act="reactMore" data-id="${id}" aria-label="Plus d’émoticônes">${I.plus}</button></div><div class="menu" style="padding-top:4px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${m.text && !m.once && !m.locked && m.from !== S.me.id && Tr.st && Tr.st.on && S.me.trConsent ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}${Tr.shown.has(id) ? 'Voir la traduction' : 'Traduire'}</button>` : ''}${m.text && !m.once && !(S.chats.get(S.chatId) || {}).hidden ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
+  sheet(`<div class="react-bar" role="group" aria-label="Réagir">${QUICK.map(e => `<button type="button" data-act="react" data-id="${id}" data-e="${e}" aria-pressed="${!!myR && myR.e === e}">${e}</button>`).join('')}<button type="button" class="more" data-act="reactMore" data-id="${id}" aria-label="Plus d’émoticônes">${I.plus}</button></div><div class="menu" style="padding-top:4px">${m.once ? '' : `<button type="button" data-act="reply" data-id="${id}">${I.reply}Répondre</button>`}${trMenu(m, id)}${m.text && !m.once && !(S.chats.get(S.chatId) || {}).hidden ? `<button type="button" data-act="copy" data-id="${id}">${I.copy}Copier le texte</button>` : ''}
     ${m.from === S.me.id && m.kind === 'text' && !m.media && !m.once && !m.locked && !m.fl && Date.now() - m.at < EDIT_MAX ? `<button type="button" data-act="editMsg" data-id="${id}"><span class="pin-ic" aria-hidden="true">✎</span>Modifier mon message</button>` : ''}
     ${canFwd ? `<button type="button" data-act="fwd" data-id="${id}">${FWD_IC}Transférer</button>` : ''}${canFwd && m.media && (m.kind === 'video' || !m.kind || m.kind === 'image' || m.kind === 'photo') ? `<button type="button" data-act="toStatus" data-id="${id}"><span class="pin-ic" aria-hidden="true">⭕</span>Mettre sur mon statut</button>` : ''}${!m.once ? `<button type="button" data-act="${pinned ? 'pinMsgOff' : 'pinMsg'}" data-id="${id}"><span class="pin-ic" aria-hidden="true">📌</span>${pinned ? 'Retirer l’épingle' : 'Épingler en haut de la discussion'}</button>` : ''}
     ${S.msel ? '' : `<button type="button" data-act="mselStart" data-id="${id}"><span class="pin-ic" aria-hidden="true">☑</span>Sélectionner</button>`}
@@ -1674,6 +1674,10 @@ const Tr = {
   learn(cid) { return this.ls('tt-trlearn:' + cid) === '1'; },
   // Proposer des corrections : voir le message d'origine sous la traduction, avec « Votre correction ».
   contrib() { const v = this.ls('tt-trcontrib'); return v ? v === '1' : !!(S.me && S.me.amb); },
+  once: new Set(),
+  origAll(cid) { return this.ls('tt-trorig:' + cid) === '1'; },
+  setOrigAll(cid, on) { this.ls('tt-trorig:' + cid, on ? '1' : ''); },
+  translated(m) { return !!(m && m.text && (m.orig != null && m.tlang || this.get(m.id, this.inL(m.chatId || S.chatId)))); },
   setLearn(cid, on) { this.ls('tt-trlearn:' + cid, on ? '1' : ''); },
   open: new Set(),
   // Texte d'une bulle : le message, la traduction juste en dessous et « Votre correction » (modèle unique).
@@ -1683,7 +1687,7 @@ const Tr = {
     if (m.from === S.me.id) {
       if (m.orig != null && m.tlang) {
         const c = S.chats.get(m.chatId), who = c && c.type === 'direct' ? first(chatTitle(c)) : 'Vos contacts';
-        return `<span class="trl-txt">${escL(m.orig)}</span>${box(`${esc(who)} a reçu (${esc(L(m.tlang))})${m.fx ? ' · corrigé' : ''} :`, m.text)}`;
+        return `<span class="txt">${escL(m.orig)}</span>` + (this.once.has(m.id) ? box(`${esc(who)} a reçu (${esc(L(m.tlang))})${m.fx ? ' · corrigé' : ''} :`, m.text) : '');
       }
       return `<span class="txt">${escL(m.text)}</span>`;
     }
@@ -1700,7 +1704,9 @@ const Tr = {
     }
     // Le message arrive d'abord dans MA langue. Le message d'origine (langue de l'expéditeur) et « Votre correction »
     // apparaissent en dessous seulement pour ceux qui ont choisi de proposer des corrections.
-    const show = (main, orig, ol, note) => `<span class="txt">${escL(main)}</span>` + (this.contrib() ? box(`Message d’origine${ol ? ` (${esc(L(ol))})` : ''}${note} :`, orig) : '');
+    // Le message s'affiche traduit, sans rien en dessous. Le message d'origine apparaît seulement si on le demande
+    // (« Message d'origine » sur ce message, ou « Toujours afficher les messages d'origine » pour la discussion).
+    const show = (main, orig, ol, note) => `<span class="txt">${escL(main)}</span>` + ((this.origAll(cid) || this.once.has(m.id)) && orig.trim() !== String(main).trim() ? box(`Message d’origine${ol ? ` (${esc(L(ol))})` : ''}${note} :`, orig) : '');
     if (m.orig != null && m.tlang && (!inL || inL === m.tlang)) return show(fx ? fx.text : m.text, m.orig, m.olang, fx ? ' · votre correction appliquée' : m.fx ? ' · corrigé par l’expéditeur' : '');
     const src = m.orig != null ? m.orig : m.text, tl = inL || (this.shown.has(m.id) ? this.lang() : ''), t = tl && this.get(m.id, tl);
     if (!t || t.from === tl || t.text.trim() === src.trim()) return plain;
@@ -1711,7 +1717,6 @@ const Tr = {
     if (!this.st || !this.st.on) return '';
     return `<div class="set-block"><h2>${I.translate} Traduction</h2><p class="hint">Dans une discussion, touchez le bouton 文A à gauche de la zone d’écriture pour choisir les langues.</p>
       <label class="pick chk"><input type="checkbox" data-act="trConsentTog"${S.me.trConsent ? ' checked' : ''}><span><b>Utiliser la traduction</b></span></label>
-      <label class="pick chk"><input type="checkbox" data-act="trContribTog"${this.contrib() ? ' checked' : ''}><span><b>Proposer des corrections</b> : sous chaque message traduit, voir le message d’origine et « Votre correction ». Décoché, vous recevez seulement le message dans votre langue.</span></label>
       <div class="field"><label for="trLang">Langue pour « Traduire » sur un message</label><select id="trLang">${this.st.langs.map(l => `<option value="${l}"${l === this.lang() ? ' selected' : ''}>${LANG_FR[l] || l}</option>`).join('')}</select></div></div>`;
   },
 };
@@ -1722,6 +1727,17 @@ function trConsentAsk(open) {
     <div class="actions"><button class="btn ghost" type="button" data-act="trConsentNo">Non, pas de traduction</button><button class="btn" type="button" data-act="trConsentYes"${open ? ' data-open="1"' : ''}>J’accepte et j’active</button></div></div>`, 'Traduction');
 }
 // Qui a choisi la langue : moi, ou mon contact (proposition) ; et s'il a choisi lui-même, lui seul la change.
+// Menu d'un message traduit : voir le message d'origine (une fois), ou le toujours / ne jamais l'afficher dans la discussion.
+function trMenu(m, id) {
+  if (!m.text || m.once || m.locked || !Tr.st || !Tr.st.on || !S.me.trConsent) return '';
+  const cid = m.chatId || S.chatId, c = S.chats.get(cid) || {}, mine = m.from === S.me.id;
+  if (mine) return m.orig != null && m.tlang ? `<button type="button" data-act="trOrigOnce" data-id="${id}">${I.translate}${Tr.once.has(id) ? 'Masquer ce qu’il a reçu' : `Voir ce que ${esc(c.type === 'direct' ? first(chatTitle(c)) : 'le groupe')} a reçu`}</button>` : '';
+  if (!Tr.translated(m)) return !Tr.inL(cid) ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}Traduire</button>` : '';
+  const all = Tr.origAll(cid), dot = on => `<span class="mdot${on ? ' on' : ''}" aria-hidden="true"></span>`;
+  return `<button type="button" data-act="trOrigOnce" data-id="${id}">${I.translate}${Tr.once.has(id) ? 'Masquer le message d’origine' : 'Message d’origine'}</button>
+    <button type="button" role="menuitemradio" aria-checked="${all}" data-act="trOrigAll" data-v="1">${I.translate}<span class="grow">Toujours afficher les messages d’origine</span>${dot(all)}</button>
+    <button type="button" role="menuitemradio" aria-checked="${!all}" data-act="trOrigAll" data-v="">${I.translate}<span class="grow">Masquer les messages d’origine</span>${dot(!all)}</button>`;
+}
 function trNote(c, side, L) {
   if (c.type !== 'direct') return '';
   const me = Tr.row(c.id, true), peer = Tr.row(c.id, false), nm = esc(first(chatTitle(c)));
@@ -1806,7 +1822,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.84</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.85</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -1994,6 +2010,8 @@ const ACT = {
   phCancel() { S.once = false; closeLayer(); renderComposer(); },
   trProv(d) { S.trProv = d.v; const el = $('#trBox'); if (el) el.outerHTML = trBox(); },
   trMsg(d) { closeLayer(); Tr.off.delete(+d.id); Tr.run(+d.id); },
+  trOrigOnce(d) { const id = +d.id; closeLayer(); Tr.once.has(id) ? Tr.once.delete(id) : Tr.once.add(id); renderMessages(true); },
+  trOrigAll(d) { closeLayer(); Tr.setOrigAll(S.chatId, !!d.v); Tr.once.clear(); renderMessages(true); toast(d.v ? 'Les messages d’origine s’affichent sous chaque message traduit' : 'Messages d’origine masqués'); },
   trOrig(d) { Tr.shown.delete(+d.id); Tr.off.add(+d.id); renderMessages(true); },
   trAuto() { if (!S.me.trConsent) return trConsentAsk(true); S.trSide = S.trSide || 'in'; trSheet(); },
   async trReveal(d) { const id = +d.id, m = (S.msgs.get(S.chatId) || []).find(x => x.id === id), inL = Tr.inL(S.chatId); if (!m) return; Tr.open.add(id); if (!(m.orig != null && m.olang === inL) && !Tr.get(id, inL)) await Tr.run(id, true, inL); renderMessages(true); },

@@ -1302,3 +1302,8 @@ body.in-cam{overflow:hidden}
 .g-ico.grid{grid-template:1fr 1fr/1fr 1fr}.g-ico.grid i{background:rgb(255 255 255/.85)}
 .g-ico.side{grid-template:1fr 1fr 1fr/2.2fr 1fr}.g-ico.side i:first-child{grid-row:1/4;background:#fff}
 .g-ico.top{grid-template:2.2fr 1fr/1fr 1fr 1fr}.g-ico.top i:first-child{grid-column:1/4;background:#fff}
+/* v1.85 — choix du message d'origine dans le menu d'un message : point avec anneau turquoise */
+.menu button .grow{flex:1;text-align:left}
+.mdot{flex:none;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;border:1.5px solid transparent;margin-left:auto}
+.mdot::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--fg-2)}
+.mdot.on{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent),0 0 8px 1px color-mix(in srgb,var(--accent) 70%,transparent)}
