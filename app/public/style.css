@@ -1307,3 +1307,4 @@ body.in-cam{overflow:hidden}
 .mdot{flex:none;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;border:1.5px solid transparent;margin-left:auto}
 .mdot::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--fg-2)}
 .mdot.on{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent),0 0 8px 1px color-mix(in srgb,var(--accent) 70%,transparent)}
+#msgs{overflow-anchor:none}

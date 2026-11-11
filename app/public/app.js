@@ -486,12 +486,19 @@ function renderMain() {
 // Le dernier message reste toujours visible au-dessus de la zone d'écriture, même quand une traduction,
 // une photo ou un aperçu s'ajoute après coup, ou quand la zone d'écriture grandit.
 function stickBottom(box) {
-  if (!box) return; box._stick = true;
+  if (!box) return; box._stick = true; let user = 0;
   const go = () => { if (box._stick) box.scrollTop = box.scrollHeight; };
-  box.addEventListener('scroll', () => { box._stick = box.scrollHeight - box.scrollTop - box.clientHeight < 150; }, {passive: true});
-  new MutationObserver(() => requestAnimationFrame(go)).observe(box, {childList: true, subtree: true, characterData: true});
-  box.addEventListener('load', () => requestAnimationFrame(go), true);
-  if (window.ResizeObserver) new ResizeObserver(() => go()).observe(box);
+  const mark = () => { user = Date.now(); };
+  ['wheel', 'touchmove', 'keydown', 'pointerdown'].forEach(ev => box.addEventListener(ev, mark, {passive: true}));
+  // Seul un geste de la personne (molette, doigt, clavier, barre de défilement) décroche le bas de la discussion.
+  // Une photo ou une vidéo plus haut qui grandit en se chargeant ne doit jamais faire descendre le dernier message.
+  box.addEventListener('scroll', () => { const d = box.scrollHeight - box.scrollTop - box.clientHeight;
+    if (d < 150) box._stick = true; else if (Date.now() - user < 800) box._stick = false; else if (box._stick) go(); }, {passive: true});
+  const ro = window.ResizeObserver ? new ResizeObserver(() => go()) : null;
+  const watch = root => { if (!ro) return; for (const el of root.children || []) ro.observe(el); };
+  new MutationObserver(list => { for (const m of list) m.addedNodes.forEach(n => { if (n.nodeType === 1 && ro && n.parentNode === box) ro.observe(n); }); requestAnimationFrame(go); }).observe(box, {childList: true, subtree: true, characterData: true});
+  ['load', 'loadedmetadata', 'loadeddata'].forEach(ev => box.addEventListener(ev, () => requestAnimationFrame(go), true));
+  watch(box); if (ro) ro.observe(box);
 }
 function renderPin() {
   const c = S.chats.get(S.chatId), el = $('#pinBar'); if (!c || !el) return; const m = c.pinMsg;
@@ -602,7 +609,7 @@ function renderMessages(keep) {
   }
   const tu = typingIn(c.id); if (tu) h += `<div class="msg in first typing-b"><div class="bubble" aria-label="En train d’écrire"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
   box.innerHTML = h;
-  if (!keep || atBottom) box.scrollTop = box.scrollHeight;
+  if (!keep || atBottom || box._stick) box.scrollTop = box.scrollHeight;
   hydrateImgs(c.id); hydrateAuds(c.id); if (typeof hydrateVids === 'function') hydrateVids(c.id); Tr.autoRun(c);
 }
 function onMsg(m, update) { reveal(m).then(() => onMsgIn(m, update)); }
@@ -1695,7 +1702,7 @@ const Tr = {
     const plain = `<span class="txt">${escL(m.orig != null ? m.orig : m.text)}</span>`;
     if (!S.me.trConsent) return plain;
     const inL = this.inL(cid), fx = this.fix(m.id);
-    if (this.learn(cid) && inL) {
+    if (false) {
       // Je m'exerce : je lis le message reçu ; la traduction dans ma langue n'apparaît que si je la demande.
       const t = m.orig != null && m.olang === inL ? {text: m.orig, from: m.olang} : this.get(m.id, inL);
       const shown = this.open.has(m.id) && t;
@@ -1734,7 +1741,7 @@ function trMenu(m, id) {
   if (mine) return m.orig != null && m.tlang ? `<button type="button" data-act="trOrigOnce" data-id="${id}">${I.translate}${Tr.once.has(id) ? 'Masquer ce qu’il a reçu' : `Voir ce que ${esc(c.type === 'direct' ? first(chatTitle(c)) : 'le groupe')} a reçu`}</button>` : '';
   if (!Tr.translated(m)) return !Tr.inL(cid) ? `<button type="button" data-act="trMsg" data-id="${id}">${I.translate}Traduire</button>` : '';
   const all = Tr.origAll(cid), dot = on => `<span class="mdot${on ? ' on' : ''}" aria-hidden="true"></span>`;
-  return `<button type="button" data-act="trOrigOnce" data-id="${id}">${I.translate}${Tr.once.has(id) ? 'Masquer le message d’origine' : 'Message d’origine'}</button>
+  return `<button type="button" data-act="trOrigOnce" data-id="${id}">${I.translate}${Tr.once.has(id) ? 'Masquer le message d’origine' : 'Voir le message d’origine'}</button>
     <button type="button" role="menuitemradio" aria-checked="${all}" data-act="trOrigAll" data-v="1">${I.translate}<span class="grow">Toujours afficher les messages d’origine</span>${dot(all)}</button>
     <button type="button" role="menuitemradio" aria-checked="${!all}" data-act="trOrigAll" data-v="">${I.translate}<span class="grow">Masquer les messages d’origine</span>${dot(!all)}</button>`;
 }
@@ -1758,7 +1765,6 @@ function trSheet() {
     <div class="seg tr-seg" role="tablist"><button type="button" role="tab" data-act="trSide" data-v="in" aria-selected="${side === 'in'}"><small>Je reçois en</small><b>${Tr.inL(c.id) ? esc(L(Tr.inL(c.id))) : 'pas de traduction'}</b></button><button type="button" role="tab" data-act="trSide" data-v="out" aria-selected="${side === 'out'}"><small>Mon contact reçoit en</small><b>${Tr.outL(c.id) ? esc(L(Tr.outL(c.id))) : 'pas de traduction'}</b></button></div>
     ${trNote(c, side, L)}
     <div class="tr-hint"><p class="hint">${side === 'in' ? 'Choisissez la langue dans laquelle <b>vous recevez</b> les messages de cette discussion. Ils seront traduits automatiquement.' : `Choisissez la langue dans laquelle <b>${who}</b> vos messages. Vous écrivez dans votre langue, Tam-Tam envoie la traduction.`}</p><button class="btn sm" type="button" data-act="close">Terminé</button></div>
-    ${side === 'in' && cur ? `<label class="pick chk learn"><input type="checkbox" data-act="trLearn"${Tr.learn(c.id) ? ' checked' : ''}><span><b>Mode apprentissage</b> : je reçois les messages dans leur langue d’origine pour m’exercer ; la traduction en ${esc(L(cur).toLowerCase())} reste cachée sous « Voir la traduction ».</span></label>` : ''}
     <div class="tr-none"><button type="button" class="lang-opt none" data-act="trNone" data-side="in" aria-pressed="${!Tr.inL(c.id)}"><span>Pas de traduction<small>je reçois</small></span>—</button><button type="button" class="lang-opt none" data-act="trNone" data-side="out" aria-pressed="${!Tr.outL(c.id)}"><span>Pas de traduction<small>mon contact reçoit</small></span>—</button></div></div>
     <div class="tr-scroll"><span class="lbl">Langues les plus utilisées</span><div class="lang-grid">${top.map(btn).join('')}</div>
     <span class="lbl">Autres langues</span><div class="lang-grid">${rest.map(btn).join('')}</div></div></div>`, 'Langues');
@@ -1822,7 +1828,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.85</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.86</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
