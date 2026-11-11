@@ -247,7 +247,7 @@ async function reveal(m) {
   const r = await E2E.open(m.enc, S.me.id);
   if (r.err === 'absent') { m.text = '🔒 Message chiffré avant votre arrivée, ou pour une ancienne clé'; m.locked = true; }
   else if (r.err) { m.text = '🔒 Message illisible sur cet appareil'; m.locked = true; }
-  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; if (r.payload.loc) m.loc = r.payload.loc; if (r.payload.sr) m.sr = r.payload.sr; if (r.payload.fl) m.fl = true; if (r.payload.name) { m.fname = r.payload.name; m.fsize = r.payload.size || 0; m.fmime = r.payload.mime || 'application/octet-stream'; } }
+  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.w > 0 && r.payload.h > 0) { m.w = +r.payload.w; m.h = +r.payload.h; } if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; if (r.payload.loc) m.loc = r.payload.loc; if (r.payload.sr) m.sr = r.payload.sr; if (r.payload.fl) m.fl = true; if (r.payload.name) { m.fname = r.payload.name; m.fsize = r.payload.size || 0; m.fmime = r.payload.mime || 'application/octet-stream'; } }
   return m;
 }
 async function loadChats() { const r = await api('/api/chats'); const map = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); await reveal(c.last); if (c.pinMsg) await reveal(c.pinMsg); map.set(c.id, c); } S.chats = map; }
@@ -597,20 +597,56 @@ function renderMessages(keep) {
     let body;
     if (m.deleted) body = `<span class="txt gone">${m.delBy ? (m.delBy === S.me.id ? 'Vous avez supprimé ce message (administrateur)' : 'Supprimé par un administrateur') : out ? 'Vous avez supprimé ce message' : 'Ce message a été supprimé'}</span>`;
     else if (m.once) body = onceBubble(m, out);
-    else if (m.kind === 'video') body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + `<div class="vidb"><video class="photo vid" data-vid="${m.id}" playsinline muted preload="metadata" disablepictureinpicture controlslist="nodownload"${E2E.vids.has(m.id) ? ` src="${E2E.vids.get(m.id)}"` : ''}></video><button class="vid-play" type="button" data-act="zoomVid" data-id="${m.id}" aria-label="Lire la vidéo en grand"><span>▶</span></button>${m.dur ? `<small class="vid-d">${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>` + (m.text ? Tr.txt(m) : '');
+    else if (m.kind === 'video') body = (m.replyTo ? quoteHtml(c, m.replyTo) : '') + `<div class="vidb"><video class="photo vid" data-vid="${m.id}" ${Dim.style(m, true)} playsinline muted preload="metadata" disablepictureinpicture controlslist="nodownload"${E2E.vids.has(m.id) ? ` src="${E2E.vids.get(m.id)}"` : ''}></video><button class="vid-play" type="button" data-act="zoomVid" data-id="${m.id}" aria-label="Lire la vidéo en grand"><span>▶</span></button>${m.dur ? `<small class="vid-d">${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>` + (m.text ? Tr.txt(m) : '');
     else if (m.fl) body = `<span class="flame-msg"><span class="fl-ic">🔥</span><b>${out ? 'Vous avez envoyé une flamme' : `${esc(first(u.name))} t’a envoyé une flamme`}</b></span>` + stQuote(m, out, c);
     else if (m.kind === 'loc') body = locHtml(m);
     else if (m.kind === 'doc') body = docHtml(m) + (m.text ? Tr.txt(m) : '');
     else if (m.kind === 'audio') body = stQuote(m, out, c) + `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
-    else body = stQuote(m, out, c) + (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? Tr.txt(m) : '');
+    else body = stQuote(m, out, c) + (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" ${Dim.style(m)} alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" ${Dim.style(m)} alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? Tr.txt(m) : '');
     h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble${!m.deleted && !m.once && (m.kind === 'video' || (m.media && m.kind !== 'audio' && m.kind !== 'doc' && m.kind !== 'loc')) ? ' mb' : ''}${m.pending ? ' pending' + (m.text ? ' cap' : '') : ''}">${m.pending ? '<span class="pend-spin" role="status" aria-label="Envoi en cours"></span>' : ''}
       ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${m.fwd ? `<span class="fwd">${FWD_IC}Transféré</span>` : ''}${body}<span class="meta">${m.edited ? '<i class="edited">modifié</i> ' : ''}${hm(m.at)}${m.pending ? ' 🕓' : out && !m.deleted ? tick(readState(c, m)) : ''}</span>
       ${m.deleted || m.pending ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message" title="Options : réagir, répondre, transférer, épingler…">${I.chev}</button>`}</div>${reactsHtml(m)}</div>`;
   }
   const tu = typingIn(c.id); if (tu) h += `<div class="msg in first typing-b"><div class="bubble" aria-label="En train d’écrire"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
-  box.innerHTML = h;
+  morph(box, h);
   if (!keep || atBottom || box._stick) box.scrollTop = box.scrollHeight;
   hydrateImgs(c.id); hydrateAuds(c.id); if (typeof hydrateVids === 'function') hydrateVids(c.id); Tr.autoRun(c);
+}
+/* ---------- taille des photos et vidéos réservée à l'avance ----------
+   Comme les grandes messageries : la place de chaque photo ou vidéo est connue avant son chargement
+   (dimensions envoyées avec le message, ou mémorisées sur l'appareil au premier affichage).
+   La discussion ne bouge donc plus quand une image ou une vidéo arrive. */
+const Dim = {
+  get(m) { if (m.w > 0 && m.h > 0) return [m.w, m.h]; try { const v = localStorage.getItem('tt-dim:' + m.id); if (v) { const [w, h] = v.split(',').map(Number); if (w > 0 && h > 0) return [w, h]; } } catch {} return null; },
+  put(id, w, h) { if (!(w > 0 && h > 0)) return; try { localStorage.setItem('tt-dim:' + id, Math.round(w) + ',' + Math.round(h)); } catch {} },
+  style(m, video) {
+    const d = this.get(m), maxW = 260, maxH = video ? 360 : 340, [w, h] = d || (video ? [9, 16] : [4, 3]), k = Math.min(maxW / w, maxH / h);
+    return `style="width:${Math.max(120, Math.round(w * k))}px;aspect-ratio:${w}/${h};height:auto;max-height:none"`;
+  },
+};
+async function dimsOf(bytes, mime) {
+  const blob = new Blob([bytes], {type: mime || 'image/jpeg'});
+  if (/^video\//.test(mime || '')) return new Promise(ok => { const v = document.createElement('video'), u = URL.createObjectURL(blob), done = d => { URL.revokeObjectURL(u); ok(d); }; v.preload = 'metadata'; v.muted = true; v.onloadedmetadata = () => done(v.videoWidth ? [v.videoWidth, v.videoHeight] : null); v.onerror = () => done(null); setTimeout(() => done(null), 4000); v.src = u; });
+  if (!window.createImageBitmap) return null; const b = await createImageBitmap(blob); const d = [b.width, b.height]; b.close && b.close(); return d;
+}
+if (typeof E2E !== 'undefined' && !E2E._dimWrap) {
+  const seal0 = E2E.seal.bind(E2E); E2E._dimWrap = true;
+  E2E.seal = async (payload, rec, bytes, ...rest) => {
+    if (bytes && payload && typeof payload === 'object' && payload.w == null && !payload.name && !payload.loc && !/^audio\//.test(payload.mime || '')) { try { const d = await dimsOf(bytes, payload.mime); if (d) { payload.w = d[0]; payload.h = d[1]; } } catch {} }
+    return seal0(payload, rec, bytes, ...rest);
+  };
+}
+// Au premier chargement, on note la vraie taille : les affichages suivants l'utilisent directement.
+['load', 'loadedmetadata'].forEach(ev => document.addEventListener(ev, e => { const el = e.target; if (!el || !el.closest) return; const row = el.closest('#msgs .msg'); if (!row) return;
+  const w = el.naturalWidth || el.videoWidth, h = el.naturalHeight || el.videoHeight; if (!(w && h)) return; const id = +row.dataset.mid; const m = (S.msgs.get(S.chatId) || []).find(x => x.id === id);
+  if (m && !(m.w > 0)) { Dim.put(id, w, h); const st = Dim.style({id, w, h}, el.tagName === 'VIDEO'), mm = /width:(\d+)px;aspect-ratio:([\d.]+\/[\d.]+)/.exec(st); if (mm) { el.style.width = mm[1] + 'px'; el.style.aspectRatio = mm[2]; } } }, true));
+// Redessiner la discussion sans recréer les messages qui n'ont pas changé : une photo ou une vidéo déjà chargée reste en place.
+function morph(box, html) {
+  const t = document.createElement('template'); t.innerHTML = html;
+  const old = new Map(); for (const el of box.children) if (el._h) old.set(el.dataset.mid ? 'm' + el.dataset.mid : el._h, el);
+  const next = [...t.content.children].map(el => { const h = el.outerHTML, k = el.dataset.mid ? 'm' + el.dataset.mid : h, o = old.get(k); if (o && o._h === h) { old.delete(k); return o; } el._h = h; return el; });
+  const same = next.length === box.children.length && next.every((el, i) => box.children[i] === el);
+  if (!same) box.replaceChildren(...next);
 }
 function onMsg(m, update) { reveal(m).then(() => onMsgIn(m, update)); }
 async function hydrateImgs(chatId) {
@@ -1828,7 +1864,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.86</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.87</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -2365,10 +2401,10 @@ document.addEventListener('keydown', e => {
   else if (S.sv && e.key === 'ArrowRight') svStep(1); else if (S.sv && e.key === 'ArrowLeft') svStep(-1);
 });
 document.addEventListener('contextmenu', e => {
-  if (!S.me) return; const m = e.target.closest('.msg[data-mid] .bubble'), r = e.target.closest('#body .chat-row');
+  if (!S.me) return; const m = e.target.closest('#msgs .msg[data-mid]:not(.typing-b)'), r = e.target.closest('#body .chat-row');
   // au doigt, l'appui long sélectionne : le menu du navigateur ne doit pas s'ouvrir par-dessus
   if ((m || r) && Date.now() - lastTouch < 2000) { e.preventDefault(); return; }
-  if (m) { e.preventDefault(); return msgMenu(+m.parentNode.dataset.mid); }
+  if (m) { e.preventDefault(); return msgMenu(+m.dataset.mid); }
   if (r && !S.sel) { e.preventDefault(); chatListMenu(+r.dataset.id); }
 });
 let pressT, pressXY = [0, 0], pressFired = 0, pressDone = true, swipe = null, lastTouch = 0;
@@ -2379,6 +2415,11 @@ function mselToggle(id) {
   document.querySelectorAll('#msgs .msg[data-mid]').forEach(el => el.classList.toggle('msel', !!S.msel && S.msel.has(+el.dataset.mid)));
   renderChatHead();
 }
+// À la souris, cliquer dans la zone vide à côté d'un message ouvre son menu, comme le petit crochet.
+document.addEventListener('click', e => {
+  if (S.msel || e.pointerType === 'touch' || !matchMedia('(pointer:fine)').matches) return; const row = e.target.closest('#msgs .msg[data-mid]:not(.typing-b)'); if (!row || e.target !== row) return;
+  const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +row.dataset.mid); if (!m || m.deleted || m.pending || m.kind === 'sys') return; msgMenu(m.id);
+});
 document.addEventListener('click', e => {
   if (!S.msel) return; const el = e.target.closest('#msgs .msg[data-mid]'); if (!el) return;
   e.preventDefault(); e.stopPropagation(); mselToggle(+el.dataset.mid);
@@ -2396,8 +2437,9 @@ document.addEventListener('pointermove', e => {
 }, true));
 document.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse') return; lastTouch = Date.now();
-  const b = e.target.closest('.msg[data-mid] .bubble'), r = !b && e.target.closest('#body .chat-row');
-  if (b && !e.target.closest('button:not(.vid-play),a,audio,input')) { pressXY = [e.clientX, e.clientY]; clearTimeout(pressT); pressT = setTimeout(() => { pressFired = Date.now(); pressDone = false; if (navigator.vibrate) navigator.vibrate(15); mselToggle(+b.parentNode.dataset.mid); }, 480); }
+  // appui long sur toute la ligne du message (pas seulement la bulle, même pour un message court)
+  const b = e.target.closest('#msgs .msg[data-mid]:not(.typing-b)'), r = !b && e.target.closest('#body .chat-row');
+  if (b && !e.target.closest('button:not(.vid-play),a,audio,input,.reacts')) { pressXY = [e.clientX, e.clientY]; clearTimeout(pressT); pressT = setTimeout(() => { pressFired = Date.now(); pressDone = false; if (navigator.vibrate) navigator.vibrate(15); mselToggle(+b.dataset.mid); }, 480); }
   else if (r && !S.sel && !e.target.closest('.row-more')) { pressXY = [e.clientX, e.clientY]; clearTimeout(pressT); pressT = setTimeout(() => { pressFired = Date.now(); pressDone = false; if (navigator.vibrate) navigator.vibrate(15); ACT.selStart({id: r.dataset.id}); }, 480); }
   // glisser un message vers la droite = y répondre (comme WhatsApp)
   const sm = e.target.closest('#msgs .msg[data-mid]'); swipe = sm && !S.msel && !e.target.closest('button:not(.vid-play),a,input,audio') ? {el: sm, x: e.clientX, y: e.clientY, dx: 0, on: false} : null;
