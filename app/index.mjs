@@ -151,17 +151,18 @@ function handleIdeas(u, seed) {
     const own = u && h === u.handle; if (!out.includes(h) && (own || !q1(`SELECT 1 FROM users WHERE handle=?`, h))) out.push(h); if (out.length >= 3) break; }
   return out;
 }
-function presence(uid) { const ids = contactIds(uid), a = availOf(uid); pushMany(ids, { t: 'presence', id: uid, online: shownOnline(uid), busy: a === 'busy', lastSeen: a === 'off' ? null : q1(`SELECT last_seen FROM users WHERE id=?`, uid)?.last_seen || null }); }
+function presence(uid) { const ids = contactIds(uid).filter(x => !blockedEither(uid, x)), a = availOf(uid); pushMany(ids, { t: 'presence', id: uid, online: shownOnline(uid), busy: a === 'busy', lastSeen: a === 'off' ? null : q1(`SELECT last_seen FROM users WHERE id=?`, uid)?.last_seen || null }); }
 setInterval(() => { for (const s of streams.values()) for (const res of s) { try { res.write(': ping\n\n'); } catch {} } }, 25_000);
 
 /* ---------- formats de sortie ---------- */
 const mediaUrl = id => id ? `/api/media/${id}` : null;
 function userCard(u, me) {
   if (!u) return null;
-  const pub = J(u.pub, {}), rel = me ? relation(me, u.id) : 'none';
-  const card = { id: u.id, name: (rel === 'me' || rel === 'contact') && u.name ? u.name : '@' + u.handle, handle: u.handle, avatar: J(u.avatar, null), photo: mediaUrl(u.photo), rel, online: rel === 'me' ? online(u.id) : rel === 'contact' ? (u.avail !== 'off' && online(u.id)) : undefined,
-    busy: rel === 'contact' && u.avail === 'busy' ? true : undefined,
-    lastSeen: rel === 'contact' && u.avail !== 'off' ? u.last_seen : undefined, pub: {}, mutual: 0, pubkey: u.pubkey ? J(u.pubkey, null) : null, amb: u.amb || undefined };
+  const pub = J(u.pub, {}), rel0 = me ? relation(me, u.id) : 'none', blk = rel0 === 'contact' && blockedEither(me, u.id);
+  const rel = rel0; const live = rel === 'contact' && !blk;
+  const card = { id: u.id, name: (rel === 'me' || rel === 'contact') && u.name ? u.name : '@' + u.handle, handle: u.handle, avatar: J(u.avatar, null), photo: mediaUrl(u.photo), rel, online: rel === 'me' ? online(u.id) : live ? (u.avail !== 'off' && online(u.id)) : undefined,
+    busy: live && u.avail === 'busy' ? true : undefined,
+    lastSeen: live && u.avail !== 'off' ? u.last_seen : undefined, pub: {}, mutual: 0, pubkey: u.pubkey ? J(u.pubkey, null) : null, amb: u.amb || undefined };
   for (const k of PUB_K) if (pub[k] != null && pub[k] !== '') card.pub[k] = pub[k];
   card.pics = picsOf(u, 'pub'); card.vids = vidsOf(u); card.trc = !!u.tr_consent;
   // partage de position permanent : seules les personnes choisies par le membre le voient
@@ -213,7 +214,7 @@ function chatOut(c, me) {
   const last = q1(`SELECT * FROM messages WHERE chat_id=? AND id>? AND id NOT IN (SELECT msg_id FROM msg_hidden WHERE user_id=?) ORDER BY id DESC LIMIT 1`, c.id, cl, me);
   const unread = q1(`SELECT COUNT(*) n FROM messages WHERE chat_id=? AND id>? AND (sender IS NULL OR sender<>?) AND id NOT IN (SELECT msg_id FROM msg_hidden WHERE user_id=?)`, c.id, Math.max(cl, mine ? mine.last_read : 0), me, me).n;
   const others = mem.filter(x => x.user_id !== me);
-  const out = { id: c.id, type: c.type, name: c.name, createdAt: c.created_at, unread, last: msgOut(last), hidden: !!(mine && mine.hidden), fav: !!(mine && mine.fav), pinned: mine && mine.pinned ? mine.pinned : 0, archived: !!(mine && mine.archived), muted: !!(mine && mine.muted), marked: !!(mine && mine.unread_mark) && !unread,
+  const out = { id: c.id, type: c.type, name: c.name, createdAt: c.created_at, unread, last: msgFor(last, me), hidden: !!(mine && mine.hidden), fav: !!(mine && mine.fav), pinned: mine && mine.pinned ? mine.pinned : 0, archived: !!(mine && mine.archived), muted: !!(mine && mine.muted), marked: !!(mine && mine.unread_mark) && !unread,
     pinMsg: c.pinned_msg ? (pm => pm && !pm.deleted && pm.id > cl ? msgOut(pm) : null)(q1(`SELECT * FROM messages WHERE id=?`, c.pinned_msg)) : null,
     // Un membre « hors ligne » ne révèle pas qu'il a lu : ses coches restent grises chez les autres.
     members: mem.map(x => ({ id: x.user_id, lastRead: x.user_id !== me && availOf(x.user_id) === 'off' ? 0 : x.last_read, admin: !!x.admin, trIn: x.tr_in == null ? undefined : x.tr_in, trBy: x.tr_by || undefined })),
@@ -289,9 +290,10 @@ async function bodyToFile(req, file, max, flags = 'w') {
 }
 async function readJson(req) {
   if (!/application\/json/.test(req.headers['content-type'] || '')) E(415, 'Format attendu : JSON');
-  try { return JSON.parse((await readBody(req, 200_000)).toString('utf8') || '{}'); } catch (e) { if (e instanceof HttpError) throw e; E(400, 'Requête illisible'); }
+  let o; try { o = JSON.parse((await readBody(req, 200_000)).toString('utf8') || '{}'); } catch (e) { if (e instanceof HttpError) throw e; E(400, 'Requête illisible'); }
+  if (!o || typeof o !== 'object' || Array.isArray(o)) E(400, 'Requête illisible'); return o;
 }
-function cookies(req) { const o = {}; for (const p of (req.headers.cookie || '').split(';')) { const i = p.indexOf('='); if (i > 0) o[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim()); } return o; }
+function cookies(req) { const o = {}; for (const p of (req.headers.cookie || '').split(';')) { const i = p.indexOf('='); if (i > 0) { try { o[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim()); } catch {} } } return o; }
 const secure = BASE_URL.startsWith('https');
 // Une connexion reste valable 90 jours après la dernière utilisation (au lieu d'un an fixe).
 const SESSION_DAYS = 90;
@@ -402,7 +404,7 @@ R('POST', /^\/api\/reset$/, async ({ req, res, body }) => {
   const r = q1(`SELECT * FROM resets WHERE token=? AND expires>?`, sha(String(body.token || '')), now());
   if (!r) E(400, 'Ce lien n’est plus valable. Demandez-en un nouveau.');
   passOk(body.pass, getUser(r.user_id)?.email);
-  run(`UPDATE users SET pass=? WHERE id=?`, hashPass(body.pass), r.user_id); run(`DELETE FROM resets WHERE user_id=?`, r.user_id);
+  run(`UPDATE users SET pass=? WHERE id=?`, hashPass(String(body.pass)), r.user_id); run(`DELETE FROM resets WHERE user_id=?`, r.user_id);
   run(`DELETE FROM sessions WHERE user_id=?`, r.user_id); setSession(res, r.user_id); return { me: meOut(getUser(r.user_id)) };
 }, false);
 
@@ -427,8 +429,8 @@ R('POST', /^\/api\/me$/, async ({ me, body }) => {
     const m = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.photo), me.id); if (!m) E(400, 'Photo introuvable.');
     if (me.photo) dropMedia(me.photo); run(`UPDATE media SET scope='avatar', ref=? WHERE id=?`, me.id, m.id); run(`UPDATE users SET photo=? WHERE id=?`, m.id, me.id);
   }
-  if (body.pub) { const p = J(me.pub, {}); for (const k of PUB_K) if (k in body.pub) p[k] = clean(body.pub[k], k === 'bio' ? 200 : 80); run(`UPDATE users SET pub=? WHERE id=?`, JSON.stringify(p), me.id); }
-  if (body.priv && !me.priv_env) { const p = J(me.priv, {}); for (const k of PRIV_K) if (k in body.priv) p[k] = clean(body.priv[k], 120); run(`UPDATE users SET priv=? WHERE id=?`, JSON.stringify(p), me.id); }
+  if (body.pub && typeof body.pub === 'object') { const p = J(me.pub, {}); for (const k of PUB_K) if (k in body.pub) p[k] = clean(body.pub[k], k === 'bio' ? 200 : 80); run(`UPDATE users SET pub=? WHERE id=?`, JSON.stringify(p), me.id); }
+  if (body.priv && typeof body.priv === 'object' && !me.priv_env) { const p = J(me.priv, {}); for (const k of PRIV_K) if (k in body.priv) p[k] = clean(body.priv[k], 120); run(`UPDATE users SET priv=? WHERE id=?`, JSON.stringify(p), me.id); }
   if (body.avail && ['on', 'busy', 'off'].includes(body.avail)) { run(`UPDATE users SET avail=? WHERE id=?`, body.avail, me.id); setTimeout(() => { presence(me.id); pushMany(contactIds(me.id), { t: 'chats' }); }, 0); }
   if (body.trConsent != null) run(`UPDATE users SET tr_consent=? WHERE id=?`, body.trConsent ? 1 : 0, me.id);
   if (body.listed != null) run(`UPDATE users SET listed=? WHERE id=?`, body.listed ? 1 : 0, me.id);
@@ -503,7 +505,7 @@ R('POST', /^\/api\/messages\/(\d+)\/opened$/, async ({ me, m }) => {
 });
 // Capture d'écran repérée sur l'appareil : on prévient tout le monde dans la discussion.
 R('POST', /^\/api\/chats\/(\d+)\/shot$/, async ({ me, m, body }) => {
-  const c = chatFor(me, +m[1]); if (tooMany('shot:' + me.id, 10, 60_000)) return { ok: true };
+  const c = chatTalk(me, +m[1]); if (tooMany('shot:' + me.id, 10, 60_000)) return { ok: true };
   sysMsg(c.id, `📸 ${nameInChat(me, c)} a fait une capture d’écran${body.once ? ' d’un message à vue unique' : ''}`); return { ok: true };
 });
 // Déverrouillage de secours : le mot de passe Tam-Tam, vérifié sans déconnecter.
@@ -515,7 +517,7 @@ R('POST', /^\/api\/me\/unlock$/, async ({ me, body }) => {
 R('POST', /^\/api\/me\/password$/, async ({ me, body }) => {
   if (!passGuard(me, body.old)) E(400, 'Le mot de passe actuel est incorrect.');
   passOk(body.pass, me.email);
-  run(`UPDATE users SET pass=? WHERE id=?`, hashPass(body.pass), me.id);
+  run(`UPDATE users SET pass=? WHERE id=?`, hashPass(String(body.pass)), me.id);
   run(`DELETE FROM sessions WHERE user_id=? AND rowid<>?`, me.id, me.s_id); return { ok: true };
 });
 // Appareils connectés : les voir et les déconnecter.
@@ -611,7 +613,8 @@ R('POST', /^\/api\/chats\/direct$/, async ({ me, body }) => {
 });
 R('POST', /^\/api\/chats\/group$/, async ({ me, body }) => {
   const name = clean(body.name, 50); if (!name) E(400, 'Donnez un nom au groupe.');
-  const ok = new Set(contactIds(me.id)), ids = [...new Set((body.members || []).map(Number))].filter(x => ok.has(x)).slice(0, 100);
+  if (tooMany('grp:' + me.id, 20, DAY)) E(429, 'Vous avez créé beaucoup de groupes aujourd’hui. Réessayez demain.');
+  const ok = new Set(contactIds(me.id)), ids = [...new Set((Array.isArray(body.members) ? body.members : []).map(Number))].filter(x => ok.has(x)).slice(0, 100);
   if (!ids.length) E(400, 'Choisissez au moins un contact.');
   const cid = Number(run(`INSERT INTO chats(type,name,created_by,created_at) VALUES('group',?,?,?)`, name, me.id, now()).lastInsertRowid);
   run(`INSERT INTO members(chat_id,user_id,admin,joined_at) VALUES(?,?,1,?)`, cid, me.id, now());
@@ -634,6 +637,8 @@ R('GET', /^\/api\/call\/ice$/, async ({ me }) => {
   }
   return { ice };
 });
+// Données d'appel (offre, réponse, réseau) : refusées si trop lourdes, au lieu d'être coupées en morceaux illisibles.
+const sigData = d => { if (d == null) return null; const t = JSON.stringify(d); if (t.length > 60_000) E(413, 'Signal d’appel trop lourd.'); return JSON.parse(t); };
 const pendingRings = new Map(); // personne appelée -> sonnerie en attente (45 s)
 const CALL_T = ['ring', 'accept', 'decline', 'busy', 'end', 'offer', 'answer', 'ice', 'media'];
 R('POST', /^\/api\/call\/signal$/, async ({ me, body }) => {
@@ -641,13 +646,16 @@ R('POST', /^\/api\/call\/signal$/, async ({ me, body }) => {
   if (!CALL_T.includes(type) || !/^[A-Za-z0-9_-]{8,40}$/.test(callId)) E(400, 'Signal d’appel invalide.');
   const c = chatFor(me, cid); if (c.type !== 'direct' || !isMember(cid, to) || to === me.id) E(400, 'Les appels se font en discussion à deux.');
   if (blockedEither(me.id, to)) E(403, 'Appel impossible avec cette personne.');
+  if (type === 'ring' && !c.expires && relation(me.id, to) !== 'contact') E(403, 'Vous n’êtes plus en contact avec cette personne.');
+  const mine = type === 'ring' ? null : q1(`SELECT * FROM calls WHERE call_id=? AND chat_id=? AND (caller=? OR callee=?)`, callId, cid, me.id, me.id);
   if (type === 'ring' && tooMany('call:' + me.id, 20, 10 * 60_000)) E(429, 'Trop d’appels. Patientez quelques minutes.');
-  const data = body.data == null ? null : JSON.parse(JSON.stringify(body.data).slice(0, 60_000));
+  const data = sigData(body.data);
   const ev = { t: 'call', type, callId, chatId: cid, from: me.id, video: !!body.video, data };
   if (type === 'ring') { ev.fromUser = userCard(me, to); if (c.expires) run(`UPDATE chats SET expires=? WHERE id=?`, now() + NUM_TTL, c.id); }
   const wasOffline = type === 'ring' && !shownOnline(to);
   // journal des appels (onglet « Appels »)
   if (type === 'ring' && !q1(`SELECT 1 FROM calls WHERE call_id=?`, callId)) run(`INSERT INTO calls(call_id,kind,chat_id,caller,callee,video,status,started) VALUES(?,?,?,?,?,?,?,?)`, callId, 'direct', cid, me.id, to, body.video ? 1 : 0, 'ringing', now());
+  else if (!mine) { /* appel inconnu ou d'autres personnes : on ne touche pas au journal */ }
   else if (type === 'accept') run(`UPDATE calls SET status='answered', answered=? WHERE call_id=? AND answered IS NULL`, now(), callId);
   else if (type === 'decline' || type === 'busy') run(`UPDATE calls SET status=?, ended=? WHERE call_id=? AND status='ringing'`, type === 'busy' ? 'busy' : 'declined', now(), callId);
   else if (type === 'end') { const was = q1(`SELECT callee, status FROM calls WHERE call_id=?`, callId); run(`UPDATE calls SET ended=COALESCE(ended,?), status=CASE WHEN status='ringing' THEN 'missed' ELSE status END WHERE call_id=?`, now(), callId); if (was && was.status === 'ringing' && was.callee) push(was.callee, { t: 'act' }); }
@@ -660,7 +668,7 @@ R('POST', /^\/api\/call\/signal$/, async ({ me, body }) => {
   if (type === 'end') webPush(to, { title: nameFor(me, to), body: 'Appel terminé', tag: 'ring-' + callId, url: '/?chat=' + cid, close: true }, true);
   push(to, ev);
   if (type === 'accept' || type === 'decline') push(me.id, { ...ev, elsewhere: true }); // arrête la sonnerie sur mes autres appareils
-  if (type === 'end' && body.log) {
+  if (type === 'end' && body.log && mine) {
     const d = Math.max(0, Math.round(+body.log.dur || 0)), v = body.video ? 'Appel vidéo' : 'Appel vocal';
     sysMsg(cid, d > 0 ? `${v} · ${d >= 60 ? Math.floor(d / 60) + ' min ' + String(d % 60).padStart(2, '0') + ' s' : d + ' s'}` : `${v} manqué de ${firstFor(me, to)}`);
   }
@@ -707,6 +715,8 @@ R('POST', /^\/api\/push\/test$/, async ({ me }) => { webPush(me.id, { title: 'ta
 
 /* ---------- appels de groupe (jusqu'à 8) : le serveur tient la liste des participants ---------- */
 const GMAX = 8, gcalls = new Map(); // callId -> {chatId, video, parts:Set, started}
+// appel de groupe lancé mais que personne n'a rejoint : terminé au bout de 10 minutes
+setInterval(() => { for (const [id, g] of gcalls) if (!g.parts.size && now() - g.started > 10 * 60_000) { gcalls.delete(id); run(`UPDATE calls SET ended=? WHERE call_id=?`, now(), id); } }, 60_000);
 const gcallOf = chatId => [...gcalls.entries()].find(([, g]) => g.chatId === chatId);
 function gstate(g, id) { pushMany(memberIds(g.chatId), { t: 'gcall', type: 'state', callId: id, chatId: g.chatId, video: g.video, parts: [...g.parts] }); }
 function gleave(uid, id) {
@@ -747,8 +757,8 @@ R('POST', /^\/api\/gcall\/join$/, async ({ me, body }) => {
 });
 R('POST', /^\/api\/gcall\/signal$/, async ({ me, body }) => {
   const id = String(body.callId || ''), g = gcalls.get(id), to = +body.to, type = String(body.type || '');
-  if (!g || !g.parts.has(me.id) || !g.parts.has(to) || !['offer', 'answer', 'ice', 'media'].includes(type)) E(400, 'Signal d’appel invalide.');
-  const data = body.data == null ? null : JSON.parse(JSON.stringify(body.data).slice(0, 60_000));
+  if (!g || !g.parts.has(me.id) || !g.parts.has(to) || !isMember(g.chatId, me.id) || !['offer', 'answer', 'ice', 'media'].includes(type)) E(400, 'Signal d’appel invalide.');
+  const data = sigData(body.data);
   push(to, { t: 'gcall', type, callId: id, from: me.id, data });
   return { ok: true };
 });
@@ -891,7 +901,7 @@ const can = (c, uid, what) => isAdmin(c, uid) || gsetOf(c)[what] === 'all';
 /* Langues de traduction d'une discussion à deux : chacun choisit la langue dans laquelle il reçoit.
    On peut proposer une langue à son contact ; tant qu'il n'a pas choisi lui-même, la proposition s'applique. */
 R('POST', /^\/api\/chats\/(\d+)\/trlang$/, async ({ me, m, body }) => {
-  const c = chatFor(me, +m[1]); if (c.type !== 'direct') E(400, 'Réservé aux discussions à deux.');
+  const c = chatTalk(me, +m[1]); if (c.type !== 'direct') E(400, 'Réservé aux discussions à deux.');
   const lang = String(body.lang || '').slice(0, 12); if (lang && !/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(lang)) E(400, 'Langue inconnue.');
   const peer = memberIds(c.id).find(x => x !== me.id), who = body.who === 'peer' ? peer : me.id; if (!who) E(400, 'Contact introuvable.');
   const row = q1(`SELECT tr_in, tr_by FROM members WHERE chat_id=? AND user_id=?`, c.id, who);
@@ -900,11 +910,19 @@ R('POST', /^\/api\/chats\/(\d+)\/trlang$/, async ({ me, m, body }) => {
   push(peer, { t: 'trlang', chatId: c.id, by: me.id, who: who === peer ? 'you' : 'them', lang }); push(me.id, { t: 'chats' });
   return { chat: chatOut(c, me.id) };
 });
+// Dans une discussion à deux : rien n'est possible avec une personne bloquée, et seuls les contacts peuvent écrire, réagir, épingler…
+// (une ligne « appel par numéro » ne sert qu'aux appels).
+function chatTalk(me, id) {
+  const c = chatFor(me, id); if (c.type !== 'direct') return c;
+  const o = memberIds(c.id).find(x => x !== me.id);
+  if (!o || blockedEither(me.id, o) || relation(me.id, o) !== 'contact' || c.expires) E(403, 'Vous ne pouvez plus écrire à cette personne.');
+  return c;
+}
 function chatFor(me, id) { const c = q1(`SELECT * FROM chats WHERE id=?`, id); if (!c || !isMember(id, me.id)) E(404, 'Discussion introuvable.'); return c; }
 R('POST', /^\/api\/chats\/(\d+)\/members$/, async ({ me, m, body }) => {
   const c = chatFor(me, +m[1]); if (c.type !== 'group') E(400, 'Seuls les groupes acceptent de nouveaux membres.');
   if (!can(c, me.id, 'add')) E(403, 'Seuls les administrateurs peuvent ajouter des membres dans ce groupe.');
-  const ok = new Set(contactIds(me.id)), ids = (body.add || []).map(Number).filter(x => ok.has(x) && !isMember(c.id, x));
+  const ok = new Set(contactIds(me.id)), ids = (Array.isArray(body.add) ? body.add : []).map(Number).filter(x => ok.has(x) && !isMember(c.id, x));
   for (const u of ids) { run(`INSERT INTO members(chat_id,user_id,joined_at) VALUES(?,?,?)`, c.id, u, now()); sysMsg(c.id, `@${me.handle} a ajouté @${getUser(u).handle}`); }
   pushMany(memberIds(c.id), { t: 'chats' });
   return { chat: chatOut(c, me.id) };
@@ -926,7 +944,7 @@ R('POST', /^\/api\/chats\/(\d+)\/role$/, async ({ me, m, body }) => {
   const c = chatFor(me, +m[1]), uid = +body.userId; if (c.type !== 'group' || !isAdmin(c, me.id)) E(403, 'Réservé aux administrateurs du groupe.');
   if (!isMember(c.id, uid)) E(404, 'Cette personne n’est pas dans le groupe.'); if (uid === c.created_by) E(400, 'Le créateur du groupe reste administrateur.');
   const u = getUser(uid);
-  if (body.kick) { run(`DELETE FROM members WHERE chat_id=? AND user_id=?`, c.id, uid); sysMsg(c.id, `@${me.handle} a retiré @${u.handle} du groupe`); push(uid, { t: 'chats' }); }
+  if (body.kick) { run(`DELETE FROM members WHERE chat_id=? AND user_id=?`, c.id, uid); const gc = gcallOf(c.id); if (gc) gleave(uid, gc[0]); if (c.inv_code) run(`UPDATE chats SET inv_code=NULL WHERE id=?`, c.id); sysMsg(c.id, `@${me.handle} a retiré @${u.handle} du groupe`); push(uid, { t: 'chats' }); }
   else if (body.admin) {
     const n = q1(`SELECT COUNT(*) n FROM members WHERE chat_id=? AND (admin=1 OR user_id=?)`, c.id, c.created_by).n;
     if (n >= 4) E(400, 'Il y a déjà 4 administrateurs (créateur compris). Retirez d’abord ce rôle à quelqu’un.');
@@ -962,6 +980,7 @@ R('GET', /^\/api\/chats\/(\d+)\/media$/, async ({ me, m }) => {
 });
 R('POST', /^\/api\/chats\/(\d+)\/leave$/, async ({ me, m }) => {
   const c = chatFor(me, +m[1]); if (c.type !== 'group') E(400, 'Impossible de quitter une discussion à deux.');
+  { const gc = gcallOf(c.id); if (gc) gleave(me.id, gc[0]); }
   run(`DELETE FROM members WHERE chat_id=? AND user_id=?`, c.id, me.id); sysMsg(c.id, `@${me.handle} a quitté le groupe`);
   if (!q1(`SELECT 1 FROM members WHERE chat_id=?`, c.id)) run(`DELETE FROM chats WHERE id=?`, c.id);
   else if (c.created_by === me.id) {
@@ -1021,11 +1040,11 @@ R('POST', /^\/api\/chats\/(\d+)\/read$/, async ({ me, m, body }) => {
   return { ok: true };
 });
 R('POST', /^\/api\/chats\/(\d+)\/typing$/, async ({ me, m }) => {
-  const c = chatFor(me, +m[1]); pushMany(memberIds(c.id).filter(x => x !== me.id), { t: 'typing', chatId: c.id, user: me.id }); return { ok: true };
+  let c; try { c = chatTalk(me, +m[1]); } catch { return { ok: true }; } if (tooMany('typ:' + me.id, 60, 60_000)) return { ok: true }; pushMany(memberIds(c.id).filter(x => x !== me.id), { t: 'typing', chatId: c.id, user: me.id }); return { ok: true };
 });
 // Réaction : une émoticône par personne et par message (la même une seconde fois l'enlève).
 R('POST', /^\/api\/messages\/(\d+)\/react$/, async ({ me, m, body }) => {
-  const msg = q1(`SELECT * FROM messages WHERE id=?`, +m[1]); if (!msg || msg.deleted || msg.kind === 'sys') E(404, 'Message introuvable.'); const c = chatFor(me, msg.chat_id);
+  const msg = q1(`SELECT * FROM messages WHERE id=?`, +m[1]); if (!msg || msg.deleted || msg.kind === 'sys') E(404, 'Message introuvable.'); const c = chatTalk(me, msg.chat_id);
   const e = String(body.emo || '').trim().slice(0, 16); if (/[<>&"'`=\\/\s]/.test(e) || /^[\x20-\x7e]+$/.test(e)) E(400, 'Réaction inconnue.');
   const cur = q1(`SELECT emo FROM reactions WHERE msg_id=? AND user_id=?`, msg.id, me.id);
   if (!e || (cur && cur.emo === e)) run(`DELETE FROM reactions WHERE msg_id=? AND user_id=?`, msg.id, me.id);
@@ -1034,7 +1053,8 @@ R('POST', /^\/api\/messages\/(\d+)\/react$/, async ({ me, m, body }) => {
 });
 // Message épinglé en haut de la discussion (un seul à la fois, visible par tous les membres).
 R('POST', /^\/api\/chats\/(\d+)\/pinmsg$/, async ({ me, m, body }) => {
-  const c = chatFor(me, +m[1]); let id = body.msgId ? +body.msgId : null;
+  const c = chatTalk(me, +m[1]); let id = body.msgId ? +body.msgId : null;
+  if (tooMany('pin:' + me.id, 20, 60 * 60_000)) E(429, 'Patientez un peu avant d’épingler à nouveau.');
   if (id) { const msg = q1(`SELECT * FROM messages WHERE id=? AND chat_id=?`, id, c.id); if (!msg || msg.deleted || msg.once || msg.kind === 'sys') E(400, 'Ce message ne peut pas être épinglé.'); }
   run(`UPDATE chats SET pinned_msg=? WHERE id=?`, id, c.id);
   sysMsg(c.id, id ? `📌 ${nameInChat(me, c)} a épinglé un message` : `${nameInChat(me, c)} a retiré le message épinglé`);
@@ -1138,8 +1158,9 @@ const upOf = (id, me) => { const u = ups.get(id); if (!u || u.owner !== me.id ||
 R('GET', /^\/api\/media\/up\/([A-Za-z0-9_-]{24})$/, async ({ me, m }) => { upOf(m[1], me); return { have: upHave(m[1]) }; });
 R('POST', /^\/api\/media\/up\/([A-Za-z0-9_-]{24})\/chunk$/, async ({ me, m, req, url }) => {
   const u = upOf(m[1], me), have = upHave(m[1]), off = +url.searchParams.get('off');
-  if (off !== have) return { have, retry: true };           // morceau déjà reçu, ou décalé : le client repart de « have »
-  const r = await bodyToFile(req, upPart(m[1]), Math.min(CHUNK_MAX, u.size - have), 'a');
+  if (off !== have || u.busy) return { have, retry: true };           // morceau déjà reçu, ou décalé : le client repart de « have »
+  u.busy = true; let r;
+  try { r = await bodyToFile(req, upPart(m[1]), Math.min(CHUNK_MAX, u.size - have), 'a'); } finally { u.busy = false; }
   return { have: have + r.size };
 });
 R('POST', /^\/api\/media\/up\/([A-Za-z0-9_-]{24})\/done$/, async ({ me, m }) => {
@@ -1261,7 +1282,7 @@ R('POST', /^\/api\/memories$/, async ({ me, body }) => {
   for (const x of [md, th]) if (x) run(`UPDATE media SET scope='mem', ref=? WHERE id=?`, id, x.id);
   if (aud === 'friends') {
     const ok = new Set(contactIds(me.id)), to = (Array.isArray(body.to) ? body.to : []).map(Number).filter(u => ok.has(u) && !blockedEither(me.id, u));
-    if (!to.length) { run(`DELETE FROM memories WHERE id=?`, id); E(400, 'Choisissez au moins un ami.'); }
+    if (!to.length) { for (const x of [md, th]) if (x) dropMedia(x.id); run(`DELETE FROM memories WHERE id=?`, id); E(400, 'Choisissez au moins un ami.'); }
     for (const uid of to) { run(`INSERT OR IGNORE INTO mem_access(mem_id,user_id) VALUES(?,?)`, id, uid); push(uid, { t: 'mem' }); webPush(uid, { title: nameFor(me, uid), body: `📸 vous a envoyé un souvenir${body.once ? ' à vue unique' : ''}`, tag: 'mem-' + id, url: '/?tab=souvenirs' }); }
   }
   return { item: memOut(q1(`SELECT * FROM memories WHERE id=?`, id)) };
@@ -1380,7 +1401,7 @@ R('POST', /^\/api\/forgot\/verify$/, async ({ req, res, body }) => {
   if (sha(String(body.code || '').trim()) !== r.code) { run(`UPDATE codes SET tries=tries+1 WHERE email=?`, email); E(400, 'Code incorrect.'); }
   passOk(body.pass, email);
   const u = q1(`SELECT * FROM users WHERE email=?`, email); if (!u) E(400, 'Code incorrect.');
-  run(`UPDATE users SET pass=? WHERE id=?`, hashPass(body.pass), u.id); run(`DELETE FROM codes WHERE email=?`, email); run(`DELETE FROM sessions WHERE user_id=?`, u.id);
+  run(`UPDATE users SET pass=? WHERE id=?`, hashPass(String(body.pass)), u.id); run(`DELETE FROM codes WHERE email=?`, email); run(`DELETE FROM sessions WHERE user_id=?`, u.id);
   setSession(res, u.id); return { me: meOut(getUser(u.id)) };
 }, false);
 
@@ -1531,7 +1552,8 @@ R('POST', /^\/api\/messages\/(\d+)\/edit$/, async ({ me, m, body }) => {
 });
 // L'expéditeur corrige la traduction de son propre message : il le rechiffre, le destinataire voit la version corrigée.
 R('POST', /^\/api\/messages\/(\d+)\/reseal$/, async ({ me, m, body }) => {
-  const msg = q1(`SELECT * FROM messages WHERE id=?`, +m[1]); if (!msg || msg.sender !== me.id || !msg.e2e || msg.once || msg.deleted || msg.media) E(404, 'Message introuvable.');
+  const msg = q1(`SELECT * FROM messages WHERE id=?`, +m[1]); if (!msg || msg.sender !== me.id || !msg.e2e || msg.once || msg.deleted || msg.media || msg.kind !== 'text') E(404, 'Message introuvable.');
+  chatTalk(me, msg.chat_id);
   if (now() - msg.created_at > 7 * DAY) E(400, 'Ce message est trop ancien pour être corrigé.');
   const env = body.enc; if (!env || typeof env.ct !== 'string' || typeof env.iv !== 'string' || typeof env.keys !== 'object') E(400, 'Message chiffré invalide.');
   const text = JSON.stringify({ v: 1, iv: env.iv, ct: env.ct, keys: env.keys, from: env.from }); if (text.length > 60000) E(413, 'Message trop long.');
@@ -1615,7 +1637,8 @@ R('GET', /^\/api\/stream$/, async ({ me, req, res }) => {
 const SEC = { ...(secure ? { 'Strict-Transport-Security': 'max-age=31536000' } : {}), 'Permissions-Policy': 'geolocation=(self), payment=()', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'X-Frame-Options': 'DENY',
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self' blob:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" };
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, BASE_URL), p = url.pathname;
+  let url, p;
+  try { url = new URL(req.url, BASE_URL); p = url.pathname; } catch { return send(res, 400, 'Adresse invalide'); }
   try {
     if (p.startsWith('/api/')) {
       // Protection contre les requêtes venues d'autres sites.
@@ -1628,7 +1651,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (p === '/demo' ) { res.writeHead(301, { Location: '/demo/' }); return res.end(); }
-    if (p === '/demo/') return serveFile(res, path.join(PUB, 'demo/index.html'), { 'X-Robots-Tag': 'noindex' });
+    if (p === '/demo/') return serveFile(res, path.join(PUB, 'demo/index.html'), { 'X-Robots-Tag': 'noindex', 'X-Frame-Options': 'DENY', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin' });
     if (p === '/conditions') return serveFile(res, path.join(PUB, 'conditions.html'), SEC);
     if (p === '/supprimer-compte') return serveFile(res, path.join(PUB, 'supprimer-compte.html'), SEC);
     if (p === '/ambassadeurs') return serveFile(res, path.join(PUB, 'ambassadeurs.html'), SEC);
@@ -1641,4 +1664,7 @@ const server = http.createServer(async (req, res) => {
     console.error(e); if (!res.headersSent) fail(res, 500, 'Erreur du serveur. Réessayez.');
   }
 });
+// Filet de sécurité : une erreur imprévue est notée dans le journal au lieu d'arrêter Tam-Tam pour tout le monde.
+process.on('unhandledRejection', e => console.error('erreur non gérée', e));
+process.on('uncaughtException', e => console.error('erreur non gérée', e));
 server.listen(PORT, () => console.log(`tam-tam en écoute sur ${PORT} — ${BASE_URL}`));
