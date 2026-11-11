@@ -27,7 +27,8 @@ const GCall = {
     let local;
     try { local = await this.media(video); } catch (e) { return toast(e.message); }
     let r; try { r = await api('/api/gcall/join', {callId}); } catch (e) { local.getTracks().forEach(t => t.stop()); return toast(e.message); }
-    this.c = {id: callId, chatId: r.chatId, video, local, mic: true, cam: local.getVideoTracks().length > 0, peers: new Map(), since: Date.now()};
+    let lay = 'grid'; try { lay = localStorage.getItem('tt-glay') || 'grid'; } catch {}
+    this.c = {id: callId, chatId: r.chatId, video, local, mic: true, cam: local.getVideoTracks().length > 0, peers: new Map(), since: Date.now(), lay, main: null, layMenu: false};
     this.c.tick = setInterval(() => this.clock(), 1000);
     this.render();
     for (const uid of r.parts) { const p = await this.peer(uid); await p.pc.setLocalDescription(await p.pc.createOffer()); this.sig(uid, 'offer', p.pc.localDescription); }
@@ -86,7 +87,7 @@ const GCall = {
     else if (ev.type === 'ice') { if (p.pc.remoteDescription) p.pc.addIceCandidate(ev.data).catch(() => {}); else p.q.push(ev.data); }
     else if (ev.type === 'media') { p.cam = !!(ev.data && ev.data.cam); p.mic = !(ev.data && ev.data.mic === false); this.render(); }
   },
-  stopRing() { clearTimeout(this.ringT); clearInterval(this.toneT); this.toneT = null; },
+  stopRing() { clearTimeout(this.ringT); Call.tone.call(this, null); },
   dismiss() { this.stopRing(); this.inc = null; this.render(); },
   accept() { const ev = this.inc; if (!ev) return; this.inc = null; this.join(ev.callId, ev.video); },
 
@@ -112,6 +113,20 @@ const GCall = {
       ${!me ? `<audio autoplay data-a="${uid}"></audio>` : ''}
       <span class="gt-name">${mic === false ? '🔇 ' : ''}${esc(me ? 'Vous' : first(u.name))}${state && state !== 'connected' ? ' · connexion…' : ''}</span></div>`;
   },
+  // Appui long sur une petite caméra, puis glisser sur la grande : elles échangent leur place.
+  dragInit(root) {
+    const c = this.c, main = root.querySelector('.g-main');
+    root.querySelectorAll('.g-secs .gt').forEach(el => {
+      let t = null, ghost = null, sx = 0, sy = 0;
+      const end = (e, drop) => { clearTimeout(t); t = null; if (!ghost) return; const r = main.getBoundingClientRect(), x = e.clientX, y = e.clientY; ghost.remove(); ghost = null; el.classList.remove('lift'); main.classList.remove('drop');
+        if (drop && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) { c.main = +el.dataset.uid; this.render(); } };
+      el.addEventListener('pointerdown', e => { sx = e.clientX; sy = e.clientY; el.setPointerCapture(e.pointerId);
+        t = setTimeout(() => { t = null; ghost = el.cloneNode(true); ghost.querySelectorAll('video,audio').forEach(v => v.remove()); ghost.classList.add('g-ghost'); const r = el.getBoundingClientRect(); ghost.style.width = r.width + 'px'; ghost.style.height = r.height + 'px'; ghost.style.left = (sx - r.width / 2) + 'px'; ghost.style.top = (sy - r.height / 2) + 'px'; root.appendChild(ghost); el.classList.add('lift'); if (navigator.vibrate) try { navigator.vibrate(30); } catch {} }, 450); });
+      el.addEventListener('pointermove', e => { if (t && Math.hypot(e.clientX - sx, e.clientY - sy) > 12) { clearTimeout(t); t = null; } if (!ghost) return; e.preventDefault(); ghost.style.left = (e.clientX - ghost.offsetWidth / 2) + 'px'; ghost.style.top = (e.clientY - ghost.offsetHeight / 2) + 'px'; const r = main.getBoundingClientRect(); main.classList.toggle('drop', e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom); });
+      el.addEventListener('pointerup', e => end(e, true)); el.addEventListener('pointercancel', e => end(e, false));
+      el.addEventListener('contextmenu', e => e.preventDefault());
+    });
+  },
   render() {
     const root = this.el(), c = this.c, ev = this.inc;
     if (!c && !ev) { root.innerHTML = ''; root.hidden = true; if (!Call.c) document.body.classList.remove('in-call'); return; }
@@ -125,12 +140,25 @@ const GCall = {
       return;
     }
     const chat = S.chats.get(c.chatId), n = c.peers.size + 1;
+    // Membres pas encore arrivés : leur photo de profil sous les caméras.
+    const here = new Set([S.me.id, ...c.peers.keys()]), waiting = chat ? (chat.members || []).map(m => m.id).filter(id => !here.has(id)) : [];
+    const ids = [S.me.id, ...c.peers.keys()];
+    if (!ids.includes(c.main)) c.main = ids.find(id => id !== S.me.id) || S.me.id;
+    const T = uid => uid === S.me.id ? this.tile(S.me.id, c.local, c.cam, c.mic, true) : (p => this.tile(p.uid, p.stream, p.cam, p.mic, false, p.state))(c.peers.get(uid));
+    const lay = n > 1 ? c.lay : 'grid';
+    const stage = lay === 'grid'
+      ? `<div class="g-grid n${Math.min(n, 8)}">${ids.map(T).join('')}</div>`
+      : `<div class="g-stage ${lay}"><div class="g-main">${T(c.main)}</div><div class="g-secs">${ids.filter(id => id !== c.main).map(T).join('')}</div></div>`;
+    const LAYS = [['grid', 'Équilibré', 'Toutes les caméras de la même taille'], ['side', 'Principale à gauche', 'Une grande caméra, les autres à droite'], ['top', 'Principale en haut', 'Une grande caméra, les autres en dessous']];
     root.className = 'call gcall';
     root.innerHTML = `<div class="call-in" role="dialog" aria-modal="true" aria-label="Appel de groupe">
       <div class="g-top"><b>${esc(chat ? chat.name : 'Groupe')}</b><span><span id="gTime">0:00</span> · ${n} personne${n > 1 ? 's' : ''}</span></div>
-      <div class="g-grid n${Math.min(n, 8)}">${this.tile(S.me.id, c.local, c.cam, c.mic, true)}${[...c.peers.values()].map(p => this.tile(p.uid, p.stream, p.cam, p.mic, false, p.state)).join('')}</div>
-      ${n === 1 ? '<p class="g-wait">En attente des autres membres du groupe…</p>' : ''}
-      <div class="call-bar">${btn('gcallMic', I.mic, c.mic ? 'Micro' : 'Micro coupé', c.mic ? '' : 'off')}${btn('gcallCam', I.video, c.cam ? 'Caméra' : 'Caméra coupée', c.cam ? '' : 'off')}${btn('gcallLeave', I.phone, 'Quitter', 'red down')}</div></div>`;
+      ${stage}
+      ${lay !== 'grid' ? '<p class="g-hint">Appui long sur une petite caméra, puis glissez-la sur la grande pour les échanger.</p>' : ''}
+      ${waiting.length ? `<div class="g-waiting"><span>${n === 1 ? 'En attente des autres membres du groupe…' : 'Pas encore arrivés'}</span><div class="g-wav">${waiting.slice(0, 12).map(id => `<span class="g-w" title="${esc(first(uOf(id).name))}">${avatar(uOf(id), 'sm')}</span>`).join('')}${waiting.length > 12 ? `<small>+${waiting.length - 12}</small>` : ''}</div></div>` : n === 1 ? '<p class="g-wait">En attente des autres membres du groupe…</p>' : ''}
+      ${c.layMenu ? `<div class="g-laymenu" role="menu" aria-label="Disposition des caméras">${LAYS.map(([k, l, h]) => `<button type="button" role="menuitemradio" aria-checked="${c.lay === k}" data-act="gcallLaySet" data-k="${k}"><span class="g-ico ${k}" aria-hidden="true"><i></i><i></i><i></i></span><b>${l}</b><small>${h}</small></button>`).join('')}</div>` : ''}
+      <div class="call-bar"><button class="cb lay-dot" type="button" data-act="gcallLay" aria-label="Disposition des caméras" aria-expanded="${!!c.layMenu}"><i aria-hidden="true"></i><span>Disposition</span></button>${btn('gcallMic', I.mic, c.mic ? 'Micro' : 'Micro coupé', c.mic ? '' : 'off')}${btn('gcallCam', I.video, c.cam ? 'Caméra' : 'Caméra coupée', c.cam ? '' : 'off')}${btn('gcallLeave', I.phone, 'Quitter', 'red down')}</div></div>`;
+    if (lay !== 'grid') this.dragInit(root);
     root.querySelectorAll('video[data-v]').forEach(v => { const uid = +v.dataset.v; v.srcObject = uid === S.me.id ? c.local : c.peers.get(uid)?.stream || null; });
     root.querySelectorAll('audio[data-a]').forEach(a => { const p = c.peers.get(+a.dataset.a); if (p && p.stream) { a.srcObject = p.stream; a.play && a.play().catch(() => {}); } });
     this.clock();
@@ -140,5 +168,7 @@ window.addEventListener('beforeunload', () => { if (GCall.c) GCall.leave(); });
 Object.assign(ACT, {
   gcallVideo() { GCall.start(true); }, gcallAudio() { GCall.start(false); },
   gcallJoin(d) { GCall.join(d.id); }, gcallAccept() { GCall.accept(); }, gcallDecline() { GCall.dismiss(); },
-  gcallMic() { GCall.toggleMic(); }, gcallCam() { GCall.toggleCam(); }, gcallLeave() { GCall.leave(); },
+  gcallMic() { GCall.toggleMic(); },
+  gcallLay() { const c = GCall.c; if (!c) return; c.layMenu = !c.layMenu; GCall.render(); },
+  gcallLaySet(d) { const c = GCall.c; if (!c) return; c.lay = d.k; c.layMenu = false; try { localStorage.setItem('tt-glay', d.k); } catch {} GCall.render(); }, gcallCam() { GCall.toggleCam(); }, gcallLeave() { GCall.leave(); },
 });

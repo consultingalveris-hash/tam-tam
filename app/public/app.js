@@ -452,6 +452,9 @@ document.addEventListener('paste', e => {
   if (typingSpot() || !composerFree()) return; const t = e.clipboardData && e.clipboardData.getData('text'); if (!t) return;
   const i = $('#msgIn'); e.preventDefault(); focusComposer(); i.setRangeText(t, i.selectionStart, i.selectionEnd, 'end'); i.dispatchEvent(new Event('input', {bubbles: true}));
 });
+// Clavier du téléphone : on remonte les fenêtres et le champ en cours pour qu'il reste toujours visible.
+if (window.visualViewport) { const vv = visualViewport, kb = () => { const h = Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop)); document.documentElement.style.setProperty('--kb', (h > 80 ? h : 0) + 'px'); }; vv.addEventListener('resize', kb); vv.addEventListener('scroll', kb); }
+document.addEventListener('focusin', e => { const t = e.target; if (!t || !/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.id === 'msgIn' || !matchMedia('(pointer:coarse)').matches) return; setTimeout(() => { try { t.scrollIntoView({block: 'center', behavior: 'smooth'}); } catch {} }, 350); });
 function focusComposer() {
   const i = $('#msgIn'); if (!i || i.disabled || S.locked || document.getElementById('lockScreen') || (layer && layer.innerHTML.trim())) return;
   if (document.activeElement === i) return; try { i.focus({preventScroll: true}); } catch { i.focus(); }
@@ -1769,7 +1772,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.81</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.82</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {

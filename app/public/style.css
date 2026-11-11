@@ -1243,3 +1243,45 @@ body.in-cam{overflow:hidden}
 .mem-foot .mem-b{position:static}
 .mem-foot .mem-date{position:static;margin-left:auto}
 .st-aud button{white-space:nowrap}
+/* v1.82 — appel de groupe : caméras remontées, membres en attente, dispositions */
+.g-grid{flex:0 1 auto;align-content:start}
+.gcall .call-in{gap:10px}
+.g-stage{flex:1;min-height:0;width:100%;max-width:1100px;display:flex;gap:8px}
+.g-stage.side{flex-direction:row}.g-stage.top{flex-direction:column}
+.g-main{flex:1;min-width:0;min-height:0;display:flex;border-radius:18px;transition:box-shadow .15s}
+.g-main .gt{flex:1;aspect-ratio:auto;min-height:0}
+.g-main.drop{box-shadow:0 0 0 3px #fff,0 0 22px 4px rgb(20 184 201/.9)}
+.g-secs{display:flex;gap:8px;min-width:0;min-height:0;overflow:auto;scrollbar-width:none}
+.g-stage.side .g-secs{flex-direction:column;width:30%;max-width:220px}
+.g-stage.top .g-secs{flex-direction:row;height:24%;min-height:96px;max-height:180px}
+.g-stage.side .g-secs .gt{flex:none;width:100%;aspect-ratio:3/4}
+.g-stage.top .g-secs .gt{flex:none;height:100%;aspect-ratio:3/4}
+.g-secs .gt{touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab}
+.g-secs .gt-name{font-size:11px;left:5px;bottom:5px;padding:2px 6px}
+.g-secs .gt-av .av{width:44px;height:44px}
+.gt.lift{opacity:.35}
+.g-ghost{position:fixed;z-index:70;pointer-events:none;opacity:.9;transform:scale(1.05);box-shadow:0 10px 30px rgb(0 0 0/.5)}
+.g-hint{margin:0;text-align:center;font-size:12px;opacity:.75}
+.g-waiting{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:13px;opacity:.95}
+.g-wav{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;align-items:center}
+.g-w .av{width:44px;height:44px;box-shadow:0 0 0 2px rgb(255 255 255/.5);opacity:.9}
+.g-wav small{font-weight:700}
+.cb.lay-dot i{display:grid;place-items:center;width:60px;height:60px;border-radius:50%;background:rgba(255,255,255,.18);backdrop-filter:blur(6px)}
+.cb.lay-dot i::before{content:"";width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 0 10px 2px rgb(255 255 255/.6)}
+.cb.lay-dot[aria-expanded="true"] i{background:rgba(255,255,255,.32)}
+@media (min-width:900px){.cb.lay-dot i{width:64px;height:64px}}
+.g-laymenu{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 120px);transform:translateX(-50%);z-index:3;display:flex;flex-direction:column;gap:4px;width:min(320px,calc(100% - 32px));padding:8px;border-radius:16px;background:rgb(8 20 25/.92);box-shadow:0 10px 30px rgb(0 0 0/.45)}
+.g-laymenu button{display:grid;grid-template-columns:44px 1fr;grid-template-rows:auto auto;column-gap:10px;align-items:center;text-align:left;padding:8px 10px;border:0;border-radius:12px;background:none;color:#fff;font:inherit;cursor:pointer}
+.g-laymenu button[aria-checked="true"]{background:rgb(20 184 201/.25);box-shadow:inset 0 0 0 1.5px #14b8c9}
+.g-laymenu b{font-size:14px}.g-laymenu small{grid-column:2;font-size:12px;opacity:.75}
+.g-ico{grid-row:1/3;width:40px;height:30px;display:grid;gap:2px}
+.g-ico i{border-radius:3px;background:rgb(255 255 255/.75)}
+.g-ico.grid{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}.g-ico.grid i:nth-child(3){grid-column:1/3}
+.g-ico.side{grid-template-columns:2fr 1fr;grid-template-rows:1fr 1fr}.g-ico.side i:first-child{grid-row:1/3}
+.g-ico.top{grid-template-columns:1fr 1fr;grid-template-rows:2fr 1fr}.g-ico.top i:first-child{grid-column:1/3}
+/* v1.82 — champ de saisie jamais caché par le clavier du téléphone */
+.layer{padding-bottom:var(--kb,0px)}
+.layer .sheet{max-height:calc(92vh - var(--kb,0px))}
+.g-grid:not(.n1){flex:1 1 auto;min-height:0;grid-auto-rows:minmax(0,1fr)}
+.g-grid:not(.n1) .gt{aspect-ratio:auto;min-height:0}
+.g-ico i{background:rgb(255 255 255/.45)}.g-ico.side i:first-child,.g-ico.top i:first-child{background:#fff}.g-ico.grid i{background:rgb(255 255 255/.8)}
