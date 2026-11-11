@@ -1285,3 +1285,6 @@ body.in-cam{overflow:hidden}
 .g-grid:not(.n1){flex:1 1 auto;min-height:0;grid-auto-rows:minmax(0,1fr)}
 .g-grid:not(.n1) .gt{aspect-ratio:auto;min-height:0}
 .g-ico i{background:rgb(255 255 255/.45)}.g-ico.side i:first-child,.g-ico.top i:first-child{background:#fff}.g-ico.grid i{background:rgb(255 255 255/.8)}
+.tr-note{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 12px;border-radius:12px;background:var(--accent-soft);color:var(--fg);font-size:14px;line-height:1.4}
+.tr-note .btn{margin-left:auto}
+.lang-opt[disabled]{opacity:.4;cursor:not-allowed}
