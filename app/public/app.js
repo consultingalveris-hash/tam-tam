@@ -284,7 +284,7 @@ function archChip() {
   return `<button class="chip arch-chip" type="button" data-act="filt" data-f="arch" aria-pressed="${S.filt === 'arch'}" title="Discussions archivées">${ARCH_IC}Archives${nu ? ` <span class="cnt dk">${nu}</span>` : na.length ? ` <small>${na.length}</small>` : ''}</button>`;
 }
 function filtChips() {
-  const n = [...S.chats.values()].filter(c => (c.unread > 0 || c.marked) && !c.archived && (!c.hidden || S.showHidden)).length;
+  const n = [...S.chats.values()].filter(c => c.type !== 'group' && (c.unread > 0 || c.marked) && !c.archived && (!c.hidden || S.showHidden)).length;
   const g = [...S.chats.values()].filter(c => c.type === 'group' && (c.unread > 0 || c.marked) && !c.archived && (!c.hidden || S.showHidden)).length, pr = (S.act && S.act.prof) || 0;
   const cnt = (v, l) => v ? ` <span class="cnt dk" aria-label="${v} ${l}">${v}</span>` : '';
   const dot = k => k === 'unread' ? cnt(n, n > 1 ? 'discussions non lues' : 'discussion non lue') : k === 'group' ? cnt(g, g > 1 ? 'groupes avec des messages' : 'groupe avec des messages') : k === 'me' ? cnt(pr, pr > 1 ? 'personnes vous ont envoyé une flamme' : 'personne vous a envoyé une flamme') : '';
@@ -343,7 +343,7 @@ function chatRows() {
   const fl = S.filt || 'all';
   if (fl === 'me') return profileEditor();
   list = list.filter(c => fl === 'arch' ? c.archived : !c.archived);
-  if (fl === 'unread') list = list.filter(c => c.unread > 0 || c.marked); else if (fl === 'group') list = list.filter(c => c.type === 'group');
+  if (fl === 'unread') list = list.filter(c => c.type !== 'group' && (c.unread > 0 || c.marked)); else if (fl === 'group') list = list.filter(c => c.type === 'group');
   const hitMsg = {};
   if (q && !(S.showHidden && Priv.isCode(q))) {
     Find.preload(q);
@@ -1769,7 +1769,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.80</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.81</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
