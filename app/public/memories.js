@@ -87,8 +87,10 @@ const Mem = {
   body() {
     if (!this.items) { this.load(); return '<p class="empty">Chargement…</p>'; }
     if (!this.recv) this.loadRecv(true);
-    const f = this.filt, t = this.today(), recv = this.recv || [];
-    const mineAll = this.items, priv = mineAll.filter(it => it.aud === 'private'), pub = mineAll.filter(it => it.aud === 'public'), sent = mineAll.filter(it => it.aud === 'friends');
+    // Tout souvenir privé (le mien, reçu ou envoyé en privé) va seulement dans « Privés », jamais ailleurs.
+    const f = this.filt, t = this.today(), recvAll = this.recv || [], recv = recvAll.filter(it => !it.lock), privRecv = recvAll.filter(it => it.lock);
+    const mineAll = this.items, privMine = mineAll.filter(it => it.aud === 'private'), pub = mineAll.filter(it => it.aud === 'public'), sent = mineAll.filter(it => it.aud === 'friends' && !it.lock), privSent = mineAll.filter(it => it.aud === 'friends' && it.lock);
+    const priv = [...privMine, ...privRecv, ...privSent];
     let later = false; try { later = !!localStorage.getItem(this.laterKey()); } catch {}
     const first = t.past[0], n = first ? new Date().getFullYear() - new Date(first.takenAt).getFullYear() : 0;
     const card = f === 'all' && !later && (t.past.length || t.bdays.length) ? `<div class="mem-today">${first ? `<div class="mem-today-img" data-memth="${first.id}"></div>` : '<div class="mem-today-img party">🎉</div>'}
@@ -104,7 +106,11 @@ const Mem = {
     let main;
     if (f === 'docs') { const all = docsOf([...pub, ...sent, ...recv]).sort((a, b) => b.at - a.at);
       main = `<div class="arch-head"><button class="ib" type="button" data-act="memFilt" data-f="${this.docFrom || 'all'}" aria-label="Retour">${I.back}</button><b>${I.clip}Documents</b></div>` + (all.length ? `<div class="mem-grid">${all.map(it => this.tile(it)).join('')}</div>` : '<p class="empty">Aucun document. Touchez Ajouter, puis Fichiers.</p>'); }
-    else if (f === 'private') main = this.unlocked ? (priv.length ? `<div class="mem-unl">${I.lock}Souvenirs privés ouverts · <button class="linkless" type="button" data-act="memRelock">Refermer</button></div>` + byYear(priv) : empty('Aucun souvenir privé', 'Choisissez « Privé » en ajoutant un souvenir : il sera chiffré pour vous seul et protégé par votre code.'))
+    else if (f === 'private') main = this.unlocked ? (priv.length ? `<div class="mem-unl">${I.lock}Souvenirs privés ouverts · <button class="linkless" type="button" data-act="memRelock">Refermer</button></div>`
+        + (privRecv.length ? `<div class="sec">Reçus en privé</div><div class="mem-grid">${privRecv.map(it => this.tile(it)).join('')}</div>` : '')
+        + (privSent.length ? `<div class="sec">Envoyés en privé</div><div class="mem-grid">${privSent.map(it => this.tile(it)).join('')}</div>` : '')
+        + (privMine.length ? (privRecv.length || privSent.length ? '<div class="sec">Mes souvenirs privés</div>' : '') + byYear(privMine) : '')
+        : empty('Aucun souvenir privé', 'Choisissez « Privé » en ajoutant un souvenir : il sera chiffré pour vous seul et protégé par votre code. Les souvenirs que vos amis vous envoient en privé arrivent aussi ici.'))
       : `<div class="mem-grid">${vault}</div><p class="hint" style="padding:0 16px">Touchez le dossier et tapez votre code à 4 chiffres.</p>`;
     else if (f === 'public') main = pub.length ? (docsOf(pub).length ? `<div class="mem-grid">${docFolder(pub)}</div>` : '') + byYear(noDoc(pub)) : empty('Aucun souvenir public', 'Un souvenir public est visible par tous les membres sur votre profil.');
     else if (f === 'friends') main = (recv.length ? `<div class="sec">Reçus de mes amis</div><div class="mem-grid">${recv.map(it => this.tile(it)).join('')}</div>` : '<p class="hint" style="padding:0 16px">Les souvenirs que vos amis vous envoient arriveront ici.</p>')
@@ -112,10 +118,10 @@ const Mem = {
       + `<div style="padding:8px 16px"><button class="btn" type="button" data-act="memAdd">${I.plus}Envoyer un souvenir</button></div>`;
     else { const all0 = [...pub, ...sent, ...recv.filter(x => !x.once || !x.opened)], all = noDoc(all0).sort((a, b) => b.takenAt - a.takenAt);
       main = `<div class="mem-grid">${vault}${docsOf(all0).length ? docFolder(all0) : ''}</div>` + (all.length ? byYear(all) : priv.length ? '' : empty('Gardez vos plus beaux moments', 'Ajoutez des photos et des vidéos : chaque année, Tam-Tam vous les rappellera le jour même.')); }
-    const un = this.unseen, nSel = this.sel ? this.sel.size : 0;
+    const un = recv.filter(x => !x.seen).length, unP = privRecv.filter(x => !x.seen).length, nSel = this.sel ? this.sel.size : 0;
     const selBar = this.sel ? `<div class="selbar mem-selbar"><button class="ib" type="button" data-act="memSelOff" aria-label="Annuler la sélection">${I.close}</button><b>${nSel} sélectionné${nSel > 1 ? 's' : ''}</b><span class="grow"></span><button class="btn sm ghost" type="button" data-act="memSelAll">Tout</button><button class="ib sel-del" type="button" data-act="memSelDel" aria-label="Supprimer la sélection" title="Supprimer"${nSel ? '' : ' disabled'}>${I.trash}</button></div>` : '';
     return `<div class="mem">${selBar}
-      <div class="mem-top"><div class="chips mem-filts">${[['all', 'Tous'], ['public', 'Publics'], ['friends', 'Mon Tam-Tam'], ['private', 'Privés']].map(([k, l]) => `<button class="chip" type="button" data-act="memFilt" data-f="${k}" aria-pressed="${f === k}">${k === 'private' ? I.lock : ''}${l}${k === 'friends' && un ? actDot('act-mem', `${un} souvenir${un > 1 ? 's' : ''} reçu${un > 1 ? 's' : ''} à voir`) : ''}</button>`).join('')}</div></div>
+      <div class="mem-top"><div class="chips mem-filts">${[['all', 'Tous'], ['public', 'Publics'], ['friends', 'Mon Tam-Tam'], ['private', 'Privés']].map(([k, l]) => `<button class="chip" type="button" data-act="memFilt" data-f="${k}" aria-pressed="${f === k}">${k === 'private' ? I.lock : ''}${l}${k === 'friends' && un ? actDot('act-mem', `${un} souvenir${un > 1 ? 's' : ''} reçu${un > 1 ? 's' : ''} à voir`) : ''}${k === 'private' && unP ? actDot('act-mem', `${unP} souvenir${unP > 1 ? 's' : ''} privé${unP > 1 ? 's' : ''} à voir`) : ''}</button>`).join('')}</div></div>
       ${card}${main}
     </div>`;
   },
@@ -139,7 +145,7 @@ const Mem = {
   find(id, uid) { return uid ? (this.others.get(uid) || []).find(x => x.id === id) : (this.items || []).find(x => x.id === id) || (this.recv || []).find(x => x.id === id); },
   mine(it) { return !it.from || it.from === S.me.id; },
   // un souvenir protégé (privé, ou envoyé en privé) ne montre rien tant que le code n'est pas tapé
-  hidden(it) { return it.aud === 'private' ? !this.unlocked : !!it.lock && this.pass !== it.id; },
+  hidden(it) { return (it.aud === 'private' || it.lock) && !this.unlocked; },
   /* ---- ajouter ---- */
   opts() { return {target: r => this.compose(r), title: 'Nouveau souvenir', gallery: () => $('#memIn') && $('#memIn').click(), native: () => $('#memCamIn') && $('#memCamIn').click()}; },
   addSheet() {
@@ -261,7 +267,6 @@ const Mem = {
   /* ---- regarder ---- */
   async view(id, uid) {
     const it = this.find(id, uid); if (!it) return; if (it.locked) return toast('Ce souvenir ne peut pas être ouvert sur cet appareil.');
-    if (it.aud !== 'private' && it.lock && this.pass !== it.id) { this.after = () => { this.unlocked = this.filt === 'private' && this.unlocked; this.pass = it.id; this.view(id, uid); this.pass = null; }; return this.codeSheet(S.me.hasMemCode ? 'ask' : 'new'); }
     if (this.hidden(it)) return this.unlockThen(() => { renderBody(); this.view(id, uid); });
     const recv = !uid && !this.mine(it);
     if (recv && it.once && it.opened) { toast('Souvenir à vue unique déjà ouvert.'); return ACT.memMenu && ACT.memMenu({id: String(it.id)}); }

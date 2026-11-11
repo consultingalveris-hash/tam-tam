@@ -281,7 +281,7 @@ function renderTabs() {
 const ARCH_IC = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></svg>';
 function archChip() {
   const na = [...S.chats.values()].filter(c => c.archived && (!c.hidden || S.showHidden)), nu = na.filter(c => c.unread > 0 || c.marked).length;
-  return `<button class="chip arch-chip" type="button" data-act="filt" data-f="arch" aria-pressed="${S.filt === 'arch'}" title="Discussions archivées">${ARCH_IC}Archives${nu ? ` <span class="cnt">${nu}</span>` : na.length ? ` <small>${na.length}</small>` : ''}</button>`;
+  return `<button class="chip arch-chip" type="button" data-act="filt" data-f="arch" aria-pressed="${S.filt === 'arch'}" title="Discussions archivées">${ARCH_IC}Archives${nu ? ` <span class="cnt dk">${nu}</span>` : na.length ? ` <small>${na.length}</small>` : ''}</button>`;
 }
 function filtChips() {
   const n = [...S.chats.values()].filter(c => (c.unread > 0 || c.marked) && !c.archived && (!c.hidden || S.showHidden)).length;
@@ -426,7 +426,7 @@ async function profSheet(id, back) {
     ${u.priv ? `<div class="nocopy"><span class="lbl">${I.lock} Profil privé</span>${dl(PRIV_L.map(([k, l]) => [l, u.priv[k]])) || '<p class="hint">Rien de renseigné.</p>'}${profMedia(u, 'priv')}${u.id !== S.me.id ? watermark() : ''}</div>` : ''}
     ${u.rel === 'contact' ? `<div class="qrnote"><span>${I.phone || ''} ${u.telMine ? `${esc(first(u.name))} voit votre numéro de téléphone.` : `${esc(first(u.name))} ne voit pas votre numéro de téléphone.`}</span><button class="btn sm ghost" type="button" data-act="shareTel" data-id="${u.id}" data-on="${u.telMine ? '' : '1'}">${u.telMine ? 'Ne plus montrer mon numéro' : 'Lui montrer mon numéro'}</button></div>` : ''}
     ${u.rel === 'sent' ? '<p class="hint">Demande envoyée : vous pourrez échanger quand elle sera acceptée.</p>' : u.rel === 'none' ? '<p class="hint">Après votre demande, cette personne doit l’accepter pour que vous puissiez échanger.</p>' : ''}
-    ${u.rel === 'me' ? '<p class="hint" style="text-align:center">C’est ainsi que les autres membres voient votre profil.</p>' : `<div class="actions">${u.rel === 'received' ? `<button class="btn ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button>` : ''}${u.blocked ? '' : relBtn(u).replace(/btn sm/g, 'btn')}</div>
+    ${u.rel === 'me' ? '<p class="hint" style="text-align:center">C’est ainsi que les autres voient votre profil : la partie publique est visible par tous les membres, la partie « Profil privé » seulement par les amis que vous avez autorisés.</p>' : `<div class="actions">${u.rel === 'received' ? `<button class="btn ghost" type="button" data-act="cDecline" data-id="${u.id}">Refuser</button>` : ''}${u.blocked ? '' : relBtn(u).replace(/btn sm/g, 'btn')}</div>
     <div class="actions" style="justify-content:flex-start">${u.rel === 'contact' ? `<button class="btn sm ghost" type="button" data-act="cRemoveAsk" data-id="${u.id}">Retirer des contacts</button>` : ''}<button class="btn sm ghost" type="button" data-act="${u.blocked ? 'unblock' : 'blockAsk'}" data-id="${u.id}">${u.blocked ? 'Débloquer' : 'Bloquer'}</button><button class="btn sm ghost" type="button" data-act="reportAsk" data-id="${u.id}">Signaler</button></div>`}</div>`, 'Profil');
   if (u.rel !== 'me' && typeof Mem !== 'undefined') Mem.profBlock(u.id);
   const pf = $('#peerFp'); if (pf) pf.textContent = await E2E.fingerprint(u.pubkey);
@@ -1414,12 +1414,13 @@ function picsEdit(set) {
   const me = S.me, list = (set === 'pub' ? me.pics : me.privPics) || [null, null, null], vids = Prof.vids(me, set), ids = Prof.ids(me, set);
   const cell = (inner, i, kind) => `<div class="pf-cell">${inner}${Prof.bar(me.id, kind === 'v' ? (vids[i] || {}).id : ids[i])}</div>`;
   return `<span class="lbl">${set === 'pub' ? 'Mes 3 photos publiques' : 'Mes 3 photos privées'}</span>
-    <p class="hint" style="margin:0">${set === 'pub' ? 'Tous les membres de Tam-Tam peuvent les voir, par exemple avant de vous demander en ami.' : 'Seules les personnes autorisées à voir votre profil privé peuvent les voir.'} Ceux qui les regardent peuvent vous envoyer une flamme 🔥.</p>
+    <p class="hint" style="margin:0">${set === 'pub' ? 'Tous les membres de Tam-Tam peuvent les voir, par exemple avant de vous demander en ami.' : 'Seules les personnes autorisées à voir votre profil privé peuvent les voir.'}</p>
     <div class="ph3">${[0, 1, 2].map(i => list[i]
       ? cell(`<div class="ph3-it"><button class="ph3-img" type="button" data-act="picView" data-src="${esc(list[i])}" aria-label="Agrandir la photo ${i + 1}"><img src="${esc(list[i])}" alt=""></button><button class="ph3-x" type="button" data-act="picDel" data-set="${set}" data-i="${i}" aria-label="Retirer la photo ${i + 1}">${I.close}</button></div>`, i, 'p')
       : `<button class="ph3-add" type="button" data-act="picAdd" data-set="${set}" data-i="${i}"><span aria-hidden="true">+</span>Photo ${i + 1}</button>`).join('')}</div>
     <span class="lbl">${set === 'pub' ? 'Mes 3 vidéos publiques' : 'Mes 3 vidéos privées'}</span>
     <p class="hint" style="margin:0">Une courte vidéo par case (40 Mo au maximum, environ une minute).${set === 'priv' ? ' Elles sont chiffrées pour les seules personnes autorisées.' : ''}</p>
+    <p class="note" style="margin:0">🔥 Sur vos photos comme sur vos vidéos, publiques ou privées, ceux qui les regardent peuvent vous envoyer une flamme. Vous voyez combien vous en avez reçu et, avec « Voir qui », qui les a envoyées.</p>
     <div class="ph3">${[0, 1, 2].map(i => vids[i]
       ? cell(`<div class="ph3-it">${Prof.vidTile(vids[i], i)}<button class="ph3-x" type="button" data-act="vidDel" data-set="${set}" data-i="${i}" aria-label="Retirer la vidéo ${i + 1}">${I.close}</button></div>`, i, 'v')
       : `<button class="ph3-add" type="button" data-act="vidAdd" data-set="${set}" data-i="${i}"><span aria-hidden="true">▶</span>Vidéo ${i + 1}</button>`).join('')}</div>
@@ -1461,7 +1462,8 @@ function profileEditor() {
     </div>
     <div class="set-block">
       ${f('priv', 'tel', 'Téléphone (caché sauf accord)', '+221 …', 'tel')}${f('priv', 'annee', 'Année de naissance', 'Ex. : 1985', 'number')}${f('priv', 'mail', 'E-mail de contact', '', 'email')}${f('priv', 'adresse', 'Quartier ou adresse')}${f('priv', 'travail', 'Lieu de travail')}${f('priv', 'famille', 'Famille')}
-      ${picsEdit('priv')}</div>
+      ${picsEdit('priv')}
+      <div><button class="btn sm ghost" type="button" data-act="prof" data-id="${me.id}">${I.eye}Voir mon profil privé comme mes amis le voient</button></div></div>
 `}
   </div>`;
 }
@@ -1724,6 +1726,13 @@ function trBox() {
     ${cl ? `<div class="field"><label for="trBudget">Budget maximum par mois (en dollars)</label><input id="trBudget" type="number" min="0.1" max="100" step="0.05" value="${t.budget || 1.65}"></div>` : ''}
     <p class="err" id="trErr" role="alert" hidden></p><div class="actions" style="justify-content:flex-start"><button class="btn sm" type="submit">Enregistrer</button>${t.has ? '<button class="btn sm ghost" type="button" data-act="trOff">Désactiver</button>' : ''}</div></form>`;
 }
+// Blocs des Réglages repliés : le titre seul, les choix apparaissent quand on touche dessus.
+S.fold = S.fold || new Set();
+function fold(key, html, st) {
+  const m = /^\s*<div class="set-block"([^>]*)><h2>([\s\S]*?)<\/h2>([\s\S]*)<\/div>\s*$/.exec(html); if (!m) return html;
+  return `<div class="set-block"${m[1]}><details class="loc-det" data-fold="${key}"${S.fold.has(key) ? ' open' : ''}><summary><h2>${m[2]}</h2>${st ? `<span class="loc-st">${st}</span>` : ''}</summary>${m[3]}</details></div>`;
+}
+document.addEventListener('toggle', e => { const d = e.target; if (d && d.dataset && d.dataset.fold) d.open ? S.fold.add(d.dataset.fold) : S.fold.delete(d.dataset.fold); }, true);
 function availPicker() {
   const a = (S.me && S.me.avail) || 'on';
   return `<div class="avail" role="radiogroup" aria-label="Ma disponibilité">${[['off', 'Hors ligne'], ['busy', 'Occupé'], ['on', 'En ligne']].map(([v, l]) => `<button type="button" role="radio" class="av-opt ${v}" data-act="availSet" data-v="${v}" aria-checked="${a === v}"><i aria-hidden="true"></i><span>${l}</span></button>`).join('')}</div>`;
@@ -1743,11 +1752,11 @@ function settingsBody() {
     <div class="set-block" id="locSet"><details class="loc-det"><summary><h2>📍 Partager ma localisation</h2><span class="loc-st${(me.locTo || []).length ? ' on' : ''}">${(me.locTo || []).length ? `Activé · ${(me.locTo || []).length}` : 'Désactivé'}</span></summary><p class="hint">Les personnes que vous cochez peuvent voir où vous êtes, en permanence : dans votre discussion, le point en haut à droite, puis « Suivre la localisation ». Pratique entre conjoints, ou pour des parents avec leurs enfants. Votre position est chiffrée : même le serveur ne peut pas la lire.</p>
       ${(S.contacts.contacts || []).length ? `<div class="picks">${S.contacts.contacts.slice().sort((x, y) => x.name.localeCompare(y.name, 'fr')).map(u => `<label class="pick"><input type="checkbox" name="locTo" value="${u.id}"${(me.locTo || []).includes(u.id) ? ' checked' : ''}>${avatar(u, 'sm')}<span>${esc(u.name)}</span></label>`).join('')}</div>` : '<p class="hint">Ajoutez d’abord des contacts.</p>'}
       <p class="hint">${(me.locTo || []).length ? `✅ Partagée avec ${(me.locTo || []).length} personne${(me.locTo || []).length > 1 ? 's' : ''}. Sur ordinateur et dans le navigateur, la position est envoyée tant que Tam-Tam est ouvert.` : 'Partage désactivé : cochez une personne pour l’activer.'}</p></details></div>
-    ${Tones.settingsHtml()}
+    ${fold('tones', Tones.settingsHtml(), esc(Tones.name(Tones.get('call'))))}
     <div class="set-block"><h2>🌍 Ambassadeurs des langues</h2><p class="hint">Des bénévoles font vivre leur langue maternelle sur Tam-Tam en corrigeant les traductions. Ils portent le badge « Ambassadeur » sur leur profil.</p><div class="actions"><button class="btn sm ghost" type="button" data-act="ambList">Voir les ambassadeurs</button><a class="btn sm ghost" href="/ambassadeurs" target="_blank" rel="noopener">Devenir ambassadeur</a></div></div>
-    <div class="set-block"><h2>${I.download || ''} Économie de données</h2><p class="hint">Pour les petits forfaits : photos et vidéos envoyées plus légères, et Tam-Tam ne télécharge rien à l’avance (le statut suivant se charge quand vous y arrivez).</p>
-      <label class="pick chk"><input type="checkbox" data-act="saverTog"${dataSaver() ? ' checked' : ''}><span>Activer l’économie de données sur cet appareil</span></label></div>
-    ${lockSettingsHtml()}
+    <div class="set-block"><details class="loc-det" data-fold="eco"${S.fold.has('eco') ? ' open' : ''}><summary><h2>${I.download || ''} Économie de données</h2><span class="loc-st${dataSaver() ? ' on' : ''}">${dataSaver() ? 'Activée' : 'Désactivée'}</span></summary><p class="hint">Pour les petits forfaits : photos et vidéos envoyées plus légères, et Tam-Tam ne télécharge rien à l’avance (le statut suivant se charge quand vous y arrivez).</p>
+      <label class="pick chk"><input type="checkbox" data-act="saverTog"${dataSaver() ? ' checked' : ''}><span>Activer l’économie de données sur cet appareil</span></label></details></div>
+    ${fold('lock', lockSettingsHtml(), (S.lock || {}).type === 'off' ? 'Désactivé' : 'Actif')}
     ${Priv.settingsHtml()}
     ${Device.settingsHtml()}
     <div class="set-block"><h2>Personnes bloquées</h2>${(me.blocked || []).length ? me.blocked.map(u => `<div class="adm-row">${avatar(u, 'xs')}<span>${esc(u.name)}</span><button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button></div>`).join('') : '<p class="hint">Personne n’est bloqué.</p>'}</div>
@@ -1760,7 +1769,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.78</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.79</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
