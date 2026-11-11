@@ -175,7 +175,8 @@ async function startApp() {
   renderMain();
   await Promise.all([loadChats(), loadContacts(), loadStatuses()]).catch(e => toast(e.message));
   await PP.init().catch(() => {});
-  api('/api/translate/status').then(r => { Tr.st = r; renderComposer(); }).catch(() => {});
+  try { Object.keys(localStorage).filter(k => k.startsWith('tt-trlearn:')).forEach(k => localStorage.removeItem(k)); } catch {}
+  Tr.loadSt();
   renderAll(); connect(); if (S.locked) showLock(); if (!S.me.handleSet) HPick.open();
   GCall.loadActive(); Call.checkPending(); Device.badge(); LocShare.sync();
   if (S.lock.type === 'off') return requireLock();
@@ -302,7 +303,7 @@ function renderHead() {
       <label class="search">${I.search}<span class="sr">Rechercher</span><input id="q" type="search" placeholder="Rechercher une discussion" value="${esc(S.q)}" autocomplete="off"></label>
       <div class="chips filt" id="filts" role="group" aria-label="Filtrer les discussions">${filtChips()}</div>`;
     renderStories();
-  } else h.innerHTML = `<div class="title"><h1>${{contacts: 'Contacts', calls: 'Appels', settings: 'Réglages', souvenirs: 'Souvenirs'}[S.tab]}</h1><span class="grow"></span>${S.tab === 'settings' ? availPicker() : ''}${S.tab === 'souvenirs' ? `<button class="btn sm" type="button" data-act="memAdd">${I.plus}Ajouter</button>` : ''}${S.tab !== 'settings' ? `<button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button>` : ''}</div>`;
+  } else h.innerHTML = `<div class="title"><h1>${{contacts: 'Contacts', calls: 'Appels', settings: 'Réglages', souvenirs: 'Souvenirs'}[S.tab]}</h1><span class="grow"></span>${S.tab === 'settings' ? availPicker() : ''}${S.tab === 'souvenirs' ? `<button class="ib dotb mem-topdot" type="button" data-act="memTop" aria-label="Souvenirs : ajouter, envoyer, sélectionner…" title="Ajouter, envoyer, sélectionner…">${DOT(true)}</button>` : ''}${S.tab !== 'settings' ? `<button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button>` : ''}</div>`;
 }
 function renderBody() {
   const b = $('#body'); if (!b) return;
@@ -744,7 +745,7 @@ async function sendText() {
   i.value = ''; autoGrow(i); syncSend(); const reply = S.replyTo; S.replyTo = null; renderReplyBar();
   try {
     let payload = {t}; const out = Tr.outL(c.id);
-    if (out && !Tr.st) { try { Tr.st = await api('/api/translate/status'); } catch {} }
+    if (out && !Tr.st) { try { await Tr.loadSt(); } catch {} }
     if (out && Tr.st && Tr.st.on && S.me.trConsent && !S.once) {
       try {
         const ctx = (S.msgs.get(c.id) || []).filter(x => x.kind === 'text' && x.text && !x.once).slice(-4).map(x => x.text);
@@ -819,7 +820,7 @@ function popOpen(html, label, a) {
   const el = document.createElement('div'); el.id = 'pop'; el.className = 'pop-scrim';
   el.innerHTML = `<div class="pop${a.classList.contains('priv') || a.querySelector('.dot1.priv') ? ' priv' : ''}" role="dialog" aria-label="${esc(label || 'Options')}">${html.replace(/<div class="sheet-head">[\s\S]*?<\/button><\/div>/, '')}</div>`;
   document.body.appendChild(el);
-  const box = el.firstChild, r = (a.isConnected ? a.getBoundingClientRect() : popRect) || a.getBoundingClientRect(), W = innerWidth, H = innerHeight, w = Math.min(300, W - 24);
+  const box = el.firstChild, r = (a.isConnected ? a.getBoundingClientRect() : popRect) || a.getBoundingClientRect(), W = innerWidth, H = innerHeight, w = Math.min(isDesk() ? 340 : 300, W - 24);
   box.style.width = w + 'px'; box.style.left = Math.max(12, Math.min(W - w - 12, r.right - w)) + 'px';
   const h = Math.min(box.scrollHeight, H * .6), below = H - r.bottom - 12;
   if (below >= h || below > r.top) { box.style.top = (r.bottom + 6) + 'px'; box.style.maxHeight = Math.max(160, below - 6) + 'px'; } else { box.style.bottom = (H - r.top + 6) + 'px'; box.style.maxHeight = Math.max(160, r.top - 18) + 'px'; }
@@ -1221,6 +1222,8 @@ async function locFollow(uid) {
 function msgMenu(id) {
   const list = S.msgs.get(S.chatId) || [], m = list.find(x => x.id === id); if (!m) return;
   document.querySelectorAll('#msgs .msg.menu-on').forEach(e => e.classList.remove('menu-on')); const row = document.querySelector(`#msgs .msg[data-mid="${id}"]`); if (row) queueMicrotask(() => { if (layer.innerHTML.trim() || document.getElementById('pop')) row.classList.add('menu-on'); });
+  // Ordinateur : le menu s'ouvre dans une petite fenêtre en haut à droite de la discussion, sans cacher les messages.
+  if (isDesk() && !(popFrom && Date.now() - popAt < 900)) { const a = document.querySelector('#chatHead .dotb'); if (a) { popFrom = a; popAt = Date.now(); popRect = a.getBoundingClientRect(); } }
   if (m.deleted) return sheet(`<div class="menu" style="padding-top:12px"><button type="button" class="danger" data-act="hideAsk" data-id="${id}">${I.trash}Supprimer pour moi</button></div>`, 'Message');
   const c = S.chats.get(S.chatId) || {}, modo = c.type === 'group' && c.admin && m.from !== S.me.id && (c.gset || {}).del === 'admins', canAll = (m.from === S.me.id && Date.now() - m.at < DEL_ALL_MAX) || modo, myR = (m.reacts || []).find(r => r.u === S.me.id);
   const canFwd = !m.once && !m.locked && !c.hidden && m.kind !== 'sys', pinned = c.pinMsg && c.pinMsg.id === m.id;
@@ -1651,7 +1654,7 @@ const Tr = {
   setLang(l) { this.ls('tt-trlang', l); },
   // Par discussion : la langue dans laquelle JE reçois, et celle dans laquelle MON CONTACT reçoit.
   // Discussion à deux : les langues sont partagées. Chacun choisit ce qu'il reçoit ; on peut proposer une langue à son contact.
-  row(cid, mine) { const c = S.chats.get(cid); if (!c || c.type !== 'direct') return null; return (c.members || []).find(x => mine ? x.id === S.me.id : x.id !== S.me.id) || null; },
+  row(cid, mine) { const c = S.chats.get(cid); if (!c || (c.type !== 'direct' && !(mine && c.type === 'group'))) return null; return (c.members || []).find(x => mine ? x.id === S.me.id : x.id !== S.me.id) || null; },
   inL(cid) { const r = this.row(cid, true); if (r && r.trIn !== undefined) return r.trIn || ''; return this.ls('tt-trin:' + cid) || (this.ls('tt-trauto:' + cid) === '1' ? this.lang() : ''); },
   outL(cid) { const r = this.row(cid, false); if (r && r.trIn !== undefined) return r.trIn || ''; return this.ls('tt-trout:' + cid) || ''; },
   setIn(cid, l) { this.ls('tt-trauto:' + cid, ''); this.ls('tt-trin:' + cid, l); this.share(cid, 'me', l); },
@@ -1692,6 +1695,19 @@ const Tr = {
     const b64 = u => btoa(String.fromCharCode(...u)); api('/api/translate/cache', {id: k.id, iv: b64(iv), ct: b64(ct)}).catch(() => {});
     return r;
   },
+  // Statut du service (activé, langues) : chargé au démarrage ; s'il arrive après l'ouverture d'une discussion, on relance la traduction.
+  stLoading: null,
+  loadSt() {
+    if (this.stLoading) return this.stLoading;
+    this.stAt = Date.now(); this.stLoading = api('/api/translate/status').then(r => { this.st = r; renderComposer(); if (S.chatId) renderMessages(true); })
+      .catch(() => { setTimeout(() => this.loadSt(), 15000); }).finally(() => { this.stLoading = null; });
+    return this.stLoading;
+  },
+  // Après un échec (réseau, service occupé), nouvelle tentative 20 secondes plus tard, sans rien perdre.
+  retryT: 0,
+  retry(c) { clearTimeout(this.retryT); this.retryT = setTimeout(() => { if (S.chatId === c.id) this.autoRun(S.chats.get(c.id) || c); }, 20000); },
+  // Groupe : la langue de réception choisie sur un appareil est enregistrée sur le compte, pour tous mes appareils.
+  syncGroup(c, l) { if (c.type !== 'group') return; const r = this.row(c.id, true); if (r && r.trIn === undefined && !this.synced) { this.synced = true; this.share(c.id, 'me', l); } },
   async run(id, silent, l) {
     l = l || this.view(S.chatId);
     const m = (S.msgs.get(S.chatId) || []).find(x => x.id === id); if (!m || !m.text) return false;
@@ -1703,15 +1719,18 @@ const Tr = {
       if (r.fresh) this.give(srcText, r.from, r.text, l, 'mt', m.from);
       if (!silent) renderMessages(true); return true;
     }
-    catch (e) { toast(e.message); return false; }
+    catch (e) { if (!silent) toast(e.message); return false; }
   },
   async autoRun(c) {
     // Tout message reçu qui n'est pas dans ma langue est traduit ici, même si l'expéditeur ne l'a pas fait (ancienne version, réseau coupé…).
-    const l = c && this.inL(c.id); if (!l || !this.st || !this.st.on || !S.me.trConsent) return; if (this.busy) { this.again = c; return; }
+    const l = c && this.inL(c.id); if (!l || !S.me.trConsent) return;
+    if (!this.st) return this.loadSt();
+    if (!this.st.on) { if (Date.now() - (this.stAt || 0) > 60000) this.loadSt(); return; } if (this.busy) { this.again = c; return; }
+    this.syncGroup(c, l);
     const todo = (S.msgs.get(c.id) || []).filter(m => m.from && m.from !== S.me.id && !m.once && !m.deleted && !m.locked && m.kind === 'text' && m.text && m.text.trim().length > 1 && m.tlang !== l && !this.shown.has(m.id) && !this.off.has(m.id)).slice(-30);
     if (!todo.length) return; this.busy = true;
-    try { for (const m of todo) { if (S.chatId !== c.id || this.inL(c.id) !== l) break; if (this.get(m.id, l)) { this.shown.add(m.id); continue; } if (!await this.run(m.id, true, l)) break; } }
-    finally { this.busy = false; } if (S.chatId === c.id) renderMessages(true); const ag = this.again; this.again = null; if (ag && ag.id === S.chatId && ag !== c) this.autoRun(ag);
+    try { for (const m of todo) { if (S.chatId !== c.id || this.inL(c.id) !== l) break; if (this.get(m.id, l)) { this.shown.add(m.id); continue; } if (!await this.run(m.id, true, l)) { this.retry(c); break; } } }
+    finally { this.busy = false; } if (S.chatId === c.id) renderMessages(true); const ag = this.again; this.again = null; if (ag && ag.id === S.chatId) this.autoRun(ag);
   },
   // Envoie une paire « texte d'origine → traduction » à la base de Tam-Tam (le serveur vérifie les accords).
   give(src, sl, tgt, tl, kind, author) { const a = author === S.me.id ? S.me : uOf(author); if (!a || !(author === S.me.id ? S.me.trConsent : a.trc) || (kind === 'fix' && !S.me.trConsent)) return; api('/api/corpus', {src, sl: sl || '', tgt, tl, kind, author}).catch(() => {}); },
@@ -1719,16 +1738,12 @@ const Tr = {
   note(txt, act, id, lbl, more) { return `<span class="trl">${I.translate}${txt} · <button class="linkb" type="button" data-act="${act}" data-id="${id}">${lbl}</button>${more || ''}</span>`; },
   fixBtn(id, lbl) { return ` · <button class="linkb" type="button" data-act="trFix" data-id="${id}">✎ ${lbl || 'Corriger'}</button>`; },
   from(l) { const n = l && LANG_FR[l]; return n ? (/^[aeiouhé]/.test(n) ? 'de l’' : 'du ') + n.replace(/ \(essai\)$/, '') : ''; },
-  // Mode apprentissage : le message reste dans sa langue, la traduction est cachée jusqu'à ce qu'on la demande.
-  learn() { return false; }, // mode apprentissage retiré (v1.86)
   // Proposer des corrections : voir le message d'origine sous la traduction, avec « Votre correction ».
   contrib() { const v = this.ls('tt-trcontrib'); return v ? v === '1' : !!(S.me && S.me.amb); },
   once: new Set(),
   origAll(cid) { return this.ls('tt-trorig:' + cid) === '1'; },
   setOrigAll(cid, on) { this.ls('tt-trorig:' + cid, on ? '1' : ''); },
   translated(m) { return !!(m && m.text && (m.orig != null && m.tlang || this.get(m.id, this.inL(m.chatId || S.chatId)))); },
-  setLearn(cid, on) { this.ls('tt-trlearn:' + cid, on ? '1' : ''); },
-  open: new Set(),
   // Texte d'une bulle : le message, la traduction juste en dessous et « Votre correction » (modèle unique).
   txt(m) {
     const L = l => (LANG_FR[l] || l || '').replace(/ \(essai\)$/, ''), cid = m.chatId || S.chatId;
@@ -1744,13 +1759,6 @@ const Tr = {
     const plain = `<span class="txt">${escL(m.orig != null ? m.orig : m.text)}</span>`;
     if (!S.me.trConsent) return plain;
     const inL = this.inL(cid), fx = this.fix(m.id);
-    if (false) {
-      // Je m'exerce : je lis le message reçu ; la traduction dans ma langue n'apparaît que si je la demande.
-      const t = m.orig != null && m.olang === inL ? {text: m.orig, from: m.olang} : this.get(m.id, inL);
-      const shown = this.open.has(m.id) && t;
-      return `<span class="txt">${escL(m.text)}</span>` + (shown ? box(`Traduction (${esc(L(inL))})${fx ? ' · corrigée par vous' : ''} :`, fx ? fx.text : t.text)
-        : `<span class="tr-recv tr-hide"><button class="linkb" type="button" data-act="trReveal" data-id="${m.id}">${I.eye}Voir la traduction en ${esc(L(inL))}</button></span>`);
-    }
     // Le message arrive d'abord dans MA langue. Le message d'origine (langue de l'expéditeur) et « Votre correction »
     // apparaissent en dessous seulement pour ceux qui ont choisi de proposer des corrections.
     // Le message s'affiche traduit, sans rien en dessous. Le message d'origine apparaît seulement si on le demande
@@ -1870,7 +1878,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.88</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.89</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -2062,8 +2070,6 @@ const ACT = {
   trOrigAll(d) { closeLayer(); Tr.setOrigAll(S.chatId, !!d.v); Tr.once.clear(); renderMessages(true); toast(d.v ? 'Les messages d’origine s’affichent sous chaque message traduit' : 'Messages d’origine masqués'); },
   trOrig(d) { Tr.shown.delete(+d.id); Tr.off.add(+d.id); renderMessages(true); },
   trAuto() { if (!S.me.trConsent) return trConsentAsk(true); S.trSide = S.trSide || 'in'; trSheet(); },
-  async trReveal(d) { const id = +d.id, m = (S.msgs.get(S.chatId) || []).find(x => x.id === id), inL = Tr.inL(S.chatId); if (!m) return; Tr.open.add(id); if (!(m.orig != null && m.olang === inL) && !Tr.get(id, inL)) await Tr.run(id, true, inL); renderMessages(true); },
-  trLearn() { const c = S.chats.get(S.chatId); if (!c) return; Tr.setLearn(c.id, !Tr.learn(c.id)); Tr.open.clear(); renderMessages(true); trSheet(); if (!Tr.learn(c.id)) Tr.autoRun(c); },
   trSide(d) { S.trSide = d.v; trSheet(); },
   trKeep() { const c = S.chats.get(S.chatId); if (!c) return; Tr.setIn(c.id, Tr.inL(c.id)); toast('Choix gardé'); trSheet(); },
   trPick(d) {
@@ -2089,7 +2095,7 @@ const ACT = {
   async trConsentNo() { closeLayer(); await saveNow({trConsent: false}, 'Pas de traduction : vous recevez les messages tels qu’ils ont été écrits.'); if (S.chatId) { renderComposer(); renderMessages(true); } },
   trConsentTog() { saveNow({trConsent: !S.me.trConsent}); },
   trContribTog() { Tr.ls('tt-trcontrib', Tr.contrib() ? '0' : '1'); toast(Tr.contrib() ? 'Le message d’origine et « Votre correction » s’affichent sous les traductions' : 'Vous recevez seulement le message dans votre langue'); if (S.chatId) renderMessages(true); },
-  trNone(d) { const c = S.chats.get(S.chatId); if (!c) return; if (d.side === 'out') { if (!Tr.setOut(c.id, '')) return; } else { Tr.setIn(c.id, ''); Tr.setLearn(c.id, false); } S.trSide = d.side; renderComposer(); renderMessages(true); trSheet(); },
+  trNone(d) { const c = S.chats.get(S.chatId); if (!c) return; if (d.side === 'out') { if (!Tr.setOut(c.id, '')) return; } else { Tr.setIn(c.id, ''); } S.trSide = d.side; renderComposer(); renderMessages(true); trSheet(); },
   trFlip(d) { const id = +d.id; Tr.flip.has(id) ? Tr.flip.delete(id) : Tr.flip.add(id); renderMessages(true); },
   async trLoad() { try { S.trset = await api('/api/admin/translate'); const el = $('#trBox'); if (el) el.outerHTML = trBox(); } catch (e) { toast(e.message); } },
   async trOff() { try { await api('/api/admin/translate', {off: true}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction désactivée'); } catch (e) { toast(e.message); } },

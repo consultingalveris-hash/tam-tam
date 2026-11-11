@@ -875,13 +875,13 @@ const can = (c, uid, what) => isAdmin(c, uid) || gsetOf(c)[what] === 'all';
 /* Langues de traduction d'une discussion à deux : chacun choisit la langue dans laquelle il reçoit.
    On peut proposer une langue à son contact ; tant qu'il n'a pas choisi lui-même, la proposition s'applique. */
 R('POST', /^\/api\/chats\/(\d+)\/trlang$/, async ({ me, m, body }) => {
-  const c = chatFor(me, +m[1]); if (c.type !== 'direct') E(400, 'Réservé aux discussions à deux.');
+  const c = chatFor(me, +m[1]); if (c.type !== 'direct' && !(c.type === 'group' && body.who !== 'peer')) E(400, 'Réservé aux discussions à deux.');
   const lang = String(body.lang || '').slice(0, 12); if (lang && !/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(lang)) E(400, 'Langue inconnue.');
-  const peer = memberIds(c.id).find(x => x !== me.id), who = body.who === 'peer' ? peer : me.id; if (!who) E(400, 'Contact introuvable.');
+  const peer = c.type === 'direct' ? memberIds(c.id).find(x => x !== me.id) : 0, who = body.who === 'peer' ? peer : me.id; if (!who) E(400, 'Contact introuvable.');
   const row = q1(`SELECT tr_in, tr_by FROM members WHERE chat_id=? AND user_id=?`, c.id, who);
   if (who !== me.id && row && row.tr_by === who) E(409, `${nameFor(getUser(who), me.id)} a choisi sa propre langue de réception : vous ne pouvez plus la changer.`);
   run(`UPDATE members SET tr_in=?, tr_by=? WHERE chat_id=? AND user_id=?`, lang, me.id, c.id, who);
-  push(peer, { t: 'trlang', chatId: c.id, by: me.id, who: who === peer ? 'you' : 'them', lang }); push(me.id, { t: 'chats' });
+  if (peer) push(peer, { t: 'trlang', chatId: c.id, by: me.id, who: who === peer ? 'you' : 'them', lang }); push(me.id, { t: 'chats' });
   return { chat: chatOut(c, me.id) };
 });
 function chatFor(me, id) { const c = q1(`SELECT * FROM chats WHERE id=?`, id); if (!c || !isMember(id, me.id)) E(404, 'Discussion introuvable.'); return c; }

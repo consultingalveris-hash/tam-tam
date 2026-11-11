@@ -1333,3 +1333,21 @@ a.btn,a.btn:hover{text-decoration:none}
 @keyframes railIn{from{opacity:0;transform:translate(20px,-50%)}}
 #msgs .msg.menu-on{background:color-mix(in srgb,var(--accent) 12%,transparent);border-radius:12px;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 22%,transparent)}
 .num{font-size:.86em;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+/* v1.89 — clavier d'appel : flèche pour le ranger, case du numéro centrée sous le 2 */
+.dial-grab{display:flex;justify-content:center;align-items:center;width:44px;height:26px;margin:-2px auto 0;padding:0;border:0;border-radius:13px;background:var(--surface-2);color:var(--fg-2);cursor:pointer}
+.dial-grab svg{width:20px;height:20px}
+.dial-grab:hover{color:var(--accent-strong)}
+.dial-top{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:center;gap:6px}
+.dial-top input{width:100%;outline:0}
+.dial-top input:focus-visible{box-shadow:inset 0 -2px 0 var(--accent)}
+/* appels : la photo et le nom ouvrent la fiche */
+.cl-who{flex:1;min-width:0;display:flex;align-items:center;gap:12px;border:0;background:none;padding:0;text-align:left;color:inherit;font:inherit;cursor:pointer}
+.cl-card{padding-bottom:4px}
+.cl-acts{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:6px 0 4px}
+.cl-acts button{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:76px;padding:12px 10px;border:0;border-radius:14px;background:var(--surface-2);color:var(--accent-strong);font:600 13px/1.2 Figtree,sans-serif;cursor:pointer}
+.cl-acts button svg{width:22px;height:22px;stroke:var(--accent-strong)}
+/* souvenir ouvert : toujours entier dans le cadre */
+.mv-stage{position:relative;overflow:hidden}
+.mv-stage>img,.mv-stage>video{position:absolute;inset:0;width:100%;height:100%;max-width:none;max-height:none;object-fit:contain}
+/* téléphone : la barre d'émojis s'efface quand le menu du point est ouvert */
+body:has(#pop) .rrail,body:has(#layer .layer) .rrail{display:none}

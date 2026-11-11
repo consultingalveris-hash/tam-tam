@@ -19,9 +19,9 @@ const Calls = {
     const chat = S.chats.get(c.chatId), grp = c.kind === 'group', u = grp ? null : uOf(c.peer);
     if (!grp && !u.name) return '';
     const miss = c.status === 'missed', lab = miss ? (c.dir === 'in' ? 'Manqué' : 'Sans réponse') : c.status === 'declined' ? 'Refusé' : c.status === 'busy' ? 'Occupé' : c.dir === 'in' ? 'Entrant' : 'Sortant';
-    return `<div class="cl${miss ? ' miss' : ''}">${grp ? (chat ? grpAv(chat, 'sm') : '') : avatar(u, 'sm')}
-      <div class="cl-t"><b>${esc(grp ? (chat ? chat.name : 'Groupe') : u.name)}</b>
-      <span>${c.dir === 'in' ? I.arrowIn : I.arrowOut}${lab}${grp ? ' · groupe' : ''}${c.num ? ' · par numéro' : ''} · ${this.when(c.at)}${c.dur ? ' · ' + this.dur(c.dur) : ''}</span></div>
+    return `<div class="cl${miss ? ' miss' : ''}"><button class="cl-who" type="button" data-act="clCard" data-chat="${c.chatId}" data-peer="${grp ? '' : c.peer}" data-num="${c.num ? 1 : ''}" data-grp="${grp ? 1 : ''}" aria-label="Fiche de ${esc(grp ? (chat ? chat.name : 'ce groupe') : u.name)}">${grp ? (chat ? grpAv(chat, 'sm') : '') : avatar(u, 'sm')}
+      <span class="cl-t"><b>${esc(grp ? (chat ? chat.name : 'Groupe') : u.name)}</b>
+      <span>${c.dir === 'in' ? I.arrowIn : I.arrowOut}${lab}${grp ? ' · groupe' : ''}${c.num ? ' · par numéro' : ''} · ${this.when(c.at)}${c.dur ? ' · ' + this.dur(c.dur) : ''}</span></span></button>
       <button class="ib" type="button" data-act="clCall" data-chat="${c.chatId}" data-num="${c.num ? 1 : ''}" data-video="${c.video ? 1 : ''}" data-grp="${grp ? 1 : ''}" aria-label="Rappeler en ${c.video ? 'vidéo' : 'vocal'}">${c.video ? I.video : I.phone}</button></div>`;
   },
   suggest() {
@@ -44,9 +44,9 @@ const Calls = {
       <div class="cl-list${this.open ? '' : ' roomy'}" id="clList">${f != null ? f : this.log ? (list || '<p class="empty">Aucun appel pour l’instant. Vos appels vocaux et vidéo apparaîtront ici.</p>') : '<p class="empty">Chargement…</p>'}</div>
       ${this.open ? '' : `<button class="dial-fab" type="button" data-act="dialOpen" aria-label="Composer ou coller un numéro" title="Composer un numéro">${I.phone}</button>`}
       <div class="dial${this.open ? ' open' : ''}" aria-label="Clavier"${this.open ? '' : ' hidden'}>
-        <div class="dial-grab" aria-hidden="true"><i></i></div>
+        <button class="dial-grab" type="button" data-act="dialClose" aria-label="Ranger le clavier" title="Ranger le clavier"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <div class="dial-sug" id="dialSug">${this.suggest()}</div>
-        <div class="dial-top"><input id="dialIn" type="tel" inputmode="none" autocomplete="off" placeholder="Composez ou collez un numéro" value="${esc(this.num)}" aria-label="Numéro">
+        <div class="dial-top"><span aria-hidden="true"></span><input id="dialIn" type="tel" inputmode="none" autocomplete="off" placeholder="Composez ou collez un numéro" value="${esc(this.num)}" aria-label="Numéro">
           <button class="ib" type="button" data-act="dialBack" aria-label="Effacer">${I.backspace}</button></div>
         <div class="dial-keys">${KEYS.map(([k, l]) => `<button class="dk" type="button" data-act="dialKey" data-k="${k}"><b>${k}</b><small>${l}</small></button>`).join('')}</div>
         <div class="dial-go"><button class="dgo vid" type="button" data-act="dialCall" data-video="1" aria-label="Appel vidéo">${I.video}</button>
@@ -102,6 +102,19 @@ document.addEventListener('input', e => {
 Object.assign(ACT, {
   dialKey(d) { Calls.setNum(Calls.num + d.k); if (navigator.vibrate && navigator.userActivation && navigator.userActivation.hasBeenActive) try { navigator.vibrate(10); } catch {} },
   dialOpen() { Calls.open = true; renderBody(); },
+  dialClose() { const el = document.querySelector('.dial.open'); if (!el) return Calls.close(); el.style.transition = 'transform .2s, opacity .2s'; el.style.transform = 'translateY(110%)'; el.style.opacity = '0'; setTimeout(() => Calls.close(), 180); },
+  // Fiche ouverte en touchant la photo ou le nom dans l'historique des appels.
+  clCard(d) {
+    const grp = !!d.grp, chat = S.chats.get(+d.chat), u = grp ? null : uOf(+d.peer), name = grp ? (chat ? chat.name : 'Groupe') : u.name;
+    const canChat = !!chat && !d.num, a = `data-chat="${d.chat}" data-num="${d.num || ''}" data-grp="${d.grp || ''}"`;
+    sheet(`${head(esc(name))}<div class="sheet-body"><div class="prof cl-card">${grp ? (chat ? grpAv(chat, 'xl') : '') : avatar(u, 'xl')}<b>${esc(name)}</b>${!grp && u.handle ? `<span>@${esc(u.handle)}</span>` : ''}</div>
+      <div class="cl-acts">${canChat ? `<button type="button" data-act="clGo" data-chat="${d.chat}">${I.chats}<span>Discussion</span></button>` : ''}
+      <button type="button" data-act="clCall" ${a}>${I.phone}<span>Audio</span></button>
+      <button type="button" data-act="clCall" ${a} data-video="1">${I.video}<span>Vidéo</span></button>
+      ${grp ? (chat ? `<button type="button" data-act="clGo" data-chat="${d.chat}" data-info="1">${I.info}<span>Infos</span></button>` : '') : `<button type="button" data-act="prof" data-id="${u.id}">${I.eye}<span>Profil</span></button>`}</div>
+      ${grp ? '' : `<p class="hint" style="text-align:center">« Profil » montre son profil public, et son profil privé s’il vous y donne accès.</p>`}</div>`, name);
+  },
+  async clGo(d) { const id = +d.chat; closeLayer(); if (!S.chats.has(id)) return toast('Cette discussion n’existe plus.'); S.tab = 'chats'; renderAll(); await openChat(id); if (d.info && typeof groupInfo === 'function') groupInfo(); },
   dialBack() { Calls.setNum(Calls.num.slice(0, -1)); },
   async dialPaste() { try { Calls.setNum(await navigator.clipboard.readText()); } catch { const i = $('#dialIn'); if (i) { i.setAttribute('inputmode', 'tel'); i.focus(); toast('Appuyez longuement dans la case, puis « Coller ».'); } } },
   dialCall(d) { Calls.dial(!!d.video); },
@@ -110,6 +123,7 @@ Object.assign(ACT, {
   },
   async clContact(d) { try { Calls.q = ''; await Calls.openDirect(+d.id); Call.start(!!d.video); } catch (e) { toast(e.message); } },
   async clCall(d) {
+    closeLayer();
     if (d.num) { try { const r = await api('/api/calls/again', {chatId: +d.chat}); Calls.callLine(r.chat, !!d.video); } catch (e) { toast(e.message); } return; }
     const id = +d.chat; if (!S.chats.has(id)) return toast('Cette discussion n’existe plus.');
     S.tab = 'chats'; renderAll(); await openChat(id);
