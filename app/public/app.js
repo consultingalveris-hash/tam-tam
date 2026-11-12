@@ -884,7 +884,7 @@ const Outbox = {
 };
 window.addEventListener('online', () => { if (S.offline) { S.offline = false; Promise.all([loadChats(), loadContacts(), loadStatuses()]).then(() => { renderAll(); if (S.chatId) loadMessages(S.chatId); }).catch(() => {}); } Outbox.flush(); });
 /* ---------- vitesse mesurée chez les utilisateurs (des durées seulement, rien d'autre) ---------- */
-const APP_V = '1.96';
+const APP_V = '1.97';
 const Perf = {
   q: [],
   add(k, ms) { if (!(ms >= 0) || ms > 120000) return; this.q.push([k, Math.round(ms)]); if (this.q.length >= 40) this.flush(); },
