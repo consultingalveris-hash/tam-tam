@@ -5,7 +5,12 @@
   "server": {
     "url": "https://tam-tam.alveris-consulting.com",
     "cleartext": false,
-    "errorPath": "index.html"
+    "errorPath": "index.html",
+    "allowNavigation": [
+      "tam-tam.alveris-consulting.com",
+      "tam-tam.africa",
+      "*.workers.dev"
+    ]
   },
   "android": {
     "allowMixedContent": false,

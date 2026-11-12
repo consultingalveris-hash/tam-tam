@@ -37,7 +37,8 @@ async function api(path, body, opts = {}) {
   const init = {method: body !== undefined ? 'POST' : 'GET', headers: {}, credentials: 'same-origin'};
   if (body !== undefined) { if (opts.raw) { init.body = body; init.headers['Content-Type'] = opts.type; } else { init.body = JSON.stringify(body); init.headers['Content-Type'] = 'application/json'; } }
   let r;
-  try { r = await fetch(path, init); } catch { throw new Error('Pas de connexion internet. Réessayez.'); }
+  try { r = await fetch(path, init); } catch { if (typeof Secours !== 'undefined') Secours.fail(); throw new Error('Pas de connexion internet. Réessayez.'); }
+  if (typeof Secours !== 'undefined') { if (r.status >= 520 || r.status === 502 || r.status === 504) Secours.fail(); else Secours.ok(); }
   const data = await r.json().catch(() => ({}));
   if (r.status === 401 && S.me) { S.me = null; boot(); }
   if (!r.ok) throw Object.assign(new Error(data.error || (r.status === 413 ? 'Fichier trop lourd pour être envoyé (40 Mo au maximum).' : r.status >= 502 ? 'Le serveur met trop de temps à répondre. Vérifiez votre connexion et réessayez.' : 'Erreur. Réessayez.')), {status: r.status});
@@ -187,7 +188,7 @@ async function startApp() {
   await PP.init().catch(() => {});
   try { Object.keys(localStorage).filter(k => k.startsWith('tt-trlearn:')).forEach(k => localStorage.removeItem(k)); } catch {}
   Tr.loadSt();
-  renderAll(); if (!fast) Perf.add('open', performance.now()); connect(); Outbox.flush(); Prefetch.run(); if (S.locked) showLock(); if (!S.me.handleSet) HPick.open();
+  renderAll(); if (!fast) Perf.add('open', performance.now()); connect();  if (typeof Secours !== "undefined") Secours.load(); Outbox.flush(); Prefetch.run(); if (S.locked) showLock(); if (!S.me.handleSet) HPick.open();
   GCall.loadActive(); Call.checkPending(); Device.badge(); LocShare.sync();
   if (S.lock.type === 'off') return requireLock();
   if (S.pendingChat && S.chats.has(S.pendingChat)) openChat(S.pendingChat); S.pendingChat = 0;
@@ -225,7 +226,7 @@ function connect() {
   if (es) es.close();
   es = new EventSource('/api/stream');
   es.onmessage = e => { let ev; try { ev = JSON.parse(e.data); } catch { return; } onEvent(ev); };
-  es.onerror = () => { /* le navigateur se reconnecte tout seul */ };
+  es.onerror = () => { /* le navigateur se reconnecte tout seul */ if (typeof Secours !== 'undefined') Secours.fail(); };
 }
 let resync = null;
 function onEvent(ev) {
@@ -884,7 +885,7 @@ const Outbox = {
 };
 window.addEventListener('online', () => { if (S.offline) { S.offline = false; Promise.all([loadChats(), loadContacts(), loadStatuses()]).then(() => { renderAll(); if (S.chatId) loadMessages(S.chatId); }).catch(() => {}); } Outbox.flush(); });
 /* ---------- vitesse mesurée chez les utilisateurs (des durées seulement, rien d'autre) ---------- */
-const APP_V = '1.97';
+const APP_V = '1.98';
 const Perf = {
   q: [],
   add(k, ms) { if (!(ms >= 0) || ms > 120000) return; this.q.push([k, Math.round(ms)]); if (this.q.length >= 40) this.flush(); },
@@ -2030,6 +2031,7 @@ function settingsBody() {
     ${fold('lock', lockSettingsHtml(), (S.lock || {}).type === 'off' ? 'Désactivé' : 'Actif')}
     ${Priv.settingsHtml()}
     ${Device.settingsHtml()}
+    ${fold('sec', Secours.settingsHtml(), Secours.onPrimary() ? '' : 'Adresse de secours')}
     <div class="set-block"><h2>Personnes bloquées</h2>${(me.blocked || []).length ? me.blocked.map(u => `<div class="adm-row">${avatar(u, 'xs')}<span>${esc(u.name)}</span><button class="btn sm ghost" type="button" data-act="unblock" data-id="${u.id}">Débloquer</button></div>`).join('') : '<p class="hint">Personne n’est bloqué.</p>'}</div>
     <div class="set-block"><h2>${I.shield} Appareils connectés</h2><p class="hint">Un téléphone perdu ou prêté ? Déconnectez-le à distance. Changer votre mot de passe déconnecte aussi tous les autres appareils.</p><div><button class="btn sm ghost" type="button" data-act="devList">Voir mes appareils connectés</button></div></div>
     <div class="set-block"><h2>Compte</h2><div class="actions" style="justify-content:flex-start"><button class="btn sm ghost" type="button" data-act="pwSheet">${I.key}Changer le mot de passe</button><a class="btn sm ghost" href="/conditions" target="_blank" rel="noopener">Conditions et confidentialité</a><button class="btn sm ghost" type="button" data-act="logout">Se déconnecter</button></div></div>
@@ -2040,7 +2042,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.97</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.98</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {

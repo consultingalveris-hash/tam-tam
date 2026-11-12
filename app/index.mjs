@@ -16,6 +16,8 @@ const PORT = +process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'var');
 const BASE_URL = (process.env.BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
 const OWNER = (process.env.OWNER_EMAIL || '').trim().toLowerCase();
+// Adresses de secours (autre nom de domaine, relais) : même serveur, joignable par un autre chemin en cas de panne.
+const ALT_ORIGINS = String(process.env.ALT_ORIGINS || '').split(',').map(x => x.trim().replace(/\/+$/, '')).filter(x => (/^https:\/\/[a-z0-9.-]+$/i.test(x) || (BASE_URL.startsWith('http://localhost') && /^http:\/\/localhost:\d+$/.test(x))) && x !== BASE_URL);
 const PUB = path.join(ROOT, 'public');
 const MEDIA = path.join(DATA_DIR, 'media');
 fs.mkdirSync(path.join(DATA_DIR, 'backups'), { recursive: true });
@@ -334,8 +336,12 @@ for (const c of ['2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b50
 const fromCF = ip => { try { const v = ip.replace(/^::ffff:/, ''); return CF_NETS.check(v, net.isIPv6(v) ? 'ipv6' : 'ipv4'); } catch { return false; } };
 const ipOf = req => {
   const peer = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  if (!fromCF(peer)) return peer;
+  // Relais Tam-Tam (Cloudflare Workers) : il transmet l'adresse réelle de la personne, sinon tous ses utilisateurs auraient la même.
+  const rl = String(req.headers['x-tt-client'] || '').trim(), ro = String(req.headers['x-tt-origin'] || '').toLowerCase();
+  if (rl && net.isIP(rl) && ALT_ORIGINS.some(o => new URL(o).host === ro)) return rl;
   const cf = String(req.headers['cf-connecting-ip'] || '').trim();
-  return cf && net.isIP(cf) && fromCF(peer) ? cf : peer;
+  return cf && net.isIP(cf) ? cf : peer;
 };
 function meOut(u) {
   return { ...userCard(u, u.id), locTo: locTargets(u), rawName: u.name || '', handleSet: !!u.handle_set, handleAt: u.handle_at || null, email: u.email, priv: u.priv_env ? {} : J(u.priv, {}), privPics: u.priv_env ? [null, null, null] : picsOf(u, 'priv'), privEnv: u.priv_env ? J(u.priv_env, null) : null, telEnv: u.tel_env ? J(u.tel_env, null) : null, legacyPriv: !u.priv_env, listed: !!u.listed, avail: u.avail || 'on', trConsent: u.tr_consent == null ? null : !!u.tr_consent, privTo: u.priv_to, admin: !!u.admin, hasHideCode: !!u.hide_code, hasMemCode: !!u.mem_code,
@@ -364,6 +370,10 @@ R('GET', /^\/api\/meta$/, async ({ req, url }) => {
   return { mail: !!getTransport(), google: !!googleSettings(), ownerSetup: n === 0, ownerEmail: n === 0 && OWNER ? OWNER.replace(/^(.).*(@.*)$/, '$1•••$2') : null,
     invite: inv ? { by: (u => u ? (inv.qr || !u.name ? '@' + u.handle : u.name) : '')(getUser(inv.by_user)) } : null };
 }, false);
+
+// Adresses de secours : la liste est publique (elle sert quand l'adresse principale ne répond plus).
+R('GET', /^\/api\/alt$/, async () => ({ primary: BASE_URL, alt: ALT_ORIGINS }), false);
+R('GET', /^\/api\/ping$/, async ({ res }) => { res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Cache-Control', 'no-store'); return { ok: true }; }, false);
 
 R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   if (tooMany('reg:' + ipOf(req), 8, 60 * 60_000)) E(429, 'Trop de tentatives. Réessayez plus tard.');
@@ -736,6 +746,9 @@ const GMAX = 8, GMAX_SFU = 32, gcalls = new Map(); // callId -> {chatId, video, 
 const LK_URL = process.env.LK_URL || '', LK_KEY = process.env.LK_KEY || '', LK_SECRET = process.env.LK_SECRET || '';
 const sfuOn = () => !!(LK_URL && LK_KEY && LK_SECRET);
 // Adresse d'administration du serveur LiveKit (par défaut : la même que celle des appels, en https).
+// Le serveur des appels de groupe est joint par l'adresse que la personne utilise (principale ou de secours).
+const reqOrigin = req => { const h = String(req.headers['x-tt-origin'] || req.headers.host || '').toLowerCase(); return [BASE_URL, ...ALT_ORIGINS].find(o => new URL(o).host === h) || BASE_URL; };
+const lkUrlFor = req => { const o = reqOrigin(req); return o === BASE_URL || !LK_URL.includes(new URL(BASE_URL).host) ? LK_URL : LK_URL.replace(new URL(BASE_URL).host, new URL(o).host); };
 const LK_API = (process.env.LK_API || LK_URL.replace(/^ws/, 'http')).replace(/\/+$/, '');
 // Membre retiré du groupe pendant un appel : il est aussi sorti de la salle LiveKit (sinon il pourrait y revenir avec son ancien jeton).
 function lkKick(uid, callId) {
@@ -764,7 +777,7 @@ function gleave(uid, id) {
   }
   gstate(g, id);
 }
-R('POST', /^\/api\/gcall\/start$/, async ({ me, body }) => {
+R('POST', /^\/api\/gcall\/start$/, async ({ req, me, body }) => {
   const c = chatFor(me, +body.chatId); if (c.type !== 'group') E(400, 'Les appels de groupe se font dans un groupe.');
   const ex = gcallOf(c.id); if (ex) return { callId: ex[0], existing: true };
   if (tooMany('gcall:' + me.id, 10, 10 * 60_000)) E(429, 'Trop d’appels. Patientez quelques minutes.');
@@ -781,7 +794,7 @@ R('POST', /^\/api\/gcall\/start$/, async ({ me, body }) => {
   }
   return { callId: id, mode };
 });
-R('POST', /^\/api\/gcall\/join$/, async ({ me, body }) => {
+R('POST', /^\/api\/gcall\/join$/, async ({ req, me, body }) => {
   const id = String(body.callId || ''), g = gcalls.get(id); if (!g) E(404, 'Cet appel est terminé.');
   chatFor(me, g.chatId);
   const cap = g.mode === 'sfu' ? GMAX_SFU : GMAX;
@@ -791,7 +804,7 @@ R('POST', /^\/api\/gcall\/join$/, async ({ me, body }) => {
   const row = q1(`SELECT joined FROM calls WHERE call_id=?`, id); if (row) { const j = new Set(J(row.joined, [])); j.add(me.id); run(`UPDATE calls SET joined=? WHERE call_id=?`, JSON.stringify([...j]), id); }
   for (const p of others) push(p, { t: 'gcall', type: 'joined', callId: id, user: me.id });
   gstate(g, id);
-  return { parts: others, video: g.video, chatId: g.chatId, mode: g.mode, ...(g.mode === 'sfu' ? { sfu: { url: LK_URL, token: lkToken(me.id, me.handle, 'tt-' + id) }, keyEnv: g.keyEnv } : {}) };
+  return { parts: others, video: g.video, chatId: g.chatId, mode: g.mode, ...(g.mode === 'sfu' ? { sfu: { url: lkUrlFor(req), token: lkToken(me.id, me.handle, 'tt-' + id) }, keyEnv: g.keyEnv } : {}) };
 });
 R('POST', /^\/api\/gcall\/signal$/, async ({ me, body }) => {
   const id = String(body.callId || ''), g = gcalls.get(id), to = +body.to, type = String(body.type || '');
@@ -1708,14 +1721,14 @@ R('GET', /^\/api\/stream$/, async ({ me, req, res }) => {
 
 /* ---------- serveur ---------- */
 const SEC = { ...(secure ? { 'Strict-Transport-Security': 'max-age=31536000' } : {}), 'Permissions-Policy': 'geolocation=(self), payment=()', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'X-Frame-Options': 'DENY',
-  'Content-Security-Policy': `default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self' blob:${LK_URL && !LK_URL.includes(new URL(BASE_URL).host) ? ' ' + new URL(LK_URL).origin : ''}; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'` };
+  'Content-Security-Policy': `default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self' blob:${LK_URL && !LK_URL.includes(new URL(BASE_URL).host) ? ' ' + new URL(LK_URL).origin : ''}${[BASE_URL, ...ALT_ORIGINS].map(o => ' ' + o + (LK_URL ? ' ' + o.replace(/^https/, 'wss') : '')).join('')}; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'` };
 const server = http.createServer(async (req, res) => {
   let url, p;
   try { url = new URL(req.url, BASE_URL); p = url.pathname; } catch { return send(res, 400, 'Adresse invalide'); }
   try {
     if (p.startsWith('/api/')) {
       // Protection contre les requêtes venues d'autres sites.
-      if (req.method !== 'GET') { const o = req.headers.origin; if (o && o !== BASE_URL && !(BASE_URL.startsWith('http://localhost') && o.startsWith('http://localhost'))) E(403, 'Origine refusée.'); }
+      if (req.method !== 'GET') { const o = req.headers.origin; if (o && o !== BASE_URL && !ALT_ORIGINS.includes(o) && !(BASE_URL.startsWith('http://localhost') && o.startsWith('http://localhost'))) E(403, 'Origine refusée.'); }
       const rt = routes.find(r => r.method === req.method && r.re.test(p)); if (!rt) E(404, 'Adresse inconnue.');
       const me = currentUser(req); if (rt.auth && !me) E(401, 'Connectez-vous.');
       const body = req.method === 'POST' && !/^\/api\/media(\/up\/[A-Za-z0-9_-]+\/chunk)?$/.test(p) ? await readJson(req) : {};

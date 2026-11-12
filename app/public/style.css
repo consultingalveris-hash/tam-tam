@@ -1394,3 +1394,7 @@ body:has(#pop) .rrail,body:has(#layer .layer) .rrail{display:none}
 .dot1.priv,:root .head .dot1.priv,:root #chatHead .dot1.priv,:root:not([data-theme="dark"]) .head .dot1.priv,:root:not([data-theme="dark"]) #chatHead .dot1.priv{background:var(--accent)}
 :root[data-theme="dark"] .dot1:not(.priv){background:#7fe3ee}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .dot1:not(.priv){background:#7fe3ee}}
+/* adresse de secours */
+.secours{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 10px);z-index:60;width:min(460px,calc(100% - 24px));padding:12px 14px;border-radius:14px;background:var(--surface);color:inherit;box-shadow:0 8px 30px rgb(0 0 0/.22);border-left:4px solid #14B8C9}
+.secours p{margin:0 0 8px;font-size:14px;line-height:1.4}.secours .actions{justify-content:flex-end;margin:0}
+.relais-add .row{display:flex;gap:8px}.relais-add input{flex:1;min-width:0}

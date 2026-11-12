@@ -85,6 +85,14 @@ SECRET_BK_F=/root/.tam-tam-backup-key
 [ -s "$SECRET_BK_F" ] || { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$SECRET_BK_F"; chmod 600 "$SECRET_BK_F"; }
 SECRET_BK=$(cat "$SECRET_BK_F")
 
+# Adresse de secours (même serveur, autre nom de domaine, sans Cloudflare) et relais déclarés :
+# l'adresse de secours n'est branchée que lorsque son nom pointe bien vers ce serveur.
+SECOURS="${SECOURS:-tam-tam.africa}"; SECOURS_OK=""
+if [ -n "$IP_PUB" ] && getent ahostsv4 "$SECOURS" 2>/dev/null | awk '{print $1}' | grep -qx "$IP_PUB"; then SECOURS_OK=1; fi
+RELAIS_F=/root/.tam-tam-relais; touch "$RELAIS_F"
+ALT=$( { [ -n "$SECOURS_OK" ] && echo "https://$SECOURS"; grep -E '^https://[A-Za-z0-9.-]+$' "$RELAIS_F" || true; } | paste -sd, -)
+[ -n "$SECOURS_OK" ] && echo "Adresse de secours : https://$SECOURS" || echo "Adresse de secours $SECOURS : pas encore reliée à ce serveur (on la branchera dès qu'elle le sera)."
+
 echo "Construction de tam-tam (une minute la première fois)…"
 docker build -q -t "$APP:latest" "$DOSSIER/app" >/dev/null
 docker volume create "$VOLUME" >/dev/null
@@ -92,7 +100,7 @@ docker rm -f "$APP" >/dev/null 2>&1 || true
 docker run -d --name "$APP" --restart unless-stopped --network "$NET" --memory 512m \
   -v "$VOLUME:/data" \
   -e BASE_URL="https://$DOMAINE" -e OWNER_EMAIL="$PROPRIETAIRE" \
-  -e TURN_SECRET="$SECRET_TURN" -e TURN_HOST="${IP_PUB:-$DOMAINE}" -e BACKUP_KEY="$SECRET_BK" \
+  -e TURN_SECRET="$SECRET_TURN" -e TURN_HOST="${IP_PUB:-$DOMAINE}" -e BACKUP_KEY="$SECRET_BK" -e ALT_ORIGINS="$ALT" \
   -e LK_URL="${LK_KEY:+wss://$DOMAINE/lk}" -e LK_API="${LK_KEY:+http://tam-tam-lk:7880}" -e LK_KEY="$LK_KEY" -e LK_SECRET="$LK_SECRET" \
   "$APP:latest" >/dev/null
 sleep 3
@@ -117,10 +125,14 @@ caddy_edit() { # $1 = modification (sed) ; $2 = message
 if ! docker exec "$C" cat /etc/caddy/Caddyfile | cmp -s - "$CF" && caddy_ok "$CF"; then caddy_apply; fi
 if grep -q "^$DOMAINE" "$CF"; then
   # Vidéos : envois jusqu'à 45 Mo.
-  if sed -n "/^$DOMAINE {/,/^}/p" "$CF" | grep -q "max_size 8MB"; then caddy_edit "/^$DOMAINE {/,/^}/ s/max_size 8MB/max_size 45MB/" "Limite d'envoi relevée à 45 Mo (vidéos)."; fi
+  if sed -n "/^$DOMAINE[ ,]/,/^}/p" "$CF" | grep -q "max_size 8MB"; then caddy_edit "/^$DOMAINE[ ,]/,/^}/ s/max_size 8MB/max_size 45MB/" "Limite d'envoi relevée à 45 Mo (vidéos)."; fi
   # Appels de groupe : l'adresse /lk mène au serveur de répartition.
-  if [ -n "$LK_KEY" ] && ! sed -n "/^$DOMAINE {/,/^}/p" "$CF" | grep -q "tam-tam-lk"; then
-    caddy_edit "/^$DOMAINE {/,/^}/ s#^\\(\\s*\\)reverse_proxy $APP:3000 {#\\1handle_path /lk/* {\\n\\1\\treverse_proxy tam-tam-lk:7880\\n\\1}\\n\\1reverse_proxy $APP:3000 {#" "Appels de groupe reliés (adresse /lk)."
+  if [ -n "$LK_KEY" ] && ! sed -n "/^$DOMAINE[ ,]/,/^}/p" "$CF" | grep -q "tam-tam-lk"; then
+    caddy_edit "/^$DOMAINE[ ,]/,/^}/ s#^\\(\\s*\\)reverse_proxy $APP:3000 {#\\1handle_path /lk/* {\\n\\1\\treverse_proxy tam-tam-lk:7880\\n\\1}\\n\\1reverse_proxy $APP:3000 {#" "Appels de groupe reliés (adresse /lk)."
+  fi
+  # Adresse de secours : servie par le même bloc (mêmes réglages, certificat obtenu automatiquement).
+  if [ -n "$SECOURS_OK" ] && ! grep -q "^$DOMAINE, $SECOURS {" "$CF"; then
+    caddy_edit "s/^$DOMAINE {/$DOMAINE, $SECOURS {/" "Adresse de secours branchée : https://$SECOURS"
   fi
   caddy_apply
 fi
