@@ -493,6 +493,10 @@ R('POST', /^\/api\/me$/, async ({ me, body }) => {
   return { me: meOut(getUser(me.id)) };
 });
 // Profil privé chiffré : enveloppe pour les personnes autorisées, numéro dans une enveloppe à part, empreinte du numéro pour le répertoire.
+// Enveloppe de bout en bout telle qu'elle est gardée : version 1 (ancienne) ou 2 (clé jetable par message, voir secure.js).
+const envPick = e => { const o = { v: e.v === 2 ? 2 : 1, iv: e.iv, ct: e.ct, keys: e.keys, from: e.from };
+  if (o.v === 2) { o.salt = String(e.salt || '').slice(0, 40); o.eph = e.eph && typeof e.eph === 'object' ? { x: String(e.eph.x || '').slice(0, 64), y: String(e.eph.y || '').slice(0, 64) } : null; }
+  return o; };
 const envOk = e => e && typeof e === 'object' && typeof e.ct === 'string' && typeof e.iv === 'string' && e.keys && typeof e.keys === 'object' && JSON.stringify(e).length < 200_000;
 R('POST', /^\/api\/me\/privenv$/, async ({ me, body }) => {
   if (!envOk(body.privEnv) || (body.telEnv && !envOk(body.telEnv))) E(400, 'Profil chiffré invalide.');
@@ -1086,7 +1090,7 @@ R('POST', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, body }) => {
   if (body.enc) {
     // Message chiffré de bout en bout : le serveur ne garde qu'une enveloppe illisible.
     const env = body.enc; if (typeof env !== 'object' || typeof env.ct !== 'string' || typeof env.iv !== 'string' || typeof env.keys !== 'object') E(400, 'Message chiffré invalide.');
-    text = JSON.stringify({ v: 1, iv: env.iv, ct: env.ct, keys: env.keys, from: env.from }); if (text.length > 60000) E(413, 'Message trop long.'); e2e = 1;
+    text = JSON.stringify(envPick(env)); if (text.length > 60000) E(413, 'Message trop long.'); e2e = 1;
   }
   if (body.media) { const md = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.media), me.id); if (!md) E(400, 'Photo introuvable.'); media = md.id; }
   if (!text && !media) E(400, 'Message vide.');
@@ -1407,7 +1411,7 @@ R('GET', /^\/api\/statuses$/, async ({ me }) => {
 R('POST', /^\/api\/statuses$/, async ({ me, body }) => {
   if (tooMany('st:' + me.id, 30, DAY)) E(429, 'Trop de statuts aujourd’hui.');
   const aud = body.aud === 'private' ? 'private' : 'public'; let text = clean(body.text, 700), media = null, e2e = 0;
-  if (body.enc) { if (!envOk(body.enc) || JSON.stringify(body.enc).length > 60000) E(400, 'Statut chiffré invalide.'); text = JSON.stringify({ iv: body.enc.iv, ct: body.enc.ct, keys: body.enc.keys, from: body.enc.from }); e2e = 1; }
+  if (body.enc) { if (!envOk(body.enc) || JSON.stringify(body.enc).length > 60000) E(400, 'Statut chiffré invalide.'); text = JSON.stringify(envPick(body.enc)); e2e = 1; }
   if (body.media) { const md = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.media), me.id); if (!md) E(400, 'Photo introuvable.'); media = md.id; }
   let music = null; if (body.music && e2e) { const md = q1(`SELECT * FROM media WHERE id=? AND owner=? AND scope IS NULL`, String(body.music), me.id); if (!md) E(400, 'Musique introuvable.'); music = md.id; }
   if (!media && !text) E(400, 'Écrivez un texte ou ajoutez une photo.');
@@ -1651,7 +1655,7 @@ R('POST', /^\/api\/messages\/(\d+)\/edit$/, async ({ me, m, body }) => {
   const msg = q1(`SELECT * FROM messages WHERE id=?`, +m[1]); if (!msg || msg.sender !== me.id || !msg.e2e || msg.once || msg.deleted || msg.media || msg.kind !== 'text') E(404, 'Message introuvable.');
   if (now() - msg.created_at > 2 * 60_000) E(403, 'Un message ne peut plus être modifié 2 minutes après son envoi.');
   const env = body.enc; if (!env || typeof env.ct !== 'string' || typeof env.iv !== 'string' || typeof env.keys !== 'object') E(400, 'Message chiffré invalide.');
-  const text = JSON.stringify({ v: 1, iv: env.iv, ct: env.ct, keys: env.keys, from: env.from }); if (text.length > 60000) E(413, 'Message trop long.');
+  const text = JSON.stringify(envPick(env)); if (text.length > 60000) E(413, 'Message trop long.');
   run(`UPDATE messages SET text=?, edited=1 WHERE id=?`, text, msg.id);
   pushMany(memberIds(msg.chat_id), { t: 'msg', msg: msgOut(q1(`SELECT * FROM messages WHERE id=?`, msg.id)), update: true }); return { ok: true };
 });
@@ -1661,7 +1665,7 @@ R('POST', /^\/api\/messages\/(\d+)\/reseal$/, async ({ me, m, body }) => {
   chatTalk(me, msg.chat_id);
   if (now() - msg.created_at > 7 * DAY) E(400, 'Ce message est trop ancien pour être corrigé.');
   const env = body.enc; if (!env || typeof env.ct !== 'string' || typeof env.iv !== 'string' || typeof env.keys !== 'object') E(400, 'Message chiffré invalide.');
-  const text = JSON.stringify({ v: 1, iv: env.iv, ct: env.ct, keys: env.keys, from: env.from }); if (text.length > 60000) E(413, 'Message trop long.');
+  const text = JSON.stringify(envPick(env)); if (text.length > 60000) E(413, 'Message trop long.');
   run(`UPDATE messages SET text=? WHERE id=?`, text, msg.id);
   pushMany(memberIds(msg.chat_id), { t: 'msg', msg: msgOut(q1(`SELECT * FROM messages WHERE id=?`, msg.id)), update: true }); return { ok: true };
 });

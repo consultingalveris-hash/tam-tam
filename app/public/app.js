@@ -30,7 +30,7 @@ const hasStatus = uid => !!(S.statuses && S.statuses.others && S.statuses.others
 const stRing = (u, html) => u && hasStatus(u.id) ? `<span class="st-ring${S.statuses.others.find(g => g.user.id === u.id).allSeen ? ' seen' : ''}" role="button" tabindex="0" data-act="stOpenU" data-u="${u.id}" aria-label="Voir le statut de ${esc(u.name)}">${html}</span>` : html;
 const subH = u => u && u.name && !String(u.name).startsWith('@') ? '@' + u.handle : '';
 const uOf = id => S.users.get(id) || {id, name: 'Membre', handle: '', avatar: {d: 'm2', c: 'turq'}};
-function keepUsers(list) { for (const u of list || []) if (u) S.users.set(u.id, Object.assign(S.users.get(u.id) || {}, u)); }
+function keepUsers(list) { for (const u of list || []) if (u) { S.users.set(u.id, Object.assign(S.users.get(u.id) || {}, u)); KeyPin.check(u); } }
 
 const PC_IC = '<svg class="pc-ic" viewBox="0 0 24 24" width="13" height="13" aria-label="Envoyé depuis un ordinateur" role="img"><title>Envoyé depuis un ordinateur : les captures d’écran n’y sont pas signalées</title><rect x="3" y="4" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 /* ---------- appels au serveur ---------- */
@@ -179,6 +179,8 @@ async function start() {
   startApp();
 }
 async function startApp() {
+  await KeyPin.load(S.me.id).catch(() => {});
+  KeyPin.onChange = u => { toast(`Le code de sécurité de ${first(u.name || 'ce contact')} a changé`); if (S.chatId) renderMessages(true); };
   root.innerHTML = `<div class="app" data-view="list"><aside class="side" id="side"><div class="head" id="head"></div><div class="body" id="body"></div><nav class="tabs" id="tabs" aria-label="Rubriques"></nav><button class="fab" id="fab" type="button" data-act="fab" aria-label="Nouvelle discussion">${I.newchat}</button></aside><main class="main" id="main"></main></div>`;
   renderMain();
   // Ouverture instantanée : les discussions gardées sur l'appareil s'affichent tout de suite, le réseau complète ensuite.
@@ -607,6 +609,8 @@ function renderMessages(keep) {
   const list = S.msgs.get(c.id); if (!list) { box.innerHTML = '<p class="empty">Chargement…</p>'; return; }
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
   let h = S.more.get(c.id) ? '<button class="btn sm ghost more-old" type="button" data-act="older">Messages plus anciens</button>' : '';
+  const kOther = c.type !== 'group' && (c.members.find(x => x.id !== S.me.id) || {}).id;
+  if (kOther && KeyPin.changed.has(kOther)) h += `<div class="sys key-alert" role="alert">🔐 Le code de sécurité de ${esc(first(uOf(kOther).name))} a changé. C’est normal après un changement de téléphone ou une réinstallation de Tam-Tam ; sinon, comparez ensemble le code de sécurité affiché sur son profil. <button class="btn sm ghost" type="button" data-act="keyAck" data-id="${kOther}">J’ai compris</button></div>`;
   if (!list.length) h += `<div class="sys">Début de la discussion. Les messages sont visibles uniquement par ${c.type === 'group' ? 'les membres du groupe' : 'vous deux'}.</div>`;
   let pd = null, pf = null;
   for (const m of list) {
@@ -886,7 +890,7 @@ const Outbox = {
 };
 window.addEventListener('online', () => { if (S.offline) { S.offline = false; Promise.all([loadChats(), loadContacts(), loadStatuses()]).then(() => { renderAll(); if (S.chatId) loadMessages(S.chatId); }).catch(() => {}); } Outbox.flush(); });
 /* ---------- vitesse mesurée chez les utilisateurs (des durées seulement, rien d'autre) ---------- */
-const APP_V = '1.99';
+const APP_V = '2.00';
 const Perf = {
   q: [],
   add(k, ms) { if (!(ms >= 0) || ms > 120000) return; this.q.push([k, Math.round(ms)]); if (this.q.length >= 40) this.flush(); },
@@ -2042,7 +2046,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.99</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 2.00</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -2802,3 +2806,4 @@ document.addEventListener('contextmenu', e => { if (e.target.closest('.once-view
 ['copy', 'cut'].forEach(t => document.addEventListener(t, e => { const sel = document.getSelection(), n = sel && sel.anchorNode; const el = n && (n.nodeType === 1 ? n : n.parentElement); if ((el && el.closest('.nocopy,.once-view')) || (e.target.closest && e.target.closest('.nocopy,.once-view'))) { e.preventDefault(); toast('Copie désactivée pour les contenus privés.'); } }));
 document.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('.nocopy img,.once-view,.sv-box img,.ph3-img img,.pic-big')) e.preventDefault(); }, true);
 document.addEventListener('dragstart', e => { if (e.target.closest && e.target.closest('.nocopy,.once-view,.sv-box,.pic-big')) e.preventDefault(); }, true);
+Object.assign(ACT, { keyAck(d) { KeyPin.ack(+d.id); renderMessages(true); } });

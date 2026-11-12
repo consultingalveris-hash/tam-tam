@@ -1400,3 +1400,5 @@ body:has(#pop) .rrail,body:has(#layer .layer) .rrail{display:none}
 .relais-add .row{display:flex;gap:8px}.relais-add input{flex:1;min-width:0}
 /* message envoyé depuis un ordinateur */
 .pc-ic{vertical-align:-2px;margin-right:4px;opacity:.75}
+.key-alert{border:1px solid var(--line);background:var(--surface-2);text-align:left;line-height:1.45}
+.key-alert .btn{margin-top:6px}
