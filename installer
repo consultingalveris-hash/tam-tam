@@ -46,6 +46,38 @@ else
   echo "ATTENTION : relais d'appels non lancé (les appels marcheront sur la plupart des réseaux, pas tous)."; SECRET_TURN=""
 fi
 
+# Appels de groupe de plus de 4 personnes : serveur de répartition (LiveKit). Chacun envoie son image une seule fois ;
+# elle reste chiffrée de bout en bout (la clé de l'appel n'est remise qu'aux membres du groupe).
+LK_F=/root/.tam-tam-livekit
+[ -s "$LK_F" ] || { printf 'TT%s %s\n' "$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')" "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" > "$LK_F"; chmod 600 "$LK_F"; }
+LK_KEY=$(cut -d' ' -f1 "$LK_F"); LK_SECRET=$(cut -d' ' -f2 "$LK_F")
+mkdir -p /root/tam-tam-lk
+cat > /root/tam-tam-lk/livekit.yaml <<LKC
+port: 7880
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+  node_ip: ${IP_PUB:-127.0.0.1}
+keys:
+  $LK_KEY: $LK_SECRET
+room:
+  max_participants: 32
+  empty_timeout: 120
+logging:
+  level: warn
+LKC
+chmod 600 /root/tam-tam-lk/livekit.yaml
+docker rm -f tam-tam-lk >/dev/null 2>&1 || true
+if docker run -d --name tam-tam-lk --restart unless-stopped --network "$NET" --memory 384m \
+  -p 7881:7881 -p 7882:7882/udp -v /root/tam-tam-lk/livekit.yaml:/etc/livekit.yaml:ro \
+  livekit/livekit-server:v1.13.10 --config /etc/livekit.yaml >/dev/null; then
+  echo "Serveur des appels de groupe lancé."
+  if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then ufw allow 7881/tcp >/dev/null; ufw allow 7882/udp >/dev/null; fi
+else
+  echo "ATTENTION : serveur des appels de groupe non lancé (les appels de groupe resteront limités à 8 personnes)."; LK_KEY=""; LK_SECRET=""
+fi
+
 # Clé qui protège une seconde fois les sauvegardes de clés de chiffrement (gardée hors de la base de données).
 SECRET_BK_F=/root/.tam-tam-backup-key
 [ -s "$SECRET_BK_F" ] || { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$SECRET_BK_F"; chmod 600 "$SECRET_BK_F"; }
@@ -59,6 +91,7 @@ docker run -d --name "$APP" --restart unless-stopped --network "$NET" --memory 5
   -v "$VOLUME:/data" \
   -e BASE_URL="https://$DOMAINE" -e OWNER_EMAIL="$PROPRIETAIRE" \
   -e TURN_SECRET="$SECRET_TURN" -e TURN_HOST="$DOMAINE" -e BACKUP_KEY="$SECRET_BK" \
+  -e LK_URL="${LK_KEY:+wss://$DOMAINE/lk}" -e LK_KEY="$LK_KEY" -e LK_SECRET="$LK_SECRET" \
   "$APP:latest" >/dev/null
 sleep 3
 docker exec "$APP" node -e "fetch('http://localhost:3000/api/meta').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" \
@@ -72,6 +105,15 @@ if grep -q "^$DOMAINE" "$CF" && sed -n "/^$DOMAINE {/,/^}/p" "$CF" | grep -q "ma
   if docker exec "$C" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
     docker exec "$C" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; echo "Limite d'envoi relevée à 45 Mo (vidéos)."
   else cat "$SAUVE" > "$CF"; echo "ATTENTION : limite d'envoi inchangée."; fi
+fi
+
+# Appels de groupe : l'adresse /lk mène au serveur de répartition (bloc tam-tam déjà présent : on l'ajoute une fois).
+if [ -n "$LK_KEY" ] && grep -q "^$DOMAINE" "$CF" && ! sed -n "/^$DOMAINE {/,/^}/p" "$CF" | grep -q "tam-tam-lk"; then
+  SAUVE="$CF.avant-lk-$(date +%Y%m%d-%H%M%S)"; cp -p "$CF" "$SAUVE"
+  sed -i "/^$DOMAINE {/,/^}/ s#^\(\s*\)reverse_proxy $APP:3000 {#\1handle_path /lk/* {\n\1\treverse_proxy tam-tam-lk:7880\n\1}\n\1reverse_proxy $APP:3000 {#" "$CF"
+  if docker exec "$C" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+    docker exec "$C" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; echo "Appels de groupe reliés (adresse /lk)."
+  else cat "$SAUVE" > "$CF"; echo "ATTENTION : adresse des appels de groupe non ajoutée."; fi
 fi
 
 if ! grep -q "^$DOMAINE" "$CF"; then
@@ -88,6 +130,9 @@ $DOMAINE {
 	}
 	request_body {
 		max_size 45MB
+	}
+	handle_path /lk/* {
+		reverse_proxy tam-tam-lk:7880
 	}
 	reverse_proxy $APP:3000 {
 		flush_interval -1

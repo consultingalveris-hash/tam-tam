@@ -1,6 +1,7 @@
-/* tam-tam — appels de groupe (jusqu'à 8 personnes).
-   Chaque participant est relié directement à chacun des autres ; le serveur tient seulement la liste des présents
-   et transmet les informations de connexion. Le son et l'image ne passent pas par le serveur. */
+/* tam-tam — appels de groupe.
+   Jusqu'à 4 personnes : chacun est relié directement aux autres (le son et l'image ne passent pas par le serveur).
+   Au-delà (jusqu'à 32) : un serveur de répartition reçoit l'image de chacun une seule fois et la renvoie aux autres ;
+   elle reste chiffrée de bout en bout avec une clé propre à l'appel, remise aux seuls membres du groupe. */
 'use strict';
 function gcallBanner() {
   const list = [...(S.gcalls || new Map()).values()].filter(g => g.parts.length && !(GCall.c && GCall.c.id === g.callId));
@@ -10,7 +11,7 @@ function gcallBanner() {
 const GCall = {
   c: null, inc: null,
   sig(to, type, data) { const c = this.c; if (!c) return; api('/api/gcall/signal', {callId: c.id, to, type, data}).catch(() => {}); },
-  async loadActive() { try { const r = await api('/api/gcall/active'); S.gcalls = new Map(r.calls.map(g => [g.chatId, g])); if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); } catch {} },
+  async loadActive() { try { const r = await api('/api/gcall/active'); S.sfuOk = !!r.sfu; S.gcalls = new Map(r.calls.map(g => [g.chatId, g])); if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); } catch {} },
   active(chatId) { const g = S.gcalls && S.gcalls.get(chatId); return g && g.parts.length ? g : null; },
   busy() { return !!(this.c || Call.c); },
 
@@ -18,7 +19,10 @@ const GCall = {
     const chat = S.chats.get(S.chatId); if (!chat || chat.type !== 'group') return;
     if (this.busy()) return toast('Un appel est déjà en cours.');
     const ex = this.active(chat.id); if (ex) return this.join(ex.callId);
-    try { const r = await api('/api/gcall/start', {chatId: chat.id, video}); this.join(r.callId, video); } catch (e) { toast(e.message); }
+    let extra = {};
+    // Plus de 4 membres : appel par le serveur de répartition, avec une clé d'appel chiffrée pour chaque membre.
+    if (S.sfuOk && (chat.members || []).length > 4) { try { const raw = crypto.getRandomValues(new Uint8Array(32)); extra = {sfu: true, keyEnv: (await E2E.seal({k: btoa(String.fromCharCode(...raw))}, recipients(chat))).env}; } catch {} }
+    try { const r = await api('/api/gcall/start', {chatId: chat.id, video, ...extra}); this.join(r.callId, video); } catch (e) { toast(e.message); }
   },
   async join(callId, video) {
     if (this.busy() && !(this.inc && this.inc.callId === callId)) return toast('Un appel est déjà en cours.');
@@ -31,7 +35,35 @@ const GCall = {
     this.c = {id: callId, chatId: r.chatId, video, local, mic: true, cam: local.getVideoTracks().length > 0, peers: new Map(), since: Date.now(), lay, main: null, layMenu: false};
     this.c.tick = setInterval(() => this.clock(), 1000);
     this.render();
+    if (r.mode === 'sfu') return this.lk(r);
     for (const uid of r.parts) { const p = await this.peer(uid); await p.pc.setLocalDescription(await p.pc.createOffer()); this.sig(uid, 'offer', p.pc.localDescription); }
+  },
+  // Serveur de répartition (LiveKit) : chargé seulement quand il sert.
+  lkLib() { return window.LivekitClient ? Promise.resolve(window.LivekitClient) : (this.lkP = this.lkP || new Promise((ok, ko) => { const s = document.createElement('script'); s.src = '/lk/livekit-client.umd.js'; s.onload = () => ok(window.LivekitClient); s.onerror = () => { this.lkP = null; ko(new Error('Chargement impossible')); }; document.head.appendChild(s); })); },
+  async lk(r) {
+    const c = this.c; let L;
+    try { L = await this.lkLib(); } catch { toast('Impossible de rejoindre l’appel. Vérifiez votre connexion.'); return this.leave(); }
+    if (this.c !== c) return;
+    let opts = {adaptiveStream: true, dynacast: true};
+    try { const o = await E2E.open(r.keyEnv, S.me.id); if (o.err || !o.payload.k) throw 0;
+      if (L.isE2EESupported && L.isE2EESupported()) { const kp = new L.ExternalE2EEKeyProvider(); await kp.setKey(o.payload.k); opts.e2ee = {keyProvider: kp, worker: new Worker('/lk/e2ee.worker.mjs', {type: 'module'})}; }
+    } catch { toast('Vous n’avez pas la clé de cet appel (membre arrivé après son début).'); return this.leave(); }
+    const room = c.room = new L.Room(opts), E = L.RoomEvent;
+    const peerOf = part => { const uid = +part.identity; if (!uid || uid === S.me.id) return null; let p = c.peers.get(uid); if (!p) { p = {uid, stream: new MediaStream(), cam: undefined, mic: true, state: 'connected', lk: true}; c.peers.set(uid, p); } return p; };
+    room.on(E.ParticipantConnected, part => { peerOf(part); toast(`${first(uOf(+part.identity).name)} a rejoint l’appel`); this.render(); });
+    room.on(E.ParticipantDisconnected, part => { c.peers.delete(+part.identity); this.render(); });
+    room.on(E.TrackSubscribed, (track, pub, part) => { const p = peerOf(part); if (!p) return; p.stream.getTracks().filter(t => t.kind === track.kind).forEach(t => p.stream.removeTrack(t)); p.stream.addTrack(track.mediaStreamTrack); if (track.kind === 'video') p.cam = true; this.render(); });
+    room.on(E.TrackUnsubscribed, (track, pub, part) => { const p = c.peers.get(+part.identity); if (p) { p.stream.removeTrack(track.mediaStreamTrack); this.render(); } });
+    room.on(E.TrackMuted, (pub, part) => { const p = c.peers.get(+part.identity); if (!p) return; if (pub.kind === 'audio') p.mic = false; else p.cam = false; this.render(); });
+    room.on(E.TrackUnmuted, (pub, part) => { const p = c.peers.get(+part.identity); if (!p) return; if (pub.kind === 'audio') p.mic = true; else p.cam = true; this.render(); });
+    room.on(E.Disconnected, () => { if (this.c === c && !c.leaving) { toast('L’appel a été coupé.'); this.leave(); } });
+    try {
+      const t0 = performance.now(); await room.connect(r.sfu.url, r.sfu.token); Perf.add('call', performance.now() - t0);
+      if (opts.e2ee) await room.setE2EEEnabled(true);
+      for (const t of c.local.getTracks()) await room.localParticipant.publishTrack(t, t.kind === 'video' ? {source: L.Track.Source.Camera, simulcast: true, videoEncoding: {maxBitrate: 500_000, maxFramerate: 15}} : {source: L.Track.Source.Microphone, dtx: true, red: true});
+      c.pubs = room.localParticipant;
+      room.remoteParticipants.forEach(part => peerOf(part)); this.render();
+    } catch (e) { console.warn(e); toast('Impossible de rejoindre l’appel de groupe. Réessayez.'); this.leave(); }
   },
   async media(video) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Ce navigateur ne permet pas les appels. Essayez Chrome, Brave ou Safari à jour.');
@@ -58,7 +90,7 @@ const GCall = {
     };
     this.render(); return p;
   },
-  drop(uid) { const c = this.c, p = c && c.peers.get(uid); if (!p) return; try { p.pc.close(); } catch {} c.peers.delete(uid); this.render(); },
+  drop(uid) { const c = this.c, p = c && c.peers.get(uid); if (!p) return; if (p.lk) return; try { p.pc.close(); } catch {} c.peers.delete(uid); this.render(); },
   async flush(p) { while (p.q.length) { try { await p.pc.addIceCandidate(p.q.shift()); } catch {} } },
 
   async onEvent(ev) {
@@ -94,14 +126,16 @@ const GCall = {
   leave() {
     const c = this.c; if (!c) return;
     api('/api/gcall/leave', {callId: c.id}).catch(() => {});
-    clearInterval(c.tick); c.peers.forEach(p => { try { if (p.net) p.net(); p.pc.close(); } catch {} }); c.local.getTracks().forEach(t => t.stop());
+    c.leaving = true; if (c.room) { try { c.room.disconnect(); } catch {} }
+    clearInterval(c.tick); c.peers.forEach(p => { try { if (p.net) p.net(); if (p.pc) p.pc.close(); } catch {} }); c.local.getTracks().forEach(t => t.stop());
     this.c = null; this.render(); if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead();
   },
-  toggleMic() { const c = this.c; if (!c) return; c.mic = !c.mic; c.local.getAudioTracks().forEach(t => { t.enabled = c.mic; }); c.peers.forEach((p, uid) => this.sig(uid, 'media', {cam: c.cam, mic: c.mic})); this.render(); },
+  lkMute(kind, on) { const c = this.c; if (!c || !c.room) return; c.room.localParticipant.trackPublications.forEach(pub => { if (pub.kind === kind && pub.track) (on ? pub.unmute() : pub.mute()).catch(() => {}); }); },
+  toggleMic() { const c = this.c; if (!c) return; c.mic = !c.mic; c.local.getAudioTracks().forEach(t => { t.enabled = c.mic; }); this.lkMute('audio', c.mic); c.peers.forEach((p, uid) => this.sig(uid, 'media', {cam: c.cam, mic: c.mic})); this.render(); },
   toggleCam() {
     const c = this.c; if (!c) return; const v = c.local.getVideoTracks()[0];
     if (!v) return toast('Pour la vidéo, quittez et rejoignez l’appel en vidéo.');
-    c.cam = !c.cam; v.enabled = c.cam; c.peers.forEach((p, uid) => this.sig(uid, 'media', {cam: c.cam, mic: c.mic})); this.render();
+    c.cam = !c.cam; v.enabled = c.cam; this.lkMute('video', c.cam); c.peers.forEach((p, uid) => this.sig(uid, 'media', {cam: c.cam, mic: c.mic})); this.render();
   },
 
   /* ---------- affichage ---------- */
@@ -147,9 +181,9 @@ const GCall = {
     // Les membres qui n'ont pas encore décroché ont déjà leur case (photo de profil) ; ils prennent leur place à leur arrivée.
     const W = uid => `<div class="gt wait" data-uid="${uid}"><div class="gt-av">${avatar(uOf(uid), 'xl')}</div><span class="gt-name">${esc(first(uOf(uid).name))} · appel…</span></div>`;
     const T = uid => uid === S.me.id ? this.tile(S.me.id, c.local, c.cam, c.mic, true) : c.peers.has(uid) ? (p => this.tile(p.uid, p.stream, p.cam, p.mic, false, p.state))(c.peers.get(uid)) : W(uid);
-    const all = ids.concat(waiting.slice(0, 7)), lay = all.length > 1 ? c.lay : 'grid', tot = all.length;
+    const all = ids.concat(waiting.slice(0, Math.max(0, (c.room ? 32 : 8) - ids.length))), lay = all.length > 1 ? c.lay : 'grid', tot = all.length;
     const stage = lay === 'grid'
-      ? `<div class="g-grid n${Math.min(tot, 8)}">${all.map(T).join('')}</div>`
+      ? `<div class="g-grid n${tot > 8 ? 'x' : tot}">${all.map(T).join('')}</div>`
       : `<div class="g-stage l-${lay}"><div class="g-main">${T(c.main)}</div><div class="g-secs">${all.filter(id => id !== c.main).map(T).join('')}</div></div>`;
     const LAYS = [['grid', 'Équilibré', 'Toutes les caméras de la même taille'], ['side', 'Principale à gauche', 'Une grande caméra, les autres à droite'], ['top', 'Principale en haut', 'Une grande caméra, les autres en dessous']];
     root.className = 'call gcall';

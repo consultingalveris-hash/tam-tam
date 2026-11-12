@@ -256,7 +256,7 @@ backup(); setInterval(backup, 3600_000);
 
 /* ---------- HTTP ---------- */
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.mp3': 'audio/mpeg', '.jpg': 'image/jpeg' };
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.mp3': 'audio/mpeg', '.jpg': 'image/jpeg', '.mjs': 'text/javascript; charset=utf-8' };
 function send(res, code, body, headers = {}) {
   const isObj = typeof body === 'object' && !Buffer.isBuffer(body);
   res.writeHead(code, { 'Content-Type': isObj ? 'application/json; charset=utf-8' : 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
@@ -694,9 +694,18 @@ R('POST', /^\/api\/push\/unsub$/, async ({ me, body }) => { run(`DELETE FROM pus
 R('POST', /^\/api\/push\/test$/, async ({ me }) => { webPush(me.id, { title: 'tam-tam', body: 'Les notifications fonctionnent sur cet appareil 🥁', tag: 'test', url: '/' }, true); return { ok: true }; });
 
 /* ---------- appels de groupe (jusqu'à 8) : le serveur tient la liste des participants ---------- */
-const GMAX = 8, gcalls = new Map(); // callId -> {chatId, video, parts:Set, started}
+const GMAX = 8, GMAX_SFU = 32, gcalls = new Map(); // callId -> {chatId, video, parts:Set, started, mode, keyEnv}
+// Appels de groupe de plus de 4 personnes : un serveur de répartition (LiveKit) reçoit l'image de chacun une seule fois
+// et la renvoie aux autres. Le son et l'image restent chiffrés de bout en bout (clé de l'appel remise aux seuls membres).
+const LK_URL = process.env.LK_URL || '', LK_KEY = process.env.LK_KEY || '', LK_SECRET = process.env.LK_SECRET || '';
+const sfuOn = () => !!(LK_URL && LK_KEY && LK_SECRET);
+function lkToken(uid, name, room) {
+  const b = o => Buffer.from(JSON.stringify(o)).toString('base64url'), t = Math.floor(Date.now() / 1000);
+  const h = b({ alg: 'HS256', typ: 'JWT' }), p = b({ iss: LK_KEY, sub: String(uid), name: String(name || '').slice(0, 60), nbf: t - 10, exp: t + 6 * 3600, video: { roomJoin: true, room, canPublish: true, canSubscribe: true, canPublishData: false } });
+  return h + '.' + p + '.' + crypto.createHmac('sha256', LK_SECRET).update(h + '.' + p).digest('base64url');
+}
 const gcallOf = chatId => [...gcalls.entries()].find(([, g]) => g.chatId === chatId);
-function gstate(g, id) { pushMany(memberIds(g.chatId), { t: 'gcall', type: 'state', callId: id, chatId: g.chatId, video: g.video, parts: [...g.parts] }); }
+function gstate(g, id) { pushMany(memberIds(g.chatId), { t: 'gcall', type: 'state', callId: id, chatId: g.chatId, video: g.video, parts: [...g.parts], mode: g.mode }); }
 function gleave(uid, id) {
   const g = gcalls.get(id); if (!g || !g.parts.has(uid)) return;
   g.parts.delete(uid);
@@ -712,7 +721,9 @@ R('POST', /^\/api\/gcall\/start$/, async ({ me, body }) => {
   const ex = gcallOf(c.id); if (ex) return { callId: ex[0], existing: true };
   if (tooMany('gcall:' + me.id, 10, 10 * 60_000)) E(429, 'Trop d’appels. Patientez quelques minutes.');
   const id = crypto.randomBytes(9).toString('base64url'), video = !!body.video;
-  gcalls.set(id, { chatId: c.id, video, parts: new Set(), started: now() });
+  const env = body.keyEnv && typeof body.keyEnv === 'object' && typeof body.keyEnv.ct === 'string' && JSON.stringify(body.keyEnv).length < 60_000 ? body.keyEnv : null;
+  const mode = body.sfu && sfuOn() && env ? 'sfu' : 'mesh';
+  gcalls.set(id, { chatId: c.id, video, parts: new Set(), started: now(), mode, keyEnv: mode === 'sfu' ? env : null });
   run(`INSERT INTO calls(call_id,kind,chat_id,caller,callee,video,status,started) VALUES(?,?,?,?,NULL,?,?,?)`, id, 'group', c.id, me.id, video ? 1 : 0, 'answered', now());
   const fn = '@' + me.handle;
   sysMsg(c.id, `${fn} a lancé un appel ${video ? 'vidéo' : 'vocal'} de groupe`);
@@ -720,18 +731,19 @@ R('POST', /^\/api\/gcall\/start$/, async ({ me, body }) => {
     push(uid, { t: 'gcall', type: 'ring', callId: id, chatId: c.id, from: me.id, video });
     webPush(uid, { title: c.name || 'Groupe', body: `${fn} lance un appel ${video ? 'vidéo' : 'vocal'} de groupe`, tag: 'gcall-' + c.id, url: '/?chat=' + c.id });
   }
-  return { callId: id };
+  return { callId: id, mode };
 });
 R('POST', /^\/api\/gcall\/join$/, async ({ me, body }) => {
   const id = String(body.callId || ''), g = gcalls.get(id); if (!g) E(404, 'Cet appel est terminé.');
   chatFor(me, g.chatId);
-  if (!g.parts.has(me.id) && g.parts.size >= GMAX) E(409, `L’appel est complet (${GMAX} personnes au maximum).`);
+  const cap = g.mode === 'sfu' ? GMAX_SFU : GMAX;
+  if (!g.parts.has(me.id) && g.parts.size >= cap) E(409, `L’appel est complet (${cap} personnes au maximum).`);
   const others = [...g.parts].filter(x => x !== me.id);
   g.parts.add(me.id);
   const row = q1(`SELECT joined FROM calls WHERE call_id=?`, id); if (row) { const j = new Set(J(row.joined, [])); j.add(me.id); run(`UPDATE calls SET joined=? WHERE call_id=?`, JSON.stringify([...j]), id); }
   for (const p of others) push(p, { t: 'gcall', type: 'joined', callId: id, user: me.id });
   gstate(g, id);
-  return { parts: others, video: g.video, chatId: g.chatId };
+  return { parts: others, video: g.video, chatId: g.chatId, mode: g.mode, ...(g.mode === 'sfu' ? { sfu: { url: LK_URL, token: lkToken(me.id, me.handle, 'tt-' + id) }, keyEnv: g.keyEnv } : {}) };
 });
 R('POST', /^\/api\/gcall\/signal$/, async ({ me, body }) => {
   const id = String(body.callId || ''), g = gcalls.get(id), to = +body.to, type = String(body.type || '');
@@ -743,7 +755,7 @@ R('POST', /^\/api\/gcall\/signal$/, async ({ me, body }) => {
 R('POST', /^\/api\/gcall\/leave$/, async ({ me, body }) => { gleave(me.id, String(body.callId || '')); return { ok: true }; });
 R('GET', /^\/api\/gcall\/active$/, async ({ me }) => {
   const mine = new Set(qa(`SELECT chat_id FROM members WHERE user_id=?`, me.id).map(r => r.chat_id));
-  return { calls: [...gcalls.entries()].filter(([, g]) => mine.has(g.chatId)).map(([id, g]) => ({ callId: id, chatId: g.chatId, video: g.video, parts: [...g.parts] })) };
+  return { sfu: sfuOn(), calls: [...gcalls.entries()].filter(([, g]) => mine.has(g.chatId)).map(([id, g]) => ({ callId: id, chatId: g.chatId, video: g.video, parts: [...g.parts], mode: g.mode })) };
 });
 
 /* ---------- onglet « Appels » : historique et numéros ---------- */
@@ -1619,7 +1631,7 @@ R('GET', /^\/api\/stream$/, async ({ me, req, res }) => {
 
 /* ---------- serveur ---------- */
 const SEC = { ...(secure ? { 'Strict-Transport-Security': 'max-age=31536000' } : {}), 'Permissions-Policy': 'geolocation=(self), payment=()', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'X-Frame-Options': 'DENY',
-  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self' blob:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" };
+  'Content-Security-Policy': `default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self' blob:${LK_URL && !LK_URL.includes(new URL(BASE_URL).host) ? ' ' + new URL(LK_URL).origin : ''}; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'` };
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, BASE_URL), p = url.pathname;
   try {
