@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Met à jour le SITE D'ESSAI (https://essai-tam-tam.alveris-consulting.com) avec la version en préparation.
+# Usage, depuis ~/tam-tam :  bash essai
+# Le vrai site n'est pas touché. Quand la version est validée sur le site d'essai :  git pull && bash installer
+set -euo pipefail
+cd "$(dirname "$0")"
+git fetch -q origin
+[ -d ../tam-tam-essai ] || git worktree add -q --detach ../tam-tam-essai origin/essai
+cd ../tam-tam-essai && git checkout -q --detach origin/essai && bash installer

@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import net from 'node:net';
+import zlib from 'node:zlib';
 import { DatabaseSync } from 'node:sqlite';
 import nodemailer from 'nodemailer';
 import webpush from 'web-push';
@@ -259,6 +260,23 @@ function backup() {
   for (const x of fs.readdirSync(path.join(DATA_DIR, 'backups')).sort().slice(0, -14)) fs.rmSync(path.join(DATA_DIR, 'backups', x));
 }
 backup(); setInterval(backup, 3600_000);
+// Copie de sauvegarde à emporter hors du serveur (chaque nuit, sur l'ordinateur de l'Éditeur) :
+// la base est compressée puis chiffrée avec une clé publique ; seule la clé privée, gardée sur cet ordinateur, peut l'ouvrir.
+// Le fichier est donc illisible pour quiconque le téléchargerait. Une seule copie fraîche toutes les 30 minutes au plus.
+const BK_PUB = (() => { try { return crypto.createPublicKey(fs.readFileSync(path.join(ROOT, 'backup-pub.pem'))); } catch { return null; } })();
+let bkCache = null;
+function exportBackup() {
+  if (bkCache && Date.now() - bkCache.at < 30 * 60_000) return bkCache.buf;
+  const tmp = path.join(DATA_DIR, 'backups', `export-${process.pid}.tmp`); try { fs.rmSync(tmp); } catch {}
+  db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
+  const plain = zlib.gzipSync(fs.readFileSync(tmp)); fs.rmSync(tmp);
+  const key = crypto.randomBytes(32), iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const body = Buffer.concat([c.update(plain), c.final()]), tag = c.getAuthTag();
+  const wrapped = crypto.publicEncrypt({ key: BK_PUB, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, Buffer.concat([key, iv]));
+  const len = Buffer.alloc(4); len.writeUInt32BE(wrapped.length);
+  const buf = Buffer.concat([Buffer.from('TTBK1\n'), len, wrapped, tag, body]);
+  bkCache = { at: Date.now(), buf }; return buf;
+}
 
 /* ---------- HTTP ---------- */
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json',
@@ -371,6 +389,13 @@ R('GET', /^\/api\/meta$/, async ({ req, url }) => {
     invite: inv ? { by: (u => u ? (inv.qr || !u.name ? '@' + u.handle : u.name) : '')(getUser(inv.by_user)) } : null };
 }, false);
 
+R('GET', /^\/api\/backup\/export$/, async ({ req, res }) => {
+  if (!BK_PUB) E(404, 'Adresse inconnue.');
+  if (tooMany('bk:' + ipOf(req), 6, 60 * 60_000)) E(429, 'Trop de demandes.');
+  const buf = exportBackup();
+  res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf.length, 'Cache-Control': 'no-store', 'Content-Disposition': `attachment; filename="tamtam-${new Date().toISOString().slice(0, 10)}.ttbk"` });
+  res.end(buf); return null;
+}, false);
 // Adresses de secours : la liste est publique (elle sert quand l'adresse principale ne répond plus).
 R('GET', /^\/api\/alt$/, async () => ({ primary: BASE_URL, alt: ALT_ORIGINS }), false);
 R('GET', /^\/api\/ping$/, async ({ res }) => { res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Cache-Control', 'no-store'); return { ok: true }; }, false);
@@ -1516,9 +1541,13 @@ R('GET', /^\/api\/oauth\/google\/pending$/, async ({ url }) => {
 function adminOnly(me) { if (!me.admin) E(403, 'Réservé au propriétaire.'); }
 /* ---------- traduction (Google Cloud Translation, plafonnée à la partie gratuite) ---------- */
 const TR_URL = process.env.TR_URL || 'https://translation.googleapis.com/language/translate/v2';
-const TR_CAP = 480_000; // caractères par mois : Google en offre 500 000
+const TR_CAP = 450_000; // caractères Google par mois : Google en offre 500 000, on s'arrête avant pour ne jamais être prélevé
 const TR_LANGS = ['fr', 'en', 'wo', 'ff', 'bm', 'ln', 'sw', 'ha', 'yo', 'ig', 'ee', 'ak', 'rw', 'sg', 'ar', 'pt', 'es', 'de', 'it', 'zh', 'ru', 'tr', 'nl', 'hi', 'am', 'so', 'zu', 'xh', 'mg', 'rn', 'kg', 'ts', 'tn', 'st', 'sn', 'ny', 'om', 'ti', 'lg', 'ki'];
-const trConf = () => { const r = q1(`SELECT v FROM settings WHERE k='translate'`); const c = r ? J(r.v, {}) : {}; return { key: c.key || '', provider: c.provider === 'claude' ? 'claude' : 'google', budget: +c.budget > 0 ? +c.budget : 1.65 }; };
+// Deux moteurs possibles : Google d'abord (gratuit jusqu'au plafond), puis Claude (budget mensuel) en relais
+// et pour les langues que Google ne connaît pas. Ancien réglage à une seule clé repris tel quel.
+const trConf = () => { const r = q1(`SELECT v FROM settings WHERE k='translate'`); const c = r ? J(r.v, {}) : {};
+  const gkey = c.gkey || (c.key && c.provider !== 'claude' ? c.key : ''), ckey = c.ckey || (c.key && c.provider === 'claude' ? c.key : '');
+  return { gkey, ckey, key: gkey || ckey, budget: +c.budget > 0 ? +c.budget : 1.65 }; };
 // Dépense réelle de Claude ce mois-ci, calculée à partir des jetons facturés (en millionièmes de dollar).
 const PRICE_IN = +process.env.CLAUDE_PRICE_IN || 0.10, PRICE_OUT = +process.env.CLAUDE_PRICE_OUT || 0.50; // $ par million de jetons
 const usdKey = () => 'trusd:' + new Date().toISOString().slice(0, 7);
@@ -1526,9 +1555,10 @@ const usdSpent = () => +(q1(`SELECT v FROM settings WHERE k=?`, usdKey())?.v || 
 const usdAdd = u => { const inT = +(u && u.input_tokens) || 0, outT = +(u && u.output_tokens) || 0; const micro = Math.ceil(inT * PRICE_IN + outT * PRICE_OUT);
   run(`INSERT OR REPLACE INTO settings(k,v) VALUES(?,?)`, usdKey(), String(Math.round(usdSpent() * 1e6) + micro)); };
 const trKey = () => trConf().key;
+const trSave = c => run(`INSERT OR REPLACE INTO settings(k,v) VALUES('translate',?)`, JSON.stringify({ gkey: c.gkey || '', ckey: c.ckey || '', budget: c.budget }));
 // Langues que seul Claude sait traduire (qualité variable, marquées « essai » dans l'application).
 const TR_LANGS_CLAUDE = ['bas', 'dua', 'ewo', 'srr', 'mnk', 'snk', 'dyo', 'fan', 'bum', 'mos', 'fon', 'dyu', 'kab', 'tzm', 'ber', 'kri'];
-const trLangs = c => c.provider === 'claude' ? TR_LANGS.concat(TR_LANGS_CLAUDE) : TR_LANGS;
+const trLangs = c => c.ckey || c.provider === 'claude' ? TR_LANGS.concat(TR_LANGS_CLAUDE) : TR_LANGS;
 const CLAUDE_URL = process.env.CLAUDE_URL || 'https://api.anthropic.com/v1/messages';
 const LANG_EN = { bas: 'Basaa (Bassa, Cameroon)', dua: 'Duala (Cameroon)', ewo: 'Ewondo (Cameroon)', srr: 'Serer (Senegal)', mnk: 'Mandinka', snk: 'Soninke', dyo: 'Jola-Fonyi (Diola)', fan: 'Fang', bum: 'Bulu (Cameroon)', mos: 'Mooré (Burkina Faso)', fon: 'Fon (Benin)', dyu: 'Dioula (Jula)', kab: 'Kabyle', tzm: 'Central Atlas Tamazight', ber: 'Berber', kri: 'Krio (Sierra Leone)', fr: 'French', en: 'English', wo: 'Wolof', ff: 'Fula (Pulaar)', bm: 'Bambara', ln: 'Lingala', sw: 'Swahili', ha: 'Hausa', yo: 'Yoruba', ig: 'Igbo', ee: 'Ewe', ak: 'Twi', rw: 'Kinyarwanda', sg: 'Sango', ar: 'Arabic', pt: 'Portuguese', es: 'Spanish', de: 'German', it: 'Italian', zh: 'Chinese', ru: 'Russian', tr: 'Turkish', nl: 'Dutch', hi: 'Hindi', am: 'Amharic', so: 'Somali', zu: 'Zulu', xh: 'Xhosa', mg: 'Malagasy', rn: 'Kirundi', kg: 'Kikongo', ts: 'Tsonga', tn: 'Tswana', st: 'Sotho', sn: 'Shona', ny: 'Chichewa', om: 'Oromo', ti: 'Tigrinya', lg: 'Luganda', ki: 'Kikuyu' };
 // Traduit avec le moteur choisi ; renvoie { text, from }.
@@ -1549,18 +1579,26 @@ async function trCall(c, text, to, ctx) {
 }
 const trMonth = () => 'tr:' + new Date().toISOString().slice(0, 7);
 const trUsed = () => +(q1(`SELECT v FROM settings WHERE k=?`, trMonth())?.v || 0);
-R('GET', /^\/api\/translate\/status$/, async () => { const c = trConf(); return { on: !!c.key, left: c.provider === 'claude' ? (usdSpent() < c.budget ? 1 : 0) : Math.max(0, TR_CAP - trUsed()), langs: trLangs(c) }; });
+R('GET', /^\/api\/translate\/status$/, async () => { const c = trConf(); return { on: !!c.key, left: (c.gkey ? Math.max(0, TR_CAP - trUsed()) : 0) + (c.ckey && usdSpent() < c.budget ? 1 : 0), langs: trLangs(c) }; });
 R('POST', /^\/api\/translate$/, async ({ me, body }) => {
   const key = trKey(); if (!key) E(503, 'La traduction n’est pas encore activée sur Tam-Tam.');
   const text = String(body.text || '').slice(0, 2000).trim(), to = String(body.to || 'fr');
   if (!text) E(400, 'Rien à traduire.'); if (!trLangs(trConf()).includes(to)) E(400, 'Langue non prise en charge.');
   if (tooMany('tr:' + me.id, 120, 60 * 60_000)) E(429, 'Trop de traductions d’un coup. Réessayez dans un moment.');
-  const conf = trConf(), used = trUsed();
-  if (conf.provider === 'claude' ? usdSpent() >= conf.budget : used + text.length > TR_CAP) E(429, 'Traduction indisponible jusqu’au 1er du mois : la réserve de ce mois est épuisée.');
-  run(`INSERT OR REPLACE INTO settings(k,v) VALUES(?,?)`, trMonth(), String(used + text.length));
-  const ctx = (Array.isArray(body.ctx) ? body.ctx : []).slice(-4).map(x => String(x || '').slice(0, 300)).filter(Boolean);
-  let t; try { t = await trCall(conf, text, to, ctx); } catch (e) { trLastErr = new Date().toISOString() + ' ' + e.message; E(502, 'Le service de traduction ne répond pas. Réessayez.'); }
-  if (t.err || !t.text) { trLastErr = new Date().toISOString() + ' ' + t.err; console.error('traduction', t.err); E(502, 'La traduction a échoué. Réessayez plus tard.'); }
+  const conf = trConf(), ctx = (Array.isArray(body.ctx) ? body.ctx : []).slice(-4).map(x => String(x || '').slice(0, 300)).filter(Boolean);
+  // Google d'abord, tant que le plafond gratuit du mois n'est pas atteint ; sinon (ou en cas d'échec) Claude, dans son budget.
+  const engines = [];
+  if (conf.gkey && TR_LANGS.includes(to) && trUsed() + text.length <= TR_CAP) engines.push('google');
+  if (conf.ckey && usdSpent() < conf.budget) engines.push('claude');
+  if (!engines.length) E(429, 'Traduction indisponible jusqu’au 1er du mois : la réserve de ce mois est épuisée.');
+  let t = null, last = '';
+  for (const eng of engines) {
+    if (eng === 'google') run(`INSERT OR REPLACE INTO settings(k,v) VALUES(?,?)`, trMonth(), String(trUsed() + text.length));
+    try { t = await trCall({ provider: eng, key: eng === 'google' ? conf.gkey : conf.ckey }, text, to, ctx); } catch (e) { t = { err: e.message }; }
+    if (t && !t.err && t.text) break;
+    last = (eng === 'google' ? 'Google : ' : 'Claude : ') + (t && t.err); trLastErr = new Date().toISOString() + ' ' + last; console.error('traduction', last); t = null;
+  }
+  if (!t) E(502, 'La traduction a échoué. Réessayez plus tard.');
   return t;
 });
 // Traductions partagées : chiffrées par l'appareil avec une clé tirée du texte lui-même.
@@ -1646,18 +1684,21 @@ R('GET', /^\/api\/admin\/perf$/, async ({ me }) => {
     return { k, n: a.length, med, p90: a.length ? q(a, .9) : null, prev: pmed, slower: med != null && pmed != null && b.length >= 10 && a.length >= 10 && med > pmed * 1.2 }; });
   return { version: cur || null, previous: prev || null, metrics: out };
 });
-R('GET', /^\/api\/admin\/translate$/, async ({ me }) => { adminOnly(me); const c = trConf(); return { has: !!c.key, provider: c.key ? c.provider : null, used: trUsed(), cap: TR_CAP, spent: usdSpent(), budget: c.budget, lastErr: trLastErr, promoted: q1(`SELECT COUNT(*) n FROM tr_cache WHERE promoted=1`).n, corpus: Object.fromEntries(qa(`SELECT kind, COUNT(*) n FROM corpus GROUP BY kind`).map(r => [r.kind, r.n])) }; });
+R('GET', /^\/api\/admin\/translate$/, async ({ me }) => { adminOnly(me); const c = trConf(); return { has: !!c.key, g: !!c.gkey, c: !!c.ckey, used: trUsed(), cap: TR_CAP, spent: usdSpent(), budget: c.budget, lastErr: trLastErr, promoted: q1(`SELECT COUNT(*) n FROM tr_cache WHERE promoted=1`).n, corpus: Object.fromEntries(qa(`SELECT kind, COUNT(*) n FROM corpus GROUP BY kind`).map(r => [r.kind, r.n])) }; });
 R('POST', /^\/api\/admin\/translate$/, async ({ me, body }) => {
   adminOnly(me);
-  if (body.off) { run(`DELETE FROM settings WHERE k='translate'`); return { ok: true }; }
-  const old = trConf(), budget = Math.min(100, Math.max(0.1, +body.budget || old.budget));
-  if (!body.key && old.key) { run(`INSERT OR REPLACE INTO settings(k,v) VALUES('translate',?)`, JSON.stringify({ provider: old.provider, key: old.key, budget })); return { ok: true }; }
-  const provider = body.provider === 'claude' ? 'claude' : 'google', key = clean(body.key, 300);
-  if (provider === 'claude' ? !/^sk-ant-[A-Za-z0-9_-]{20,}$/.test(key) : !/^[A-Za-z0-9_-]{30,}$/.test(key))
-    E(400, provider === 'claude' ? 'Cette clé ne ressemble pas à une clé Anthropic (elle commence par « sk-ant- »).' : 'Cette clé ne ressemble pas à une clé Google (elle commence souvent par « AIza »).');
-  let t; try { t = await trCall({ provider, key }, 'Bonjour', 'en'); } catch { t = { err: 'pas de réponse' }; }
-  if (t.err) E(400, (provider === 'claude' ? 'Anthropic' : 'Google') + ' refuse cette clé : ' + String(t.err).slice(0, 200));
-  run(`INSERT OR REPLACE INTO settings(k,v) VALUES('translate',?)`, JSON.stringify({ provider, key, budget })); run(`INSERT OR REPLACE INTO settings(k,v) VALUES(?,?)`, trMonth(), String(trUsed() + 7));
+  if (body.key) { if (body.provider === 'claude') body.ckey = body.key; else body.gkey = body.key; } // ancienne forme
+  const c = trConf(); c.budget = Math.min(100, Math.max(0.1, +body.budget || c.budget));
+  if (body.off === 'google') c.gkey = ''; else if (body.off === 'claude') c.ckey = ''; else if (body.off) { c.gkey = ''; c.ckey = ''; }
+  for (const [eng, k] of [['google', clean(body.gkey, 300)], ['claude', clean(body.ckey, 300)]]) {
+    if (!k) continue;
+    if (eng === 'claude' ? !/^sk-ant-[A-Za-z0-9_-]{20,}$/.test(k) : !/^[A-Za-z0-9_-]{30,}$/.test(k))
+      E(400, eng === 'claude' ? 'Cette clé ne ressemble pas à une clé Anthropic (elle commence par « sk-ant- »).' : 'Cette clé ne ressemble pas à une clé Google (elle commence souvent par « AIza »).');
+    let t; try { t = await trCall({ provider: eng, key: k }, 'Bonjour', 'en'); } catch { t = { err: 'pas de réponse' }; }
+    if (t.err) E(400, (eng === 'claude' ? 'Anthropic' : 'Google') + ' refuse cette clé : ' + String(t.err).slice(0, 200));
+    if (eng === 'google') { c.gkey = k; run(`INSERT OR REPLACE INTO settings(k,v) VALUES(?,?)`, trMonth(), String(trUsed() + 7)); } else c.ckey = k;
+  }
+  if (!c.gkey && !c.ckey) run(`DELETE FROM settings WHERE k='translate'`); else trSave(c);
   return { ok: true };
 });
 R('GET', /^\/api\/admin\/google$/, async ({ me }) => { adminOnly(me); const r = q1(`SELECT v FROM settings WHERE k='google'`), g = r ? J(r.v, {}) : {}; return { id: g.id || '', hasSecret: !!g.secret, redirect: G_REDIRECT(), origin: BASE_URL }; });

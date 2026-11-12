@@ -69,6 +69,8 @@ const E2E = {
     const e = await this.encBytes(k, bytes); return {raw, iv: e.iv, blob: new Blob([e.data], {type: 'application/octet-stream'})};
   },
   async seal(payload, recipients, bytes, bytes2, pre) {
+    // Envoyé depuis un ordinateur (souris, pas d'écran tactile, hors application Android) : le destinataire en est informé.
+    if (payload && typeof payload === 'object' && !window.TamTamAndroid && window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches) payload.pc = 1;
     const raw = pre ? pre.raw : crypto.getRandomValues(new Uint8Array(32)), k = await subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
     let blob = null, blob2 = null; if (pre) payload.miv = pre.iv; else if (bytes) { const e = await this.encBytes(k, bytes); payload.miv = e.iv; blob = new Blob([e.data], {type: 'application/octet-stream'}); }
     if (bytes2) { const e = await this.encBytes(k, bytes2); payload.mmiv = e.iv; blob2 = new Blob([e.data], {type: 'application/octet-stream'}); }

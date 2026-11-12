@@ -4,11 +4,18 @@
 # reçoit un bloc pour tam-tam.alveris-consulting.com.
 # Usage : cd ~/tam-tam && git pull && bash installer
 set -euo pipefail
+DOSSIER="$(cd "$(dirname "$0")" && pwd)"
 DOMAINE=tam-tam.alveris-consulting.com
 APP=tam-tam-app
 VOLUME=tam-tam-data
 PROPRIETAIRE="${PROPRIETAIRE:-ngossodesire@gmail.com}"
-DOSSIER="$(cd "$(dirname "$0")" && pwd)"
+# Site d'essai : même installateur, lancé depuis le dossier tam-tam-essai (commande : bash essai).
+# Copie séparée (ses propres comptes et messages), sur sa propre adresse ; les relais d'appels sont partagés.
+ESSAI=""
+if [ "$(basename "$DOSSIER")" = "tam-tam-essai" ]; then
+  ESSAI=1; DOMAINE=essai-tam-tam.alveris-consulting.com; APP=tam-tam-essai; VOLUME=tam-tam-essai-data
+  echo "=== SITE D'ESSAI : https://$DOMAINE ==="
+fi
 
 C=$(docker ps --format '{{.Names}}' | grep -E 'caddy' | head -n1 || true)
 [ -n "$C" ] || { echo "ERREUR : conteneur Caddy du CRM introuvable."; exit 1; }
@@ -35,6 +42,7 @@ SECRET_TURN_F=/root/.tam-tam-turn
 [ -s "$SECRET_TURN_F" ] || { head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$SECRET_TURN_F"; chmod 600 "$SECRET_TURN_F"; }
 SECRET_TURN=$(cat "$SECRET_TURN_F")
 IP_PUB=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -n1)
+if [ -z "$ESSAI" ]; then
 docker rm -f tam-tam-turn >/dev/null 2>&1 || true
 if docker run -d --name tam-tam-turn --restart unless-stopped --network host --memory 256m coturn/coturn:4.6 -n \
   --listening-port=3478 --fingerprint --use-auth-secret --static-auth-secret="$SECRET_TURN" --realm="$DOMAINE" \
@@ -47,12 +55,14 @@ if docker run -d --name tam-tam-turn --restart unless-stopped --network host --m
 else
   echo "ATTENTION : relais d'appels non lancé (les appels marcheront sur la plupart des réseaux, pas tous)."; SECRET_TURN=""
 fi
+fi
 
 # Appels de groupe de plus de 4 personnes : serveur de répartition (LiveKit). Chacun envoie son image une seule fois ;
 # elle reste chiffrée de bout en bout (la clé de l'appel n'est remise qu'aux membres du groupe).
 LK_F=/root/.tam-tam-livekit
 [ -s "$LK_F" ] || { printf 'TT%s %s\n' "$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')" "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" > "$LK_F"; chmod 600 "$LK_F"; }
 LK_KEY=$(cut -d' ' -f1 "$LK_F"); LK_SECRET=$(cut -d' ' -f2 "$LK_F")
+if [ -z "$ESSAI" ]; then
 mkdir -p /root/tam-tam-lk
 cat > /root/tam-tam-lk/livekit.yaml <<LKC
 port: 7880
@@ -79,6 +89,7 @@ if docker run -d --name tam-tam-lk --restart unless-stopped --network "$NET" --m
 else
   echo "ATTENTION : serveur des appels de groupe non lancé (les appels de groupe resteront limités à 8 personnes)."; LK_KEY=""; LK_SECRET=""
 fi
+fi
 
 # Clé qui protège une seconde fois les sauvegardes de clés de chiffrement (gardée hors de la base de données).
 SECRET_BK_F=/root/.tam-tam-backup-key
@@ -88,16 +99,16 @@ SECRET_BK=$(cat "$SECRET_BK_F")
 # Adresse de secours (même serveur, autre nom de domaine, sans Cloudflare) et relais déclarés :
 # l'adresse de secours n'est branchée que lorsque son nom pointe bien vers ce serveur.
 SECOURS="${SECOURS:-tam-tam.africa}"; SECOURS_OK=""
-if [ -n "$IP_PUB" ] && getent ahostsv4 "$SECOURS" 2>/dev/null | awk '{print $1}' | grep -qx "$IP_PUB"; then SECOURS_OK=1; fi
+if [ -z "$ESSAI" ] && [ -n "$IP_PUB" ] && getent ahostsv4 "$SECOURS" 2>/dev/null | awk '{print $1}' | grep -qx "$IP_PUB"; then SECOURS_OK=1; fi
 RELAIS_F=/root/.tam-tam-relais; touch "$RELAIS_F"
-ALT=$( { [ -n "$SECOURS_OK" ] && echo "https://$SECOURS"; cat "$DOSSIER/relais/liste" "$RELAIS_F" 2>/dev/null | grep -E '^https://[A-Za-z0-9.-]+$' | sort -u || true; } | paste -sd, -)
-[ -n "$SECOURS_OK" ] && echo "Adresse de secours : https://$SECOURS" || echo "Adresse de secours $SECOURS : pas encore reliée à ce serveur (on la branchera dès qu'elle le sera)."
+ALT=$( [ -n "$ESSAI" ] || { [ -n "$SECOURS_OK" ] && echo "https://$SECOURS"; cat "$DOSSIER/relais/liste" "$RELAIS_F" 2>/dev/null | grep -E '^https://[A-Za-z0-9.-]+$' | sort -u || true; } | paste -sd, -)
+[ -n "$ESSAI" ] || { [ -n "$SECOURS_OK" ] && echo "Adresse de secours : https://$SECOURS" || echo "Adresse de secours $SECOURS : pas encore reliée à ce serveur (on la branchera dès qu'elle le sera)."; }
 
 echo "Construction de tam-tam (une minute la première fois)…"
 docker build -q -t "$APP:latest" "$DOSSIER/app" >/dev/null
 docker volume create "$VOLUME" >/dev/null
 docker rm -f "$APP" >/dev/null 2>&1 || true
-docker run -d --name "$APP" --restart unless-stopped --network "$NET" --memory 512m \
+docker run -d --name "$APP" --restart unless-stopped --network "$NET" --memory "$( [ -n "$ESSAI" ] && echo 256m || echo 512m )" \
   -v "$VOLUME:/data" \
   -e BASE_URL="https://$DOMAINE" -e OWNER_EMAIL="$PROPRIETAIRE" \
   -e TURN_SECRET="$SECRET_TURN" -e TURN_HOST="${IP_PUB:-$DOMAINE}" -e BACKUP_KEY="$SECRET_BK" -e ALT_ORIGINS="$ALT" \

@@ -32,6 +32,7 @@ const subH = u => u && u.name && !String(u.name).startsWith('@') ? '@' + u.handl
 const uOf = id => S.users.get(id) || {id, name: 'Membre', handle: '', avatar: {d: 'm2', c: 'turq'}};
 function keepUsers(list) { for (const u of list || []) if (u) S.users.set(u.id, Object.assign(S.users.get(u.id) || {}, u)); }
 
+const PC_IC = '<svg class="pc-ic" viewBox="0 0 24 24" width="13" height="13" aria-label="Envoyé depuis un ordinateur" role="img"><title>Envoyé depuis un ordinateur : les captures d’écran n’y sont pas signalées</title><rect x="3" y="4" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 /* ---------- appels au serveur ---------- */
 async function api(path, body, opts = {}) {
   const init = {method: body !== undefined ? 'POST' : 'GET', headers: {}, credentials: 'same-origin'};
@@ -260,7 +261,7 @@ async function reveal(m) {
   const r = await E2E.open(m.enc, S.me.id);
   if (r.err === 'absent') { m.text = '🔒 Message chiffré avant votre arrivée, ou pour une ancienne clé'; m.locked = true; }
   else if (r.err) { m.text = '🔒 Message illisible sur cet appareil'; m.locked = true; }
-  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.w > 0 && r.payload.h > 0) { m.w = +r.payload.w; m.h = +r.payload.h; } if (Thumb.ok(r.payload.th)) m.th = r.payload.th; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; if (r.payload.loc) m.loc = r.payload.loc; if (r.payload.sr) m.sr = r.payload.sr; if (r.payload.fl) m.fl = true; if (r.payload.name) { m.fname = r.payload.name; m.fsize = r.payload.size || 0; m.fmime = r.payload.mime || 'application/octet-stream'; } }
+  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.w > 0 && r.payload.h > 0) { m.w = +r.payload.w; m.h = +r.payload.h; } if (Thumb.ok(r.payload.th)) m.th = r.payload.th; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; if (r.payload.loc) m.loc = r.payload.loc; if (r.payload.sr) m.sr = r.payload.sr; if (r.payload.pc) m.pc = true; if (r.payload.fl) m.fl = true; if (r.payload.name) { m.fname = r.payload.name; m.fsize = r.payload.size || 0; m.fmime = r.payload.mime || 'application/octet-stream'; } }
   return m;
 }
 async function loadChats(pre) { const r = pre || await api('/api/chats'); if (!pre) Local.put('chats', r); const map = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); await reveal(c.last); if (c.pinMsg) await reveal(c.pinMsg); map.set(c.id, c); } S.chats = map; }
@@ -623,7 +624,7 @@ function renderMessages(keep) {
     else if (m.kind === 'audio') body = stQuote(m, out, c) + `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
     else body = stQuote(m, out, c) + (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" ${Dim.style(m)} alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" ${Dim.style(m)} alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? Tr.txt(m) : '');
     h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble${!m.deleted && !m.once && (m.kind === 'video' || (m.media && m.kind !== 'audio' && m.kind !== 'doc' && m.kind !== 'loc')) ? ' mb' : ''}${m.pending ? ' pending' + (m.text ? ' cap' : '') : ''}">${m.pending ? '<span class="pend-spin" role="status" aria-label="Envoi en cours"></span>' : ''}
-      ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${m.fwd ? `<span class="fwd">${FWD_IC}Transféré</span>` : ''}${body}<span class="meta">${m.edited ? '<i class="edited">modifié</i> ' : ''}${hm(m.at)}${m.pending ? ' 🕓' : out && !m.deleted ? tick(readState(c, m)) : ''}</span>
+      ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${m.fwd ? `<span class="fwd">${FWD_IC}Transféré</span>` : ''}${body}<span class="meta">${!out && m.pc ? PC_IC : ''}${m.edited ? '<i class="edited">modifié</i> ' : ''}${hm(m.at)}${m.pending ? ' 🕓' : out && !m.deleted ? tick(readState(c, m)) : ''}</span>
       ${m.deleted || m.pending ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message" title="Options : réagir, répondre, transférer, épingler…">${I.chev}</button>`}</div>${reactsHtml(m)}</div>`;
   }
   const tu = typingIn(c.id); if (tu) h += `<div class="msg in first typing-b"><div class="bubble" aria-label="En train d’écrire"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
@@ -885,7 +886,7 @@ const Outbox = {
 };
 window.addEventListener('online', () => { if (S.offline) { S.offline = false; Promise.all([loadChats(), loadContacts(), loadStatuses()]).then(() => { renderAll(); if (S.chatId) loadMessages(S.chatId); }).catch(() => {}); } Outbox.flush(); });
 /* ---------- vitesse mesurée chez les utilisateurs (des durées seulement, rien d'autre) ---------- */
-const APP_V = '1.98';
+const APP_V = '1.99';
 const Perf = {
   q: [],
   add(k, ms) { if (!(ms >= 0) || ms > 120000) return; this.q.push([k, Math.round(ms)]); if (this.q.length >= 40) this.flush(); },
@@ -1982,18 +1983,17 @@ function perfBox() {
 }
 function trBox() {
   const t = S.trset;
-  if (!t) return `<div class="set-block" id="trBox"><h2>${I.translate} Traduction</h2><p class="hint">Permet de traduire un message reçu. Plafond : 480 000 caractères par mois, puis la traduction s’arrête jusqu’au 1er du mois suivant.</p><div><button class="btn sm ghost" type="button" data-act="trLoad">Afficher les réglages</button></div></div>`;
-  const cl = t.provider === 'claude' || (!t.has && (S.trProv || 'claude') === 'claude');
-  const pct = cl ? Math.min(100, Math.round((t.spent || 0) / (t.budget || 1) * 100)) : Math.min(100, Math.round(t.used / t.cap * 100));
-  const usage = cl ? `Ce mois-ci : <b>${(t.spent || 0).toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2})} $</b> dépensés sur ${t.budget.toLocaleString('fr-FR', {minimumFractionDigits: 2})} $ (${pct} %), soit ${t.used.toLocaleString('fr-FR')} caractères traduits. Base : ${(t.corpus && t.corpus.mt) || 0} traductions, ${(t.corpus && t.corpus.fix) || 0} corrections, ${t.promoted || 0} devenues communes. Le budget atteint, la traduction s’arrête jusqu’au 1er du mois.`
-    : `Ce mois-ci : ${t.used.toLocaleString('fr-FR')} caractères traduits sur ${t.cap.toLocaleString('fr-FR')} gratuits (${pct} %). Au-delà, la traduction s’arrête jusqu’au 1er du mois.`;
-  const pv = S.trProv || t.provider || 'claude';
+  if (!t) return `<div class="set-block" id="trBox"><h2>${I.translate} Traduction</h2><p class="hint">Google traduit d’abord, gratuitement jusqu’à 450 000 caractères par mois ; Claude prend le relais ensuite, et pour les langues que Google ne connaît pas, dans la limite de son budget.</p><div><button class="btn sm ghost" type="button" data-act="trLoad">Afficher les réglages</button></div></div>`;
+  const n = v => (v || 0).toLocaleString('fr-FR'), d = v => (v || 0).toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const gp = Math.min(100, Math.round((t.used || 0) / (t.cap || 1) * 100)), cp = Math.min(100, Math.round((t.spent || 0) / (t.budget || 1) * 100));
   return `<form class="set-block" id="trBox" data-form="trset" autocomplete="off"><h2>${I.translate} Traduction</h2>
-    <span class="lbl">Moteur de traduction</span><div class="seg" role="radiogroup"><button type="button" role="radio" data-act="trProv" data-v="claude" aria-checked="${pv === 'claude'}" aria-selected="${pv === 'claude'}">Claude (Anthropic)</button><button type="button" role="radio" data-act="trProv" data-v="google" aria-checked="${pv === 'google'}" aria-selected="${pv === 'google'}">Google</button></div>
-    <p class="hint">${t.has ? `<b>Activée avec ${t.provider === 'claude' ? 'Claude' : 'Google'}.</b> ${usage}` : pv === 'claude' ? 'Collez ici la clé créée sur console.anthropic.com (rubrique « API Keys »).' : 'Collez ici la clé d’API créée dans Google Cloud (projet « tam-tam »).'}</p>
-    <div class="field"><label for="trKey">Clé ${pv === 'claude' ? 'Anthropic' : 'Google'}${t.has ? ' (pour changer de clé ou de moteur)' : ''}</label><input id="trKey" type="password" autocomplete="off" spellcheck="false" placeholder="${pv === 'claude' ? 'sk-ant-…' : 'AIza…'}"></div>
-    ${cl ? `<div class="field"><label for="trBudget">Budget maximum par mois (en dollars)</label><input id="trBudget" type="number" min="0.1" max="100" step="0.05" value="${t.budget || 1.65}"></div>` : ''}
-    <p class="err" id="trErr" role="alert" hidden></p><div class="actions" style="justify-content:flex-start"><button class="btn sm" type="submit">Enregistrer</button>${t.has ? '<button class="btn sm ghost" type="button" data-act="trOff">Désactiver</button>' : ''}</div></form>`;
+    <p class="hint">1. <b>Google</b> traduit d’abord : ${t.g ? `<b>activé</b> · ce mois-ci ${n(t.used)} caractères sur ${n(t.cap)} gratuits (${gp} %).` : 'pas encore activé.'} Au plafond, Google s’arrête jusqu’au 1er du mois : rien n’est jamais prélevé.<br>2. <b>Claude</b> prend le relais : ${t.c ? `<b>activé</b> · ce mois-ci ${d(t.spent)} $ sur ${d(t.budget)} $ (${cp} %).` : 'pas encore activé.'}</p>
+    <div class="field"><label for="trG">Clé Google${t.g ? ' (pour la changer)' : ''}</label><input id="trG" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…"></div>
+    <div class="field"><label for="trC">Clé Anthropic (Claude)${t.c ? ' (pour la changer)' : ''}</label><input id="trC" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></div>
+    <div class="field"><label for="trBudget">Budget maximum de Claude par mois (en dollars)</label><input id="trBudget" type="number" min="0.1" max="100" step="0.05" value="${t.budget || 1.65}"></div>
+    ${t.lastErr ? `<p class="hint">Dernier incident : ${esc(t.lastErr)}</p>` : ''}
+    <p class="hint">Base : ${(t.corpus && t.corpus.mt) || 0} traductions, ${(t.corpus && t.corpus.fix) || 0} corrections.</p>
+    <p class="err" id="trErr" role="alert" hidden></p><div class="actions" style="justify-content:flex-start"><button class="btn sm" type="submit">Enregistrer</button>${t.g ? '<button class="btn sm ghost" type="button" data-act="trOff" data-v="google">Retirer Google</button>' : ''}${t.c ? '<button class="btn sm ghost" type="button" data-act="trOff" data-v="claude">Retirer Claude</button>' : ''}</div></form>`;
 }
 // Blocs des Réglages repliés : le titre seul, les choix apparaissent quand on touche dessus.
 S.fold = S.fold || new Set();
@@ -2015,7 +2015,7 @@ function settingsBody() {
       ${S.showAv ? `${avGallery(S.pp && S.pp.kind === 'av' ? S.pp.av : me.avatar, 'me')}` : ''}
       ${S.pp ? `<div class="actions"><button class="btn ghost" type="button" data-act="pendCancel">Annuler</button><button class="btn" type="button" data-act="pendOk">Valider et changer ma photo de profil</button></div>` : ''}</div>
     <div class="set-block"><h2>${I.globe} Profil public et privé</h2><p class="hint">Ils se règlent dans <b>Discussions → Mon profil</b>.</p><div><button class="btn sm ghost" type="button" data-act="goProfile">Ouvrir mon profil</button></div></div>
-    <div class="set-block"><h2>${I.shield} Chiffrement de bout en bout</h2><p class="hint">Vos messages et vos photos sont chiffrés sur votre appareil : seules les personnes de la discussion peuvent les lire, pas même le serveur.</p>
+    <div class="set-block"><h2>${I.shield} Chiffrement de bout en bout</h2><p class="hint">Vos messages et vos photos sont chiffrés sur votre appareil : seules les personnes de la discussion peuvent les lire, pas même le serveur (sauf les textes que vous faites traduire : voir les conditions).</p>
       <p>Votre code de sécurité : <b class="fp" id="myFp">…</b></p><p class="hint">Comparez-le avec celui qu’un proche voit sur votre profil pour vérifier que personne ne s’est glissé entre vous.</p>
       <div><button class="btn sm ghost" type="button" data-act="keyCode">${I.key}Changer le code de sauvegarde</button></div></div>
     <div class="set-block" id="locSet"><details class="loc-det"><summary><h2>📍 Partager ma localisation</h2><span class="loc-st${(me.locTo || []).length ? ' on' : ''}">${(me.locTo || []).length ? `Activé · ${(me.locTo || []).length}` : 'Désactivé'}</span></summary><p class="hint">Les personnes que vous cochez peuvent voir où vous êtes, en permanence : dans votre discussion, le point en haut à droite, puis « Suivre la localisation ». Pratique entre conjoints, ou pour des parents avec leurs enfants. Votre position est chiffrée : même le serveur ne peut pas la lire.</p>
@@ -2042,7 +2042,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.98</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.99</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -2265,7 +2265,7 @@ const ACT = {
   trFlip(d) { const id = +d.id; Tr.flip.has(id) ? Tr.flip.delete(id) : Tr.flip.add(id); renderMessages(true); },
   async perfLoad() { try { S.perf = await api('/api/admin/perf'); const el = $('#perfBox'); if (el) el.outerHTML = perfBox(); } catch (e) { toast(e.message); } },
   async trLoad() { try { S.trset = await api('/api/admin/translate'); const el = $('#trBox'); if (el) el.outerHTML = trBox(); } catch (e) { toast(e.message); } },
-  async trOff() { try { await api('/api/admin/translate', {off: true}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction désactivée'); } catch (e) { toast(e.message); } },
+  async trOff(d) { try { await api('/api/admin/translate', {off: (d && d.v) || true}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction désactivée'); } catch (e) { toast(e.message); } },
   recStart() { Rec.start(); }, recCancel() { Rec.cancel(); }, recSend() { Rec.send(); },
   availSet(d) { if (S.me.avail === d.v) return; saveNow({avail: d.v}, {on: 'Vous apparaissez en ligne', busy: 'Vous apparaissez occupé', off: 'Vous apparaissez hors ligne'}[d.v]).then(() => { renderHead(); if (S.modal) renderModal(); }); },
   onceTog(d, el) { S.once = !S.once; document.querySelectorAll('.once-tog').forEach(b => b.setAttribute('aria-pressed', S.once)); const i = $('#msgIn'); if (i) i.placeholder = S.once ? 'Message à vue unique' : 'Message'; toast(S.once ? 'Vue unique activée : le prochain message ne pourra être ouvert qu’une fois.' : 'Vue unique désactivée'); },
@@ -2482,8 +2482,8 @@ const FORMS = {
   async gset() { const er = $('#gErr'), ok = $('#gOk'); er.hidden = true; ok.hidden = true;
     try { await api('/api/admin/google', {id: $('#gId').value.trim(), secret: $('#gSecret').value}); S.gset = await api('/api/admin/google'); $('#gBox').outerHTML = googleBox(); const o = $('#gOk'); o.textContent = 'Enregistré. Déconnectez-vous pour voir le bouton « Continuer avec Google ».'; o.hidden = false; }
     catch (e) { er.textContent = e.message; er.hidden = false; } },
-  async trset() { const er = $('#trErr'); er.hidden = true; const k = $('#trKey').value.trim(), bi = $('#trBudget'), budget = bi ? +bi.value : undefined; if (!k && !(S.trset && S.trset.has)) return;
-    try { await api('/api/admin/translate', {key: k, budget, provider: S.trProv || (S.trset && S.trset.provider) || 'claude'}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction activée'); }
+  async trset() { const er = $('#trErr'); er.hidden = true; const gkey = $('#trG').value.trim(), ckey = $('#trC').value.trim(), bi = $('#trBudget'), budget = bi ? +bi.value : undefined; if (!gkey && !ckey && !(S.trset && S.trset.has)) return;
+    try { await api('/api/admin/translate', {gkey, ckey, budget}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction activée'); }
     catch (e) { er.textContent = e.message; er.hidden = false; } },
   async trFixSave() {
     const f = S.fixing, v = ($('#fixIn').value || '').trim(); if (!f || !v) return;
@@ -2673,7 +2673,7 @@ function renderKeySetup(msg) {
     : k.mode === 'lost'
     ? `<h2>Code oublié</h2><p>Sans le code, les anciens messages chiffrés ne peuvent plus être relus sur cet appareil. Personne ne peut les récupérer, pas même le responsable de tam-tam.</p><p class="hint">Vous pouvez repartir avec une nouvelle clé : vos contacts verront que votre code de sécurité a changé, et les nouveaux messages seront lisibles.</p>
       <div class="actions"><button class="btn ghost" type="button" data-act="ksBack">Réessayer mon code</button><button class="btn danger" type="button" data-act="ksNew">Repartir avec une nouvelle clé</button></div>`
-    : `<h2>${I.lock} Protéger vos messages</h2><p class="hint">tam-tam chiffre vos messages et vos photos de bout en bout : seuls les appareils des personnes qui discutent peuvent les lire, pas même le serveur.</p>
+    : `<h2>${I.lock} Protéger vos messages</h2><p class="hint">tam-tam chiffre vos messages et vos photos de bout en bout : seuls les appareils des personnes qui discutent peuvent les lire, pas même le serveur (sauf les textes que vous faites traduire : voir les conditions).</p>
       <p class="hint">Choisissez un <b>code de sauvegarde</b>. Il vous servira à retrouver vos messages si vous changez de téléphone. Notez-le en lieu sûr : personne ne pourra le retrouver pour vous.</p>
       <div class="field"><label for="kCode">Code de sauvegarde <span class="req">· au moins 8 caractères</span></label><input id="kCode" type="password" autocomplete="new-password" placeholder="Ex. : Baobab-2026"></div>
       <div class="field"><label for="kCode2">Confirmez le code</label><input id="kCode2" type="password" autocomplete="new-password"></div>
