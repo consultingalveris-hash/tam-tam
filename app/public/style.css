@@ -1384,3 +1384,8 @@ body:has(#pop) .rrail,body:has(#layer .layer) .rrail{display:none}
 /* v1.94 — grands appels de groupe (jusqu'à 32) : vignettes plus petites, défilement */
 .g-grid.nx{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));overflow-y:auto;max-height:calc(100dvh - 190px)}
 @media (min-width:700px){.g-grid.nx{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}}
+/* v1.95 — Souvenirs : les filtres restent sur une seule ligne ; le point « nouveau » se pose sur le coin du filtre sans l'élargir */
+.mem-filts{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.mem-filts::-webkit-scrollbar{display:none}
+.mem-filts .chip{flex:none;white-space:nowrap}
+.mem-filts .chip .act-dot{position:absolute;top:-2px;right:-2px;margin:0}
