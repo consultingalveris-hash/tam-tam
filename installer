@@ -90,7 +90,7 @@ SECRET_BK=$(cat "$SECRET_BK_F")
 SECOURS="${SECOURS:-tam-tam.africa}"; SECOURS_OK=""
 if [ -n "$IP_PUB" ] && getent ahostsv4 "$SECOURS" 2>/dev/null | awk '{print $1}' | grep -qx "$IP_PUB"; then SECOURS_OK=1; fi
 RELAIS_F=/root/.tam-tam-relais; touch "$RELAIS_F"
-ALT=$( { [ -n "$SECOURS_OK" ] && echo "https://$SECOURS"; grep -E '^https://[A-Za-z0-9.-]+$' "$RELAIS_F" || true; } | paste -sd, -)
+ALT=$( { [ -n "$SECOURS_OK" ] && echo "https://$SECOURS"; cat "$DOSSIER/relais/liste" "$RELAIS_F" 2>/dev/null | grep -E '^https://[A-Za-z0-9.-]+$' | sort -u || true; } | paste -sd, -)
 [ -n "$SECOURS_OK" ] && echo "Adresse de secours : https://$SECOURS" || echo "Adresse de secours $SECOURS : pas encore reliée à ce serveur (on la branchera dès qu'elle le sera)."
 
 echo "Construction de tam-tam (une minute la première fois)…"
