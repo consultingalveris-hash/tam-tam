@@ -92,7 +92,7 @@ docker rm -f "$APP" >/dev/null 2>&1 || true
 docker run -d --name "$APP" --restart unless-stopped --network "$NET" --memory 512m \
   -v "$VOLUME:/data" \
   -e BASE_URL="https://$DOMAINE" -e OWNER_EMAIL="$PROPRIETAIRE" \
-  -e TURN_SECRET="$SECRET_TURN" -e TURN_HOST="$DOMAINE" -e BACKUP_KEY="$SECRET_BK" \
+  -e TURN_SECRET="$SECRET_TURN" -e TURN_HOST="${IP_PUB:-$DOMAINE}" -e BACKUP_KEY="$SECRET_BK" \
   -e LK_URL="${LK_KEY:+wss://$DOMAINE/lk}" -e LK_KEY="$LK_KEY" -e LK_SECRET="$LK_SECRET" \
   "$APP:latest" >/dev/null
 sleep 3
