@@ -149,7 +149,7 @@ const VFast = {
     const mp4 = vc === 'avc', ac = await M.getFirstEncodableAudioCodec(mp4 ? ['aac', 'opus'] : ['opus'], {numberOfChannels: 2, sampleRate: 48000, bitrate: abr});
     const n = Math.max(1, Math.ceil((total - 1) / VID_MAX_S)), parts = [];
     // Vidéo déjà légère (ex. reçue sur WhatsApp) : on coupe sans recompresser, c'est presque instantané.
-    const light = file.size / total * Math.min(total, VID_MAX_S) < (eco ? 7_000_000 : 14_000_000) && Math.min(dw, dh) <= 1080 && ['avc', 'vp8', 'vp9'].includes(vt.codec) && !!(await vt.canDecode());
+    const bps = file.size * 8 / total, light = (hdOn() || bps < (eco ? 1_000_000 : 2_200_000)) && Math.min(dw, dh) <= (hdOn() ? 1080 : eco ? 540 : 720) && ['avc', 'vp8', 'vp9'].includes(vt.codec) && !!(await vt.canDecode());
     const srcMp4 = vt.codec === 'avc' || /mp4|quicktime/.test(file.type);
     for (let i = 0; i < n; i++) {
       if (job.stop) throw new Error('annulé');
@@ -279,7 +279,7 @@ const Edit = {
     v.onloadedmetadata = () => { const d = Math.round(v.duration || 0); URL.revokeObjectURL(u);
       if (d > VID_MAX_TOTAL) return toast(`Vidéo trop longue (${fmtT(d)}). Maximum : ${fmtT(VID_MAX_TOTAL)}, coupée en parties d’une minute.`);
       if (d > VID_MAX_S + 2 || file.size > VID_MAX_BYTES) return VCut.ask(file, d, parts => this.video(parts[0].blob, parts[0].mime, parts[0].dur, false, 'gal', opts, parts));
-      if (file.size > (dataSaver() ? 4_000_000 : 12_000_000) && VFast.ok()) return VCut.auto(file, d, parts => this.video(parts[0].blob, parts[0].mime, parts[0].dur, false, 'gal', opts, parts), () => this.video(file, file.type, d, false, 'gal', opts));
+      if (VFast.ok() && !hdOn() && file.size > (dataSaver() ? 1_500_000 : 3_000_000)) return VCut.auto(file, d, parts => this.video(parts[0].blob, parts[0].mime, parts[0].dur, false, 'gal', opts, parts), () => this.video(file, file.type, d, false, 'gal', opts));
       this.video(file, file.type, d, false, 'gal', opts); };
     v.onerror = () => { URL.revokeObjectURL(u); this.video(file, file.type, 0, false, 'gal', opts); };
     v.src = u;
@@ -353,7 +353,7 @@ const Edit = {
     const cap = ($('#edCap') || {}).value?.trim() || '', once = !!S.once; btn.disabled = true; btn.classList.add('busy');
     try {
       let blob, payload;
-      if (s.kind === 'photo') { const cv = document.createElement('canvas'), eco = dataSaver(); this.paint(cv, eco ? 1280 : 2560); blob = await new Promise((ok, ko) => cv.toBlob(b => b ? ok(b) : ko(new Error('Photo illisible.')), 'image/jpeg', eco ? .72 : .9)); payload = {t: cap}; }
+      if (s.kind === 'photo') { const cv = document.createElement('canvas'), eco = dataSaver(), hd = hdOn(); this.paint(cv, eco ? 1280 : hd ? 2560 : 1600); blob = await encImg(cv, eco ? .72 : hd ? .9 : .82); payload = {t: cap}; }
       else { blob = s.blob; payload = {t: cap, mime: s.mime, dur: s.dur}; }
       if (tgt) { const r = {kind: s.kind, blob, mime: s.kind === 'video' ? s.mime : 'image/jpeg', dur: s.dur || 0, cap, mirror: !!s.mirror, parts: s.parts}; this.close(); return tgt(r); }
       const list = s.parts || [{blob, mime: s.mime, dur: s.dur}];
@@ -402,7 +402,7 @@ async function hydrateVids(chatId) {
   for (const el of document.querySelectorAll('#msgs video[data-vid]:not([src])')) {
     const id = +el.dataset.vid; if (E2E.vids.has(id)) { el.src = E2E.vids.get(id); continue; }
     const m = list.find(x => x.id === id); if (!m || !m._key || !m.miv || el.dataset.busy) continue; el.dataset.busy = '1';
-    try { const r = await fetch(m.media, {credentials: 'same-origin'}); if (!r.ok) throw 0; const url = URL.createObjectURL(new Blob([await E2E.decBytes(m._key, m.miv, await r.arrayBuffer())], {type: m.amime || 'video/mp4'})); E2E.vids.set(id, url); el.src = url; }
+    try { const t0 = performance.now(); const r = await fetch(m.media, {credentials: 'same-origin'}); if (!r.ok) throw 0; Perf.add('vid', performance.now() - t0); const url = URL.createObjectURL(new Blob([await E2E.decBytes(m._key, m.miv, await r.arrayBuffer())], {type: m.amime || 'video/mp4'})); E2E.vids.set(id, url); el.src = url; }
     catch { const w = el.closest('.vidb'); if (w) w.insertAdjacentHTML('beforeend', '<small class="hint">Vidéo illisible sur cet appareil</small>'); }
   }
 }
@@ -439,7 +439,7 @@ const Multi = {
         if (/^video/.test(f.type)) {
           const d = await this.dur(f);
           if (d > VID_MAX_TOTAL) { skipped++; toast(`Vidéo trop longue (${fmtT(d)}) : ignorée.`); continue; }
-          if (VFast.ok() && (d > VID_MAX_S + 2 || f.size > (dataSaver() ? 4_000_000 : 12_000_000))) { say('préparation de la vidéo…'); items = await VFast.cut(f, p => say(`préparation ${Math.round(p * 100)} %`), {stop: false}); items = items.map(p => ({blob: p.blob, mime: p.mime, dur: p.dur, kind: 'video'})); }
+          if (VFast.ok() && (d > VID_MAX_S + 2 || (!hdOn() && f.size > (dataSaver() ? 1_500_000 : 3_000_000)) || f.size > VID_MAX_BYTES)) { say('préparation de la vidéo…'); items = await VFast.cut(f, p => say(`préparation ${Math.round(p * 100)} %`), {stop: false}); items = items.map(p => ({blob: p.blob, mime: p.mime, dur: p.dur, kind: 'video'})); }
           else if (d > VID_MAX_S + 2 || f.size > VID_MAX_BYTES) { skipped++; toast('Une vidéo trop longue ou trop lourde a été ignorée (ouvrez-la seule pour la couper).'); continue; }
           else items = [{blob: f, mime: (f.type || 'video/mp4').split(';')[0], dur: d, kind: 'video'}];
         } else items = [{blob: await this.photo(f), kind: 'photo'}];

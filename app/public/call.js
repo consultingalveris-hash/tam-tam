@@ -93,12 +93,12 @@ const Call = {
   async peer() {
     const c = this.c; if (c.pc) return c.pc;
     if (!Call.iceCache || Date.now() - Call.iceAt > 6 * 3600e3) { try { Call.iceCache = (await api('/api/call/ice')).ice; Call.iceAt = Date.now(); } catch { Call.iceCache = [{urls: 'stun:stun.l.google.com:19302'}]; } }
-    const pc = c.pc = new RTCPeerConnection({iceServers: Call.iceCache});
+    const pc = c.pc = new RTCPeerConnection({iceServers: Call.iceCache}); c.pcAt = performance.now();
     pc.onicecandidate = e => { if (e.candidate && this.c === c) this.sig('ice', {data: e.candidate}); };
     pc.ontrack = e => { c.remote = e.streams[0] || new MediaStream([e.track]); this.attach(); };
     pc.onconnectionstatechange = () => {
       if (this.c !== c) return;
-      if (pc.connectionState === 'connected') { if (!c.since) { c.since = Date.now(); c.tick = setInterval(() => this.clock(), 1000); } c.state = 'live'; c.lost && clearTimeout(c.lost); this.render(); this.sig('media', {data: {cam: c.cam, mic: c.mic}}); }
+      if (pc.connectionState === 'connected') { if (!c.since && c.pcAt) Perf.add('call', performance.now() - c.pcAt); if (!c.since) { c.since = Date.now(); c.tick = setInterval(() => this.clock(), 1000); } c.state = 'live'; c.lost && clearTimeout(c.lost); this.render(); this.sig('media', {data: {cam: c.cam, mic: c.mic}}); }
       else if (pc.connectionState === 'disconnected') { c.state = 'reconnecting'; this.render(); c.lost = setTimeout(() => { if (this.c === c && pc.connectionState !== 'connected') this.hangup(); }, 15000); }
       else if (pc.connectionState === 'failed') { toast('La connexion a échoué. Vérifiez votre réseau et rappelez.'); this.hangup(); }
     };

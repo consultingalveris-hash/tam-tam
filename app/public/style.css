@@ -1366,3 +1366,10 @@ body:has(#pop) .rrail,body:has(#layer .layer) .rrail{display:none}
 .tr-imp{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 10px;margin:0 10px 8px;padding:10px 12px;border-radius:14px;background:var(--notice);color:var(--notice-fg);font-size:13.5px;line-height:1.4}
 .tr-imp>svg{width:18px;height:18px;flex:none;margin-top:1px}.tr-imp>span{flex:1;min-width:0}
 .tr-imp-a{display:flex;flex-wrap:wrap;gap:6px;width:100%;justify-content:flex-end}
+/* v1.91 — vitesse chez les utilisateurs */
+.perf-t{width:100%;border-collapse:collapse;font-size:13px}
+.perf-t th,.perf-t td{padding:6px 4px;text-align:right;border-bottom:1px solid var(--line)}
+.perf-t th:first-child,.perf-t td:first-child{text-align:left}
+.perf-t th{color:var(--fg-2);font-weight:600;font-size:12px}
+.perf-t tr.bad td{color:var(--danger)}
+.msg .bubble.pending:not(.mb){opacity:.75}

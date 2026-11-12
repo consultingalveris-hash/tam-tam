@@ -177,7 +177,7 @@ async function startApp() {
   await PP.init().catch(() => {});
   try { Object.keys(localStorage).filter(k => k.startsWith('tt-trlearn:')).forEach(k => localStorage.removeItem(k)); } catch {}
   Tr.loadSt();
-  renderAll(); connect(); if (S.locked) showLock(); if (!S.me.handleSet) HPick.open();
+  renderAll(); Perf.add('open', performance.now()); connect(); Outbox.flush(); if (S.locked) showLock(); if (!S.me.handleSet) HPick.open();
   GCall.loadActive(); Call.checkPending(); Device.badge(); LocShare.sync();
   if (S.lock.type === 'off') return requireLock();
   if (S.pendingChat && S.chats.has(S.pendingChat)) openChat(S.pendingChat); S.pendingChat = 0;
@@ -249,7 +249,7 @@ async function reveal(m) {
   const r = await E2E.open(m.enc, S.me.id);
   if (r.err === 'absent') { m.text = '🔒 Message chiffré avant votre arrivée, ou pour une ancienne clé'; m.locked = true; }
   else if (r.err) { m.text = '🔒 Message illisible sur cet appareil'; m.locked = true; }
-  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.w > 0 && r.payload.h > 0) { m.w = +r.payload.w; m.h = +r.payload.h; } if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; if (r.payload.loc) m.loc = r.payload.loc; if (r.payload.sr) m.sr = r.payload.sr; if (r.payload.fl) m.fl = true; if (r.payload.name) { m.fname = r.payload.name; m.fsize = r.payload.size || 0; m.fmime = r.payload.mime || 'application/octet-stream'; } }
+  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.w > 0 && r.payload.h > 0) { m.w = +r.payload.w; m.h = +r.payload.h; } if (Thumb.ok(r.payload.th)) m.th = r.payload.th; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; if (r.payload.loc) m.loc = r.payload.loc; if (r.payload.sr) m.sr = r.payload.sr; if (r.payload.fl) m.fl = true; if (r.payload.name) { m.fname = r.payload.name; m.fsize = r.payload.size || 0; m.fmime = r.payload.mime || 'application/octet-stream'; } }
   return m;
 }
 async function loadChats() { const r = await api('/api/chats'); const map = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); await reveal(c.last); if (c.pinMsg) await reveal(c.pinMsg); map.set(c.id, c); } S.chats = map; }
@@ -467,9 +467,11 @@ function focusComposer() {
   if (document.activeElement === i) return; try { i.focus({preventScroll: true}); } catch { i.focus(); }
 }
 async function loadMessages(id, fresh) {
+  const t0 = performance.now();
   try {
     const r = await api(`/api/chats/${id}/messages`); for (const m of r.messages) await reveal(m); S.msgs.set(id, r.messages); S.more.set(id, r.more);
-    if (S.chatId === id) { renderMessages(); markRead(); }
+    Outbox.restore(id);
+    if (S.chatId === id) { renderMessages(); markRead(); Perf.add('chat', performance.now() - t0); }
   } catch (e) { toast(e.message); }
 }
 async function loadOlder() {
@@ -625,9 +627,24 @@ const Dim = {
   put(id, w, h) { if (!(w > 0 && h > 0)) return; try { localStorage.setItem('tt-dim:' + id, Math.round(w) + ',' + Math.round(h)); } catch {} },
   style(m, video) {
     const d = this.get(m), maxW = 260, maxH = video ? 360 : 340, [w, h] = d || (video ? [9, 16] : [4, 3]), k = Math.min(maxW / w, maxH / h);
-    return `style="width:${Math.max(120, Math.round(w * k))}px;aspect-ratio:${w}/${h};height:auto;max-height:none"`;
+    return `style="width:${Math.max(120, Math.round(w * k))}px;aspect-ratio:${w}/${h};height:auto;max-height:none${Thumb.ok(m.th) ? `;background:url(${m.th}) center/cover no-repeat` : ''}"`;
   },
 };
+// Aperçu flou : une image minuscule (moins d'1 Ko) glissée dans le message chiffré ; elle s'affiche dès l'arrivée du message.
+const Thumb = {
+  ok: t => typeof t === 'string' && t.length < 6000 && /^data:image\/(jpeg|webp|png);base64,[A-Za-z0-9+/=]+$/.test(t),
+  async make(bytes, mime) {
+    const blob = new Blob([bytes], {type: mime || 'image/jpeg'}); let src, w, h, url;
+    if (/^video\//.test(mime || '')) { url = URL.createObjectURL(blob); src = await new Promise((ok, ko) => { const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.preload = 'auto'; v.onloadeddata = () => { v.currentTime = Math.min(0.3, (v.duration || 1) / 4); }; v.onseeked = () => ok(v); v.onerror = ko; setTimeout(() => ko(new Error('lent')), 4000); v.src = url; }); w = src.videoWidth; h = src.videoHeight; }
+    else { if (!window.createImageBitmap) return null; src = await createImageBitmap(blob); w = src.width; h = src.height; }
+    try { if (!(w && h)) return null; const k = 20 / Math.max(w, h), cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(h * k)); cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height); return cv.toDataURL('image/jpeg', .5); }
+    finally { if (url) URL.revokeObjectURL(url); if (src && src.close) src.close(); }
+  },
+};
+// Photos : WebP quand l'appareil sait le faire (25 à 35 % plus léger), sinon JPEG.
+function encImg(cv, q) { return new Promise((ok, ko) => cv.toBlob(b => { if (b && b.type === 'image/webp') return ok(b); cv.toBlob(j => j ? ok(j) : ko(new Error('Photo illisible.')), 'image/jpeg', q); }, 'image/webp', q)); }
+// Qualité d'envoi : standard (rapide, comme WhatsApp) ou HD ; l'économie de données passe avant.
+const hdOn = () => { try { return localStorage.getItem('tt:hd') === '1' && !dataSaver(); } catch { return false; } };
 async function dimsOf(bytes, mime) {
   const blob = new Blob([bytes], {type: mime || 'image/jpeg'});
   if (/^video\//.test(mime || '')) return new Promise(ok => { const v = document.createElement('video'), u = URL.createObjectURL(blob), done = d => { URL.revokeObjectURL(u); ok(d); }; v.preload = 'metadata'; v.muted = true; v.onloadedmetadata = () => done(v.videoWidth ? [v.videoWidth, v.videoHeight] : null); v.onerror = () => done(null); setTimeout(() => done(null), 4000); v.src = u; });
@@ -637,6 +654,7 @@ if (typeof E2E !== 'undefined' && !E2E._dimWrap) {
   const seal0 = E2E.seal.bind(E2E); E2E._dimWrap = true;
   E2E.seal = async (payload, rec, bytes, ...rest) => {
     if (bytes && payload && typeof payload === 'object' && payload.w == null && !payload.name && !payload.loc && !/^audio\//.test(payload.mime || '')) { try { const d = await dimsOf(bytes, payload.mime); if (d) { payload.w = d[0]; payload.h = d[1]; } } catch {} }
+    if (bytes && payload && typeof payload === 'object' && !payload.th && !payload.name && !payload.loc && !/^audio\//.test(payload.mime || '')) { try { const th = await Thumb.make(bytes, payload.mime); if (th) payload.th = th; } catch {} }
     return seal0(payload, rec, bytes, ...rest);
   };
 }
@@ -658,8 +676,8 @@ async function hydrateImgs(chatId) {
   for (const el of document.querySelectorAll('#msgs img[data-enc]:not([src])')) {
     const m = list.find(x => x.id === +el.dataset.enc); if (!m || !m._key || !m.miv) continue;
     try {
-      const r = await fetch(m.media, {credentials: 'same-origin'}); const buf = await r.arrayBuffer();
-      const url = URL.createObjectURL(new Blob([await E2E.decBytes(m._key, m.miv, buf)], {type: 'image/jpeg'}));
+      const t0 = performance.now(); const r = await fetch(m.media, {credentials: 'same-origin'}); const buf = await r.arrayBuffer();
+      const url = URL.createObjectURL(new Blob([await E2E.decBytes(m._key, m.miv, buf)], {type: 'image/jpeg'})); Perf.add('img', performance.now() - t0);
       E2E.imgs.set(m.id, url); const box = $('#msgs'), stick = box && box.scrollHeight - box.scrollTop - box.clientHeight < 80;
       el.src = url; el.onload = () => { if (stick && box) box.scrollTop = box.scrollHeight; };
     } catch { el.alt = 'Photo illisible sur cet appareil'; }
@@ -672,6 +690,7 @@ function onMsgIn(m, update) {
   if (list) { const i = list.findIndex(x => x.id === m.id); if (i >= 0) list[i] = m; else if (!update) list.push(m); }
   if (!update || (c.last && c.last.id === m.id)) c.last = m;
   if (m.from !== S.me.id && !update) {
+    if (m.at) Perf.add('recv', Date.now() - m.at);
     S.typing.delete(m.chatId); S.lastFrom.set(m.chatId + ':' + m.from, Date.now());
     const visible = S.chatId === m.chatId && !document.hidden && ($('.app').dataset.view === 'chat' || matchMedia('(min-width:821px)').matches);
     if (visible) markRead(); else { c.unread = (c.unread || 0) + 1; notify(c, m); }
@@ -743,10 +762,16 @@ async function sendText() {
     return;
   }
   i.value = ''; autoGrow(i); syncSend(); const reply = S.replyTo; S.replyTo = null; renderReplyBar();
-  try {
+  if (S.once) { try { onMsg(await sendCore(c, t, reply, true)); } catch (e) { toast(e.message); i.value = t; syncSend(); } return; }
+  // Le message s'affiche tout de suite avec une horloge, puis part ; sans réseau, il attend et repart tout seul.
+  Outbox.add(c.id, t, reply); Outbox.flush();
+}
+async function sendCore(c, t, reply, once, cid) {
+  const t0 = performance.now();
+  {
     let payload = {t}; const out = Tr.outL(c.id);
     if (out && !Tr.st) { try { await Tr.loadSt(); } catch {} }
-    if (out && Tr.st && Tr.st.on && S.me.trConsent && !S.once) {
+    if (out && Tr.st && Tr.st.on && S.me.trConsent && !once) {
       try {
         const ctx = (S.msgs.get(c.id) || []).filter(x => x.kind === 'text' && x.text && !x.once).slice(-4).map(x => x.text);
         const r = await Tr.fetch(t, out, ctx);
@@ -755,10 +780,47 @@ async function sendText() {
       catch (e) { toast('Message envoyé sans traduction : ' + e.message); }
     }
     const {env} = await E2E.seal(payload, recipients(c));
-    const body = {enc: env}; if (reply) body.replyTo = reply; if (S.once) { body.once = true; S.once = false; renderComposer(); }
-    const r = await api(`/api/chats/${c.id}/messages`, body); onMsg(r.msg);
-  } catch (e) { toast(e.message); i.value = t; syncSend(); }
+    const body = {enc: env}; if (reply) body.replyTo = reply; if (cid) body.cid = String(cid); if (once) { body.once = true; S.once = false; renderComposer(); }
+    const r = await api(`/api/chats/${c.id}/messages`, body); Perf.add('send', performance.now() - t0); return r.msg;
+  }
 }
+/* ---------- file d'envoi : rien ne se perd sans réseau ---------- */
+const Outbox = {
+  key: () => 'tt-outbox:' + (S.me ? S.me.id : 0),
+  list() { try { return JSON.parse(localStorage.getItem(this.key()) || '[]'); } catch { return []; } },
+  save(l) { try { localStorage.setItem(this.key(), JSON.stringify(l)); } catch {} },
+  add(chatId, t, reply) { const it = {tmp: -(Date.now() * 100 + Math.floor(Math.random() * 100)), chatId, t, reply: reply || null, at: Date.now()}; this.save(this.list().concat(it)); this.show(it); return it; },
+  show(it) { const list = S.msgs.get(it.chatId); if (!list || list.some(x => x.id === it.tmp)) return; list.push({id: it.tmp, chatId: it.chatId, from: S.me.id, at: it.at, kind: 'text', text: it.t, pending: true, replyTo: it.reply}); if (S.chatId === it.chatId) renderMessages(true); },
+  restore(chatId) { for (const it of this.list()) if (!chatId || it.chatId === chatId) this.show(it); },
+  busy: false, t: 0,
+  net: e => !navigator.onLine || /connexion|réseau|trop de temps/i.test((e && e.message) || '') || (e && e.status >= 500),
+  async flush() {
+    if (this.busy || !S.me) return; this.busy = true;
+    try {
+      for (const it of this.list()) {
+        const c = S.chats.get(it.chatId); if (!c) { this.drop(it.tmp); continue; }
+        try { const m = await sendCore(c, it.t, it.reply, false, it.tmp); this.drop(it.tmp); onMsg(m); }
+        catch (e) { if (this.net(e)) break; this.drop(it.tmp); toast(e.message); const i = $('#msgIn'); if (i && !i.value && S.chatId === it.chatId) { i.value = it.t; syncSend(); } }
+      }
+    } finally { this.busy = false; }
+    clearTimeout(this.t); if (this.list().length) this.t = setTimeout(() => this.flush(), 8000);
+  },
+  drop(tmp) { this.save(this.list().filter(x => x.tmp !== tmp)); for (const l of S.msgs.values()) { const i = l.findIndex(x => x.id === tmp); if (i >= 0) l.splice(i, 1); } if (S.chatId) renderMessages(true); },
+};
+window.addEventListener('online', () => Outbox.flush());
+/* ---------- vitesse mesurée chez les utilisateurs (des durées seulement, rien d'autre) ---------- */
+const APP_V = '1.91';
+const Perf = {
+  q: [],
+  add(k, ms) { if (!(ms >= 0) || ms > 120000) return; this.q.push([k, Math.round(ms)]); if (this.q.length >= 40) this.flush(); },
+  flush() {
+    if (!this.q.length || !S.me) return; const body = JSON.stringify({v: APP_V, items: this.q.splice(0, 60)});
+    try { if (navigator.sendBeacon && navigator.sendBeacon('/api/perf', new Blob([body], {type: 'application/json'}))) return; } catch {}
+    fetch('/api/perf', {method: 'POST', headers: {'Content-Type': 'application/json'}, body, credentials: 'same-origin', keepalive: true}).catch(() => {});
+  },
+};
+setInterval(() => Perf.flush(), 60000);
+document.addEventListener('visibilitychange', () => { if (document.hidden) Perf.flush(); });
 function autoGrow(t) { const desk = matchMedia('(min-width:821px)').matches, h0 = desk ? 42 : 46; t.style.height = h0 + 'px'; t.style.height = Math.min(desk ? 130 : Math.round(innerHeight * 0.32), Math.max(h0, t.scrollHeight)) + 'px'; }
 function renderReplyBar() {
   const c = S.chats.get(S.chatId), el = $('#replyBar'); if (!el || !c) return;
@@ -771,7 +833,7 @@ function shrink(file, max = 1600) {
   return new Promise((res, rej) => {
     if (!file || !/^image\//.test(file.type)) return rej(new Error('Choisissez une photo.'));
     const url = URL.createObjectURL(file), im = new Image();
-    im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), cv = document.createElement('canvas'); cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k); cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url); cv.toBlob(b => b ? res(b) : rej(new Error('Photo illisible.')), 'image/jpeg', .85); };
+    im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), cv = document.createElement('canvas'); cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k); cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url); encImg(cv, .82).then(res, rej); };
     im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Cette photo n’a pas pu être lue.')); };
     im.src = url;
   });
@@ -1830,6 +1892,17 @@ function trSheet() {
     <span class="lbl">Autres langues</span><div class="lang-grid">${rest.map(btn).join('')}</div></div></div>`, 'Langues');
   const sc = layer.querySelector('.tr-scroll'); if (sc) sc.scrollTop = y;
 }
+// Propriétaire : la vitesse réelle chez les utilisateurs, version par version (alerte si la nouvelle est plus lente).
+const PERF_L = {open: 'Ouverture de l’appli', chat: 'Ouverture d’une discussion', send: 'Envoi d’un message', recv: 'Réception d’un message', img: 'Chargement d’une photo', vid: 'Chargement d’une vidéo', call: 'Connexion d’un appel'};
+function perfBox() {
+  const p = S.perf, f = ms => ms == null ? '—' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toLocaleString('fr-FR', {maximumFractionDigits: 1})} s`;
+  if (!p) return `<div class="set-block" id="perfBox"><h2>⏱ Vitesse chez les utilisateurs</h2><p class="hint">Temps mesurés sur les téléphones et ordinateurs des membres (aucun contenu, seulement des durées).</p><div><button class="btn sm ghost" type="button" data-act="perfLoad">Afficher les mesures</button></div></div>`;
+  const rows = p.metrics.filter(x => PERF_L[x.k]);
+  return `<div class="set-block" id="perfBox"><h2>⏱ Vitesse chez les utilisateurs</h2><p class="hint">Version ${esc(p.version || '—')}${p.previous ? ` comparée à la ${esc(p.previous)}` : ''}, 14 derniers jours. « Habituel » : la moitié des cas sont plus rapides. « Lent » : 9 cas sur 10 sont plus rapides.</p>
+    ${rows.some(x => x.slower) ? `<p class="err">⚠ Cette version est plus lente que la précédente sur : ${rows.filter(x => x.slower).map(x => PERF_L[x.k]).join(', ')}.</p>` : ''}
+    <table class="perf-t"><thead><tr><th>Mesure</th><th>Habituel</th><th>Lent</th><th>Avant</th><th>Cas</th></tr></thead><tbody>${rows.map(x => `<tr${x.slower ? ' class="bad"' : ''}><td>${PERF_L[x.k]}</td><td>${f(x.med)}</td><td>${f(x.p90)}</td><td>${f(x.prev)}</td><td>${x.n}</td></tr>`).join('')}</tbody></table>
+    <div><button class="btn sm ghost" type="button" data-act="perfLoad">Actualiser</button></div></div>`;
+}
 function trBox() {
   const t = S.trset;
   if (!t) return `<div class="set-block" id="trBox"><h2>${I.translate} Traduction</h2><p class="hint">Permet de traduire un message reçu. Plafond : 480 000 caractères par mois, puis la traduction s’arrête jusqu’au 1er du mois suivant.</p><div><button class="btn sm ghost" type="button" data-act="trLoad">Afficher les réglages</button></div></div>`;
@@ -1873,6 +1946,8 @@ function settingsBody() {
       <p class="hint">${(me.locTo || []).length ? `✅ Partagée avec ${(me.locTo || []).length} personne${(me.locTo || []).length > 1 ? 's' : ''}. Sur ordinateur et dans le navigateur, la position est envoyée tant que Tam-Tam est ouvert.` : 'Partage désactivé : cochez une personne pour l’activer.'}</p></details></div>
     ${fold('tones', Tones.settingsHtml(), esc(Tones.name(Tones.get('call'))))}
     <div class="set-block"><h2>🌍 Ambassadeurs des langues</h2><p class="hint">Des bénévoles font vivre leur langue maternelle sur Tam-Tam en corrigeant les traductions. Ils portent le badge « Ambassadeur » sur leur profil.</p><div class="actions"><button class="btn sm ghost" type="button" data-act="ambList">Voir les ambassadeurs</button><a class="btn sm ghost" href="/ambassadeurs" target="_blank" rel="noopener">Devenir ambassadeur</a></div></div>
+    <div class="set-block"><details class="loc-det" data-fold="hd"${S.fold.has('hd') ? ' open' : ''}><summary><h2>${I.image} Qualité des photos et vidéos envoyées</h2><span class="loc-st${hdOn() ? ' on' : ''}">${hdOn() ? 'HD' : 'Standard'}</span></summary><p class="hint">Standard : photos et vidéos allégées avant l’envoi, comme sur WhatsApp. Elles partent et arrivent beaucoup plus vite. HD : meilleure qualité, mais plus lourd et plus lent.</p>
+      <div class="seg"><button type="button" data-act="hdSet" data-v="" aria-pressed="${!hdOn()}">Standard (conseillé)</button><button type="button" data-act="hdSet" data-v="1" aria-pressed="${hdOn()}">HD</button></div>${dataSaver() ? '<p class="hint">L’économie de données est activée : les envois restent allégés.</p>' : ''}</details></div>
     <div class="set-block"><details class="loc-det" data-fold="eco"${S.fold.has('eco') ? ' open' : ''}><summary><h2>${I.download || ''} Économie de données</h2><span class="loc-st${dataSaver() ? ' on' : ''}">${dataSaver() ? 'Activée' : 'Désactivée'}</span></summary><p class="hint">Pour les petits forfaits : photos et vidéos envoyées plus légères, et Tam-Tam ne télécharge rien à l’avance (le statut suivant se charge quand vous y arrivez).</p>
       <label class="pick chk"><input type="checkbox" data-act="saverTog"${dataSaver() ? ' checked' : ''}><span>Activer l’économie de données sur cet appareil</span></label></details></div>
     ${fold('lock', lockSettingsHtml(), (S.lock || {}).type === 'off' ? 'Désactivé' : 'Actif')}
@@ -1884,11 +1959,11 @@ function settingsBody() {
     ${Tr.settingsHtml()}
     <p class="hint set-mail">Connecté avec ${esc(me.email)} · @${esc(me.handle)}</p>
     ${me.admin ? mailBox() : ''}
-    ${me.admin ? trBox() : ''}
+    ${me.admin ? trBox() + perfBox() : ''}
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.90</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.91</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -2109,6 +2184,7 @@ const ACT = {
   trContribTog() { Tr.ls('tt-trcontrib', Tr.contrib() ? '0' : '1'); toast(Tr.contrib() ? 'Le message d’origine et « Votre correction » s’affichent sous les traductions' : 'Vous recevez seulement le message dans votre langue'); if (S.chatId) renderMessages(true); },
   trNone(d) { const c = S.chats.get(S.chatId); if (!c) return; if (d.side === 'out') { if (!Tr.setOut(c.id, '')) return; } else { Tr.setIn(c.id, ''); } S.trSide = d.side; renderComposer(); renderMessages(true); trSheet(); },
   trFlip(d) { const id = +d.id; Tr.flip.has(id) ? Tr.flip.delete(id) : Tr.flip.add(id); renderMessages(true); },
+  async perfLoad() { try { S.perf = await api('/api/admin/perf'); const el = $('#perfBox'); if (el) el.outerHTML = perfBox(); } catch (e) { toast(e.message); } },
   async trLoad() { try { S.trset = await api('/api/admin/translate'); const el = $('#trBox'); if (el) el.outerHTML = trBox(); } catch (e) { toast(e.message); } },
   async trOff() { try { await api('/api/admin/translate', {off: true}); S.trset = await api('/api/admin/translate'); Tr.st = await api('/api/translate/status'); renderBody(); toast('Traduction désactivée'); } catch (e) { toast(e.message); } },
   recStart() { Rec.start(); }, recCancel() { Rec.cancel(); }, recSend() { Rec.send(); },
@@ -2294,6 +2370,7 @@ const ACT = {
   },
   async devOut(d) { try { await api('/api/sessions/revoke', {id: +d.id}); toast('Appareil déconnecté'); ACT.devList(); } catch (e) { toast(e.message); } },
   async devOthers() { try { await api('/api/sessions/revoke', {others: true}); toast('Tous les autres appareils sont déconnectés'); ACT.devList(); } catch (e) { toast(e.message); } },
+  hdSet(d) { try { localStorage.setItem('tt:hd', d.v ? '1' : '0'); } catch {} renderBody(); toast(d.v ? 'Photos et vidéos envoyées en HD' : 'Photos et vidéos allégées avant l’envoi'); },
   saverTog() { const on = !dataSaver(); try { localStorage.setItem('tt:saver', on ? '1' : '0'); } catch {} toast(on ? 'Économie de données activée sur cet appareil' : 'Économie de données désactivée'); },
   listedTog() { saveNow({listed: !S.me.listed}, S.me.listed ? 'Vous n’apparaissez plus dans la liste des membres' : 'Vous apparaissez dans la liste des membres'); },
   pwSheet() { sheet(`${head('Changer le mot de passe')}<form data-form="pw"><div class="sheet-body"><div class="field"><label for="pwOld">Mot de passe actuel</label><input id="pwOld" type="password" autocomplete="current-password"></div><div class="field"><label for="pwNew">Nouveau mot de passe (8 caractères minimum)</label><input id="pwNew" type="password" autocomplete="new-password"></div><p class="err" id="pwErr" role="alert" hidden></p><div class="actions"><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Mot de passe', '#pwOld'); },
