@@ -52,7 +52,7 @@ const GCall = {
     pc.ontrack = e => { p.stream = e.streams[0] || new MediaStream([e.track]); this.render(); };
     pc.onconnectionstatechange = () => {
       if (this.c !== c) return; p.state = pc.connectionState;
-      if (p.state === 'connected') this.sig(uid, 'media', {cam: c.cam, mic: c.mic});
+      if (p.state === 'connected') { this.sig(uid, 'media', {cam: c.cam, mic: c.mic}); if (!p.net) p.net = NetAdapt.watch(pc, true); }
       if (p.state === 'failed') { this.drop(uid); }
       this.render();
     };
@@ -94,7 +94,7 @@ const GCall = {
   leave() {
     const c = this.c; if (!c) return;
     api('/api/gcall/leave', {callId: c.id}).catch(() => {});
-    clearInterval(c.tick); c.peers.forEach(p => { try { p.pc.close(); } catch {} }); c.local.getTracks().forEach(t => t.stop());
+    clearInterval(c.tick); c.peers.forEach(p => { try { if (p.net) p.net(); p.pc.close(); } catch {} }); c.local.getTracks().forEach(t => t.stop());
     this.c = null; this.render(); if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead();
   },
   toggleMic() { const c = this.c; if (!c) return; c.mic = !c.mic; c.local.getAudioTracks().forEach(t => { t.enabled = c.mic; }); c.peers.forEach((p, uid) => this.sig(uid, 'media', {cam: c.cam, mic: c.mic})); this.render(); },

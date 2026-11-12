@@ -2,6 +2,34 @@
    Le son et l'image passent directement d'un appareil à l'autre, chiffrés (WebRTC) ;
    le serveur ne fait que transmettre la sonnerie et les informations de connexion. */
 'use strict';
+/* Appels sur réseau faible (3G, coupures) : le son passe en priorité ; l'image baisse en netteté et en fluidité
+   selon le débit réellement disponible, puis remonte quand le réseau s'améliore. */
+const NetAdapt = {
+  TIERS: [{min: 1_500_000, br: 1_200_000, gbr: 500_000, sc: 1, fps: 30, gfps: 15}, {min: 600_000, br: 600_000, gbr: 300_000, sc: 1.5, fps: 24, gfps: 15}, {min: 250_000, br: 250_000, gbr: 150_000, sc: 2.5, fps: 15, gfps: 10}, {min: 0, br: 100_000, gbr: 80_000, sc: 4, fps: 8, gfps: 8}],
+  async apply(pc, t, group) {
+    for (const s of pc.getSenders()) { if (!s.track) continue; try { const p = s.getParameters(); if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+      if (s.track.kind === 'audio') { p.encodings[0].priority = 'high'; p.encodings[0].networkPriority = 'high'; p.encodings[0].maxBitrate = t.min < 250_000 ? 24_000 : 40_000; }
+      else { p.degradationPreference = 'balanced'; p.encodings[0].maxBitrate = group ? t.gbr : t.br; p.encodings[0].scaleResolutionDownBy = t.sc; p.encodings[0].maxFramerate = group ? t.gfps : t.fps; p.encodings[0].priority = 'low'; }
+      await s.setParameters(p); } catch {} }
+  },
+  // Toutes les 4 secondes : débit disponible et pertes ; on change de palier au plus toutes les 8 secondes.
+  watch(pc, group, onTier) {
+    const st = {tier: -1, at: 0, lostP: 0, sentP: 0};
+    const tick = async () => {
+      if (pc.connectionState === 'closed') return clearInterval(st.iv);
+      let bw = 0, loss = 0;
+      try { const r = await pc.getStats(); r.forEach(x => {
+        if (x.type === 'candidate-pair' && x.nominated && x.state === 'succeeded' && x.availableOutgoingBitrate) bw = Math.max(bw, x.availableOutgoingBitrate);
+        if (x.type === 'remote-inbound-rtp' && x.kind === 'video' && x.fractionLost != null) loss = Math.max(loss, x.fractionLost);
+        if (x.type === 'remote-inbound-rtp' && x.kind === 'audio' && x.fractionLost != null) loss = Math.max(loss, x.fractionLost * 1.5);
+      }); } catch { return; }
+      if (!bw) return; let i = this.TIERS.findIndex(t => bw >= t.min); if (loss > 0.12) i = Math.min(3, i + 2); else if (loss > 0.05) i = Math.min(3, i + 1);
+      const now = Date.now(); if (i === st.tier || (now - st.at < 8000 && st.tier >= 0 && i < st.tier)) return;
+      st.tier = i; st.at = now; await this.apply(pc, this.TIERS[i], group); if (onTier) onTier(i, bw, loss);
+    };
+    st.iv = setInterval(tick, 4000); setTimeout(tick, 1500); return () => clearInterval(st.iv);
+  },
+};
 const Call = {
   c: null, // appel en cours
   rid: () => Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join(''),
@@ -98,7 +126,7 @@ const Call = {
     pc.ontrack = e => { c.remote = e.streams[0] || new MediaStream([e.track]); this.attach(); };
     pc.onconnectionstatechange = () => {
       if (this.c !== c) return;
-      if (pc.connectionState === 'connected') { if (!c.since && c.pcAt) Perf.add('call', performance.now() - c.pcAt); if (!c.since) { c.since = Date.now(); c.tick = setInterval(() => this.clock(), 1000); } c.state = 'live'; c.lost && clearTimeout(c.lost); this.render(); this.sig('media', {data: {cam: c.cam, mic: c.mic}}); }
+      if (pc.connectionState === 'connected') { if (!c.since && c.pcAt) Perf.add('call', performance.now() - c.pcAt); if (!c.net) c.net = NetAdapt.watch(pc, false, i => { const w = i >= 3; if (w !== !!c.weak) { c.weak = w; if (this.c === c) this.render(); } }); if (!c.since) { c.since = Date.now(); c.tick = setInterval(() => this.clock(), 1000); } c.state = 'live'; c.lost && clearTimeout(c.lost); this.render(); this.sig('media', {data: {cam: c.cam, mic: c.mic}}); }
       else if (pc.connectionState === 'disconnected') { c.state = 'reconnecting'; this.render(); c.lost = setTimeout(() => { if (this.c === c && pc.connectionState !== 'connected') this.hangup(); }, 15000); }
       else if (pc.connectionState === 'failed') { toast('La connexion a échoué. Vérifiez votre réseau et rappelez.'); this.hangup(); }
     };
@@ -162,6 +190,7 @@ const Call = {
       <audio id="callAudio" autoplay></audio>
       ${showRemote ? '' : `<div class="call-who"><div class="call-av${c.state === 'ringing' || c.state === 'incoming' ? ' pulse' : ''}">${avatar(u, 'xl')}</div><h2>${esc(u.name)}</h2>
         <p id="callTime">${esc(this.label())}</p>${c.state === 'live' && c.peerMic === false ? '<p class="call-note">Micro coupé de son côté</p>' : ''}</div>`}
+      ${c.weak && c.state === 'live' ? '<div class="call-weak" role="status">📶 Réseau faible : image réduite pour garder un son clair</div>' : ''}
       ${showRemote ? `<div class="call-top"><b>${esc(u.name)}</b><span id="callTime"></span></div>` : ''}
       <video id="callLocal" class="call-local${c.front === false ? ' rear' : ''}" autoplay playsinline muted${showLocal ? '' : ' hidden'}></video>
       <div class="call-bar">${c.state === 'incoming'
@@ -204,7 +233,7 @@ const Call = {
   stopTracks(s) { (s || (this.c && this.c.local))?.getTracks().forEach(t => t.stop()); },
   cleanup() {
     const c = this.c; if (!c) return;
-    clearTimeout(c.timer); clearInterval(c.tick); clearTimeout(c.lost); this.tone(null);
+    clearTimeout(c.timer); clearInterval(c.tick); clearTimeout(c.lost); if (c.net) c.net(); this.tone(null);
     this.stopTracks(c.local); try { c.pc && c.pc.close(); } catch {}
     this.c = null; this.render();
   },

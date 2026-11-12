@@ -1380,3 +1380,4 @@ body:has(#pop) .rrail,body:has(#layer .layer) .rrail{display:none}
 .sto-row:last-child{border-bottom:0}
 .sto-row span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sto-row b{font-size:13px;color:var(--fg-2)}
+.call-weak{position:absolute;left:50%;top:calc(env(safe-area-inset-top,0px) + 64px);transform:translateX(-50%);z-index:3;padding:6px 12px;border-radius:999px;background:rgb(0 0 0/.55);color:#fff;font-size:13px;white-space:nowrap}
