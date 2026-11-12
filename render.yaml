@@ -1,0 +1,19 @@
+# Site d'essai gratuit sur Render (render.com) — version de la branche « essai ».
+# Gratuit : se met en veille après 15 min sans visite (réveil ~1 min) et la base est remise à zéro
+# à chaque redémarrage ou mise à jour. Réservé aux essais, jamais pour de vraies données.
+services:
+  - type: web
+    name: tam-tam-essai
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: essai
+    rootDir: app
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    healthCheckPath: /api/ping
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /data

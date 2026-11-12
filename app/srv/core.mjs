@@ -16,7 +16,7 @@ import QRCode from 'qrcode';
 export const ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
 export const PORT = +process.env.PORT || 3000;
 export const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'var');
-export const BASE_URL = (process.env.BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+export const BASE_URL = (process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
 export const OWNER = (process.env.OWNER_EMAIL || '').trim().toLowerCase();
 // Adresses de secours (autre nom de domaine, relais) : même serveur, joignable par un autre chemin en cas de panne.
 export const ALT_ORIGINS = String(process.env.ALT_ORIGINS || '').split(',').map(x => x.trim().replace(/\/+$/, '')).filter(x => (/^https:\/\/[a-z0-9.-]+$/i.test(x) || (BASE_URL.startsWith('http://localhost') && /^http:\/\/localhost:\d+$/.test(x))) && x !== BASE_URL);
