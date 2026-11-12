@@ -1,0 +1,13 @@
+{
+  "name": "tam-tam-outils",
+  "private": true,
+  "description": "Outils de vérification du code de Tam-Tam (pas utilisés en production).",
+  "type": "module",
+  "scripts": {
+    "verifier": "eslint --no-warn-ignored app/index.mjs app/srv app/public/*.js outils relais"
+  },
+  "devDependencies": {
+    "eslint": "9.17.0",
+    "globals": "15.14.0"
+  }
+}
