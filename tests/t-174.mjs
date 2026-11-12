@@ -1,0 +1,24 @@
+import { B, mk, reg, inv, sendPhoto, done } from './lib.mjs';
+const out = (k, v) => console.log(k, typeof v === 'string' ? v : JSON.stringify(v));
+const p = await mk('D'); await reg(p, B, 'desire', 'Désiré', 'owner@exemple.org', 'Kc-123456');
+const a = await mk('A'); await reg(a, await inv(p), 'awa', 'Awa', 'awa@exemple.org', 'Kc-222222');
+await p.evaluate(() => loadContacts()); await p.waitForTimeout(400);
+const aId = await a.evaluate(() => S.me.id), pId = await p.evaluate(() => S.me.id);
+await a.evaluate(id => ACT.write({id}), pId); await a.waitForTimeout(800);
+await a.evaluate(async () => { const i = $('#msgIn'); i.value = 'Bonjour'; await ACT.send ? 0 : 0; }); 
+await a.evaluate(() => { const f = document.querySelector('form[data-form=send]'); f.requestSubmit(); }); await a.waitForTimeout(1200);
+await p.evaluate(() => loadChats().then(renderAll)); await p.waitForTimeout(500);
+out('chips :', await p.evaluate(() => [...document.querySelectorAll('#filts .chip')].map(c => c.textContent.trim())));
+await p.click('.chat-row'); await p.waitForTimeout(1200);
+out('focus après ouverture :', await p.evaluate(() => document.activeElement && document.activeElement.id));
+await p.keyboard.type('Salut'); out('tapé :', await p.evaluate(() => $('#msgIn').value));
+// groupe privé dans le profil
+await p.evaluate(() => { ACT.back && ACT.back(); S.filt = 'me'; S.profTab = 'priv'; renderAll(); }); await p.waitForTimeout(400);
+out('résumé :', await p.evaluate(() => !!document.querySelector('[data-act=cgOpen]') + ' liste:' + document.querySelectorAll('input[name=close]').length));
+await p.click('[data-act=cgOpen]'); await p.waitForTimeout(300);
+await p.click('label.pick:has(input[name=close])'); await p.waitForTimeout(600);
+const box = await p.$('.grp-box'); await box.screenshot({path: 'shots/cg.png'});
+await p.click('[data-act=cgClose]'); await p.waitForTimeout(400);
+out('après valider :', await p.evaluate(() => (document.querySelector('.grp-box p')||{}).textContent + ' liste:' + document.querySelectorAll('input[name=close]').length));
+await p.screenshot({path: 'shots/tabs174.png'});
+await done();

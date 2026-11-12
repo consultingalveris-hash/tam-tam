@@ -1,0 +1,24 @@
+import { B, mk, reg, inv, done } from './lib.mjs';
+const out = (k, v) => console.log(k, typeof v === 'string' ? v : JSON.stringify(v));
+const p = await mk('D', true); await reg(p, B, 'desire', 'Désiré', 'owner@exemple.org', 'Kc-123456');
+const us = [];
+for (const [h, n, d] of [['awa', 'Awa', true], ['bobby', 'Bob', false]]) { const x = await mk(n, d); await reg(x, await inv(p), h, n, h + '@exemple.org', 'Kc-' + h.padEnd(6, '1')); us.push(x); }
+await p.evaluate(() => loadContacts()); await p.waitForTimeout(500);
+const ids = await Promise.all(us.map(x => x.evaluate(() => S.me.id)));
+const gid = await p.evaluate(async ids => { const r = await api('/api/chats/group', {name: 'Grand groupe', members: ids}); await loadChats(); return r.chat.id; }, ids);
+for (const x of [p, ...us]) await x.evaluate(async g => { await loadChats(); await GCall.loadActive(); renderAll(); await openChat(g); }, gid);
+await p.waitForTimeout(800);
+out('serveur de répartition disponible :', await p.evaluate(() => S.sfuOk));
+await p.evaluate(() => GCall.start(true)); await p.waitForTimeout(3000);
+out('mode :', await p.evaluate(() => GCall.c && (GCall.c.room ? 'répartition' : 'direct')));
+await us[0].waitForTimeout(500); await us[0].evaluate(() => GCall.accept()); await us[1].evaluate(() => GCall.accept());
+await p.waitForTimeout(9000);
+const st = x => x.evaluate(() => { const c = GCall.c; if (!c) return 'pas en appel'; return {pairs: [...c.peers.values()].map(q => `${uOf(q.uid).name}:${q.stream ? q.stream.getVideoTracks().length : 0}v:${q.state}`), chiffré: !!(c.room && c.room.isE2EEEnabled), vidéos: [...document.querySelectorAll('#gcall video[data-v]')].filter(v => v.readyState >= 2 && v.videoWidth > 0).length}; });
+out('Désiré :', await st(p)); out('Awa :', await st(us[0])); out('Bob :', await st(us[1]));
+await p.screenshot({path: 'shots/sfu194.png'});
+await us[1].evaluate(() => GCall.toggleMic()); await p.waitForTimeout(1500);
+out('micro de Bob coupé vu par Désiré :', await p.evaluate(() => { const q = [...GCall.c.peers.values()].find(x => uOf(x.uid).name === 'Bob'); return q && q.mic === false; }));
+await us[1].evaluate(() => GCall.leave()); await p.waitForTimeout(2500);
+out('Bob parti :', await p.evaluate(() => GCall.c.peers.size));
+for (const x of [p, us[0]]) await x.evaluate(() => GCall.leave());
+await done();

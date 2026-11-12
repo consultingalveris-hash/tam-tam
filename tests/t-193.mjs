@@ -1,0 +1,15 @@
+import { B, mk, reg, inv, done } from './lib.mjs';
+const out = (k, v) => console.log(k, typeof v === 'string' ? v : JSON.stringify(v));
+const p = await mk('D'); await reg(p, B, 'desire', 'Désiré', 'owner@exemple.org', 'Kc-123456');
+const a = await mk('A', true); await reg(a, await inv(p), 'awa', 'Awa', 'awa@exemple.org', 'Kc-222222');
+await p.evaluate(() => loadContacts()); await p.waitForTimeout(400); const aId = await a.evaluate(() => S.me.id);
+const chatId = await p.evaluate(async id => { const r = await api('/api/chats/direct', {userId: id}); await loadChats(); return r.chat.id; }, aId);
+await p.evaluate(cid => openChat(cid), chatId); await p.waitForTimeout(600); await a.evaluate(() => loadChats()); 
+await p.evaluate(() => Call.start(true)); await a.waitForTimeout(2500);
+out('appel reçu :', await a.evaluate(() => Call.c && Call.c.state));
+await a.evaluate(() => Call.accept()); await a.waitForTimeout(6000);
+out('en ligne :', await p.evaluate(() => Call.c && Call.c.state));
+out('réglages envoyés :', await p.evaluate(() => Call.c.pc.getSenders().filter(s => s.track).map(s => { const e = (s.getParameters().encodings || [])[0] || {}; return `${s.track.kind}:${e.maxBitrate || '-'}/${e.priority || '-'}${e.scaleResolutionDownBy ? '/x' + e.scaleResolutionDownBy : ''}`; })));
+out('mesure connexion :', await p.evaluate(() => Perf.q.filter(x => x[0] === 'call')));
+await p.evaluate(() => Call.hangup()); await p.waitForTimeout(800);
+await done();

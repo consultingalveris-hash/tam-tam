@@ -1,0 +1,12 @@
+import { B, mk, reg, inv, done } from './lib.mjs';
+const p = await mk('D', true); await reg(p, B, 'desire', 'Désiré', 'owner@exemple.org', 'Kc-123456');
+const a = await mk('A'); await reg(a, await inv(p), 'awa', 'Awa', 'awa@exemple.org', 'Kc-222222');
+await p.evaluate(() => loadContacts()); await p.waitForTimeout(400); const aId = await a.evaluate(() => S.me.id), pId = await p.evaluate(() => S.me.id);
+const cid = await a.evaluate(async pid => { const r = await api('/api/chats/direct', {userId: pid}); S.chats.set(r.chat.id, r.chat); keepUsers(Object.values(r.chat.users)); await openChat(r.chat.id); for (let i = 0; i < 25; i++) { $('#msgIn').value = 'Message numéro ' + i; document.querySelector('form[data-form=send]').requestSubmit(); await new Promise(r => setTimeout(r, 250)); } return r.chat.id; }, pId);
+await p.evaluate(() => loadChats().then(renderAll)); await p.waitForTimeout(600); await p.click('.chat-row'); await p.waitForTimeout(2500);
+const r = () => p.evaluate(() => { const box = $('#msgs'), last = [...box.querySelectorAll('.msg, .bub, [data-id]')].pop(), comp = $('#compose'); const lr = last.getBoundingClientRect(), cr = comp.getBoundingClientRect(), br = box.getBoundingClientRect(); return {lastBottom: Math.round(lr.bottom), composeTop: Math.round(cr.top), boxBottom: Math.round(br.bottom), gap: Math.round(box.scrollHeight - box.scrollTop - box.clientHeight)}; });
+console.log('ouverture :', JSON.stringify(await r()));
+await a.evaluate(() => { $('#msgIn').value = 'Encore un'; document.querySelector('form[data-form=send]').requestSubmit(); }); await p.waitForTimeout(1500);
+console.log('nouveau message :', JSON.stringify(await r()));
+await p.screenshot({path: 'shots/desk-bottom.png'});
+await done();

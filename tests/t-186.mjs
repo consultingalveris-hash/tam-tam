@@ -1,0 +1,24 @@
+import { B, mk, reg, inv, sendPhoto, done } from './lib.mjs';
+const p = await mk('D', true); await reg(p, B, 'desire', 'Désiré', 'owner@exemple.org', 'Kc-123456');
+const a = await mk('A'); await reg(a, await inv(p), 'awa', 'Awa', 'awa@exemple.org', 'Kc-222222');
+await p.evaluate(() => loadContacts()); await p.waitForTimeout(400); const pId = await p.evaluate(() => S.me.id);
+await a.evaluate(async pid => { const r = await api('/api/chats/direct', {userId: pid}); S.chats.set(r.chat.id, r.chat); keepUsers(Object.values(r.chat.users)); await openChat(r.chat.id); }, pId);
+const send = async (pg, t) => { await pg.evaluate(t => { $('#msgIn').value = t; document.querySelector('form[data-form=send]').requestSubmit(); }, t); await pg.waitForTimeout(350); };
+for (let i = 0; i < 6; i++) await send(a, 'Avant ' + i);
+await sendPhoto(a); await a.waitForTimeout(400); await sendPhoto(a); await a.waitForTimeout(400);
+for (let i = 0; i < 5; i++) await send(a, 'Après ' + i);
+// Désiré : liste fraîche, on vide les images en mémoire pour qu'elles se chargent après coup
+await p.evaluate(() => { E2E.imgs && E2E.imgs.clear && E2E.imgs.clear(); S.msgs.clear(); return loadChats().then(renderAll); }); await p.waitForTimeout(500);
+const gap = () => p.evaluate(() => { const b = $('#msgs'); return Math.round(b.scrollHeight - b.scrollTop - b.clientHeight); });
+await p.click('.chat-row'); await p.waitForTimeout(3000);
+console.log('1. ouverture, écart au bas :', await gap());
+await a.evaluate(() => markRead && markRead()); await p.waitForTimeout(1500);
+console.log('2. lu sur l’autre appareil :', await gap());
+await send(p, 'hey'); await p.waitForTimeout(1500);
+console.log('3. après envoi :', await gap());
+await send(a, 'Réponse'); await p.waitForTimeout(1500);
+console.log('4. message reçu :', await gap());
+await p.mouse.move(900, 400); await p.mouse.wheel(0, -600); await p.waitForTimeout(500); await send(a, 'Pendant lecture'); await p.waitForTimeout(1200);
+console.log('5. remonté lire (doit rester loin du bas) :', await gap());
+await p.screenshot({path: 'shots/stick.png'});
+await done();

@@ -1,0 +1,16 @@
+import { B, mk, reg, done } from './lib.mjs';
+import { DatabaseSync } from 'node:sqlite';
+const out = (k, v) => console.log(k, JSON.stringify(v));
+const p = await mk('D', true); await reg(p, B, 'desire', 'Désiré', 'owner@exemple.org', 'Kc-123456');
+out('enregistrement des deux clés', await p.evaluate(async () => { try { await api('/api/admin/translate', {gkey: 'AIzaTESTTESTTESTTESTTESTTESTTESTTEST', ckey: 'sk-ant-TESTTESTTESTTESTTESTTEST', budget: 1}); const a = await api('/api/admin/translate'); return {g: a.g, c: a.c, cap: a.cap}; } catch (e) { return e.message; } }));
+const tr = t => p.evaluate(async t => { try { return (await api('/api/translate', {text: t, to: 'en'})).text; } catch (e) { return 'ERR ' + e.message; } }, t);
+out('Google d’abord', await tr('Bonjour'));
+out('Google en panne -> Claude', await tr('ECHEC test'));
+out('langue que seul Claude connaît', await p.evaluate(async () => { try { return (await api('/api/translate', {text: 'Bonjour', to: 'bas'})).text; } catch (e) { return 'ERR ' + e.message; } }));
+const db = new DatabaseSync('/home/claude/tam-tam/app/var/tamtam.db'); db.prepare(`INSERT OR REPLACE INTO settings(k,v) VALUES(?,?)`).run('tr:' + new Date().toISOString().slice(0, 7), '449999');
+out('plafond Google atteint -> Claude', await tr('Salut tout le monde'));
+await p.evaluate(async () => { S.tab = 'settings'; renderAll(); await ACT.trLoad(); });
+out('réglages', await p.evaluate(() => document.getElementById('trBox').innerText.replace(/\s+/g, ' ').slice(0, 260)));
+out('retirer Claude', await p.evaluate(async () => { await api('/api/admin/translate', {off: 'claude'}); const a = await api('/api/admin/translate'); return {g: a.g, c: a.c}; }));
+out('plafond + plus de Claude', await tr('Encore un message'));
+await done();

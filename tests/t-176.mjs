@@ -1,0 +1,11 @@
+import { B, mk, reg, inv, done } from './lib.mjs';
+const p = await mk('D'); await reg(p, B, 'desire', 'Désiré', 'owner@exemple.org', 'Kc-123456');
+const a = await mk('A'); await reg(a, await inv(p), 'awa', 'Awa', 'awa@exemple.org', 'Kc-222222');
+await p.evaluate(() => loadContacts()); await p.waitForTimeout(400); const aId = await a.evaluate(() => S.me.id);
+await p.evaluate(async aid => { const mkb = async c => { const cv = document.createElement('canvas'); cv.width = 300; cv.height = 300; const g = cv.getContext('2d'); g.fillStyle = c; g.fillRect(0, 0, 300, 300); return new Promise(r => cv.toBlob(r, 'image/jpeg', .9)); };
+  await Mem.saveOne({kind: 'photo', blob: await mkb('#3a6'), mime: 'image/jpeg'}, {aud: 'friends', to: [aid], lock: true, once: false}, '', dayISO(new Date()));
+  await Mem.saveOne({kind: 'photo', blob: await mkb('#a63'), mime: 'image/jpeg'}, {aud: 'friends', to: [aid], lock: false, once: false}, '', '2025-03-14');
+  await Mem.saveOne({kind: 'photo', blob: await mkb('#36a'), mime: 'image/jpeg'}, {aud: 'public'}, '', dayISO(new Date()));
+  S.tab = 'souvenirs'; Mem.filt = 'friends'; renderAll(); }, aId);
+await p.waitForTimeout(1500); await p.screenshot({path: 'shots/dates.png'});
+await done();

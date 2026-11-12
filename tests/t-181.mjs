@@ -1,0 +1,12 @@
+import { B, mk, reg, inv, done } from './lib.mjs';
+const p = await mk('D'); await reg(p, B, 'desire', 'Désiré', 'owner@exemple.org', 'Kc-123456');
+const a = await mk('A'); await reg(a, await inv(p), 'awa', 'Awa', 'awa@exemple.org', 'Kc-222222');
+await p.evaluate(() => loadContacts()); await p.waitForTimeout(400); const aId = await a.evaluate(() => S.me.id), pId = await p.evaluate(() => S.me.id);
+await p.evaluate(async aid => { const g = await api('/api/chats/group', {name: 'Famille', members: [aid]}); }, aId);
+await a.evaluate(() => loadChats().then(renderAll)); await a.waitForTimeout(500);
+const send = async (pg, pred) => { await pg.evaluate(async src => { const c = [...S.chats.values()].find(new Function('c', 'return ' + src)); await openChat(c.id); $('#msgIn').value = 'Bonjour'; document.querySelector('form[data-form=send]').requestSubmit(); }, pred); await pg.waitForTimeout(1200); };
+await a.evaluate(async pid => { const r = await api('/api/chats/direct', {userId: pid}); S.chats.set(r.chat.id, r.chat); keepUsers(Object.values(r.chat.users)); }, pId); await send(a, "c.type === 'group'"); await send(a, "c.type !== 'group'");
+await p.evaluate(() => { S.chatId = null; loadChats().then(renderAll); }); await p.waitForTimeout(800);
+console.log(await p.evaluate(() => [...document.querySelectorAll('#filts .chip')].map(c => c.textContent.trim())));
+console.log(await p.evaluate(() => { S.filt = 'unread'; renderBody(); return [...document.querySelectorAll('.chat-row .row-name')].map(x => x.textContent); }));
+await done();

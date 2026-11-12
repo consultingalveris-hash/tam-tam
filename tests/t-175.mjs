@@ -1,0 +1,23 @@
+import { B, mk, reg, inv, done } from './lib.mjs';
+const out = (k, v) => console.log(k, typeof v === 'string' ? v : JSON.stringify(v));
+const p = await mk('D', true); await reg(p, B, 'desire', 'Désiré', 'owner@exemple.org', 'Kc-123456');
+const a = await mk('A'); await reg(a, await inv(p), 'awa', 'Awa', 'awa@exemple.org', 'Kc-222222');
+await p.evaluate(() => loadContacts()); await p.waitForTimeout(400);
+const aId = await a.evaluate(() => S.me.id);
+await p.evaluate(id => ACT.write({id}), aId); await p.waitForTimeout(1000); await p.evaluate(() => { ACT.tab({t:'chats'}); }); await p.waitForTimeout(300);
+await p.mouse.click(5, 5); await p.waitForTimeout(200);
+await p.click('.chat-row'); await p.waitForTimeout(1500);
+out('ordinateur, focus après clic :', await p.evaluate(() => document.activeElement && (document.activeElement.id || document.activeElement.className)));
+await p.click('#msgs'); await p.waitForTimeout(200);
+out('focus après clic dans les messages :', await p.evaluate(() => document.activeElement.id || document.activeElement.className));
+await p.keyboard.type('Bonjour'); out('tapé :', await p.evaluate(() => $('#msgIn').value));
+await p.evaluate(() => { $('#msgIn').blur(); const ev = new ClipboardEvent('paste', {clipboardData: new DataTransfer(), bubbles: true}); ev.clipboardData.setData('text', ' collé'); document.body.dispatchEvent(ev); });
+out('après coller :', await p.evaluate(() => $('#msgIn').value));
+// profil, fenêtre ordinateur
+await p.evaluate(() => { S.profTab = 'priv'; ACT.goProfile(); }); await p.waitForTimeout(800);
+out('résumé :', await p.evaluate(() => !!document.querySelector('#pmodal [data-act=cgOpen]')));
+await p.click('#pmodal [data-act=cgOpen]'); await p.waitForTimeout(300);
+await p.click('#pmodal label.pick:has(input[name=close])'); await p.waitForTimeout(600);
+await p.click('#pmodal [data-act=cgClose]'); await p.waitForTimeout(400);
+out('après valider :', await p.evaluate(() => (document.querySelector('#pmodal .grp-box p')||{}).textContent + ' | cases visibles:' + document.querySelectorAll('#pmodal input[name=close]').length));
+await done();

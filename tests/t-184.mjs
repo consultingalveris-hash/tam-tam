@@ -1,0 +1,18 @@
+import { B, mk, reg, inv, done } from './lib.mjs';
+const out = (k, v) => console.log(k, typeof v === 'string' ? v : JSON.stringify(v));
+const p = await mk('D', true); await reg(p, B, 'desire', 'Désiré', 'owner@exemple.org', 'Kc-123456');
+const a = await mk('A'); await reg(a, await inv(p), 'awa', 'Awa', 'awa@exemple.org', 'Kc-222222');
+const m = await mk('M'); await reg(m, await inv(p), 'moussa', 'Moussa', 'moussa@exemple.org', 'Kc-333333');
+await p.evaluate(() => loadContacts()); await p.waitForTimeout(400);
+const [aId, mId] = [await a.evaluate(() => S.me.id), await m.evaluate(() => S.me.id)];
+await p.evaluate(async ids => { const g = await api('/api/chats/group', {name: 'Test', members: ids}); keepUsers(Object.values(g.chat.users)); S.chats.set(g.chat.id, g.chat); await openChat(g.chat.id); groupInfo(); }, [aId, mId]);
+await p.waitForTimeout(500); const ib = await p.$('.prof'); await ib.screenshot({path: 'shots/grpinfo.png'}); await p.evaluate(() => closeLayer());
+await p.evaluate(() => GCall.start(true)); await p.waitForTimeout(2000);
+await p.evaluate(() => { ACT.gcallLay(); }); await p.waitForTimeout(300); await p.screenshot({path: 'shots/g184-menu.png'});
+await p.evaluate(() => ACT.gcallLaySet({k: 'side'})); await p.waitForTimeout(300);
+out('seul, principale à gauche :', await p.evaluate(() => ({main: document.querySelectorAll('.g-main .gt').length, secs: document.querySelectorAll('.g-secs .gt.wait').length})));
+await p.screenshot({path: 'shots/g184-side.png'});
+await a.evaluate(() => loadChats()); await a.waitForTimeout(300); await a.evaluate(() => GCall.accept()); await p.waitForTimeout(4000);
+out('après arrivée Awa :', await p.evaluate(() => [...document.querySelectorAll('#gcall .gt')].map(t => (t.closest('.g-main') ? 'P:' : 'S:') + t.querySelector('.gt-name').textContent.trim())));
+for (const pg of [p, a]) await pg.evaluate(() => GCall.leave());
+await done();

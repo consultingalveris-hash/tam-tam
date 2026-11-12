@@ -1,0 +1,31 @@
+import { B, mk, reg, inv, done } from './lib.mjs';
+const out = (k, v) => console.log(k, typeof v === 'string' ? v : JSON.stringify(v));
+const p = await mk('D'); await reg(p, B, 'desire', 'Désiré', 'owner@exemple.org', 'Kc-123456');
+const a = await mk('A', true); await reg(a, await inv(p), 'awa', 'Awa', 'awa@exemple.org', 'Kc-222222');
+const m = await mk('M'); await reg(m, await inv(p), 'moussa', 'Moussa', 'moussa@exemple.org', 'Kc-333333');
+await p.evaluate(() => loadContacts()); await p.waitForTimeout(400);
+const [aId, mId] = [await a.evaluate(() => S.me.id), await m.evaluate(() => S.me.id)];
+const gid = await p.evaluate(async ids => { const g = await api('/api/chats/group', {name: 'Test 2', members: ids}); keepUsers(Object.values(g.chat.users)); S.chats.set(g.chat.id, g.chat); await openChat(g.chat.id); return g.chat.id; }, [aId, mId]);
+await a.evaluate(() => loadChats()); await m.evaluate(() => loadChats()); await a.waitForTimeout(500);
+// 1. sonnerie arrêtée quand l'appelant raccroche seul
+await p.evaluate(() => GCall.start(true)); await p.waitForTimeout(2500);
+out('Awa sonne :', await a.evaluate(() => [!!GCall.inc, !!GCall.toneP]));
+out('Désiré seul :', await p.evaluate(() => ({wait: document.querySelectorAll('.g-w').length, gap: Math.round(document.querySelector('.gt').getBoundingClientRect().top - document.querySelector('.g-top').getBoundingClientRect().bottom), dot: !!document.querySelector('.lay-dot')})));
+await p.screenshot({path: 'shots/g-alone.png'});
+await p.evaluate(() => GCall.leave()); await a.waitForTimeout(1500);
+out('Awa après raccroché :', await a.evaluate(() => [!!GCall.inc, !!GCall.toneP]));
+// 2. dispositions
+await p.evaluate(() => GCall.start(true)); await a.waitForTimeout(2500);
+await a.evaluate(() => GCall.accept()); await m.evaluate(() => GCall.accept()); await a.waitForTimeout(5000);
+out('tuiles Awa :', await a.evaluate(() => document.querySelectorAll('#gcall .gt').length));
+await a.screenshot({path: 'shots/g-grid.png'}); await a.click('.lay-dot'); await a.waitForTimeout(300); await a.screenshot({path: 'shots/g-menu.png'});
+await a.click('[data-act=gcallLaySet][data-k=side]'); await a.waitForTimeout(500);
+await a.screenshot({path: 'shots/g-side.png'});
+const before = await a.evaluate(() => GCall.c.main);
+const sec = await a.$('.g-secs .gt'); const sb = await sec.boundingBox(); const mb = await (await a.$('.g-main')).boundingBox();
+await a.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 2); await a.mouse.down(); await a.waitForTimeout(600);
+await a.mouse.move(mb.x + mb.width / 2, mb.y + mb.height / 2, {steps: 8}); await a.mouse.up(); await a.waitForTimeout(400);
+out('principale avant/après :', [before, await a.evaluate(() => GCall.c.main)]);
+await a.evaluate(() => ACT.gcallLaySet({k: 'top'})); await a.waitForTimeout(400); await a.screenshot({path: 'shots/g-top.png'});
+for (const pg of [p, a, m]) await pg.evaluate(() => GCall.leave());
+await done();

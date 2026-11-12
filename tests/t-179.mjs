@@ -1,0 +1,22 @@
+import { B, mk, reg, inv, done } from './lib.mjs';
+const out = (k, v) => console.log(k, typeof v === 'string' ? v : JSON.stringify(v));
+const p = await mk('D', true); await reg(p, B, 'desire', 'Désiré', 'owner@exemple.org', 'Kc-123456');
+const a = await mk('A'); await reg(a, await inv(p), 'awa', 'Awa', 'awa@exemple.org', 'Kc-222222');
+await p.evaluate(() => loadContacts()); await p.waitForTimeout(400); const aId = await a.evaluate(() => S.me.id);
+await p.evaluate(async aid => { const mkb = async c => { const cv = document.createElement('canvas'); cv.width = 300; cv.height = 300; const g = cv.getContext('2d'); g.fillStyle = c; g.fillRect(0, 0, 300, 300); return new Promise(r => cv.toBlob(r, 'image/jpeg', .9)); };
+  await Mem.saveOne({kind: 'photo', blob: await mkb('#3a6'), mime: 'image/jpeg'}, {aud: 'friends', to: [aid], lock: true, once: false}, '', dayISO(new Date()));
+  await Mem.saveOne({kind: 'photo', blob: await mkb('#a63'), mime: 'image/jpeg'}, {aud: 'friends', to: [aid], lock: false, once: false}, '', dayISO(new Date()));
+  await Mem.saveOne({kind: 'photo', blob: await mkb('#36a'), mime: 'image/jpeg'}, {aud: 'private'}, '', dayISO(new Date())); }, aId);
+await a.waitForTimeout(1500);
+const cnt = pg => pg.evaluate(async () => { const r = {}; for (const f of ['all', 'friends', 'private']) { Mem.filt = f; Mem.unlocked = f === 'private'; S.tab = 'souvenirs'; renderAll(); await new Promise(r => setTimeout(r, 300)); r[f] = {tiles: document.querySelectorAll('.mem-tile').length, vault: (document.querySelector('.mem-vault small') || {}).textContent, privDot: !!document.querySelector('[data-f=private] .act-dot')}; } return r; });
+out('Awa :', await cnt(a));
+out('Désiré :', await cnt(p));
+await a.screenshot({path: 'shots/priv-a.png'});
+// réglages repliés
+await p.evaluate(() => { Mem.unlocked = false; pmOpen('settings'); }); await p.waitForTimeout(500);
+out('réglages :', await p.evaluate(() => [...document.querySelectorAll('#pmodal details[data-fold]')].map(d => d.dataset.fold + ':' + (d.open ? 'ouvert' : 'fermé') + ':' + d.querySelector('summary').textContent.trim())));
+await p.evaluate(() => { const d = document.querySelector('details[data-fold=lock]'); d.open = true; }); await p.waitForTimeout(200);
+await p.evaluate(() => renderModal()); await p.waitForTimeout(200);
+out('après rendu :', await p.evaluate(() => document.querySelector('details[data-fold=lock]').open));
+await p.screenshot({path: 'shots/set179.png'});
+await done();
