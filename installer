@@ -27,6 +27,8 @@ if [ -z "$(swapon --show --noheadings 2>/dev/null)" ]; then
   swapon /swapfile && { grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab; } && echo "Mémoire de secours activée (2 Go)."
 fi
 sysctl -q vm.swappiness=20 2>/dev/null || true
+# Appels de groupe : mémoire réseau suffisante pour le serveur de répartition (recommandation LiveKit).
+printf 'net.core.rmem_max=5000000\nnet.core.wmem_max=5000000\n' > /etc/sysctl.d/90-tamtam.conf 2>/dev/null && sysctl -q -p /etc/sysctl.d/90-tamtam.conf 2>/dev/null || true
 
 # Relais d'appels (TURN) : aide les appels à passer quand les réseaux mobiles bloquent la connexion directe.
 SECRET_TURN_F=/root/.tam-tam-turn
