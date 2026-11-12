@@ -295,6 +295,9 @@ function exportBackup() {
   if (bkCache && Date.now() - bkCache.at < 30 * 60_000) return bkCache.buf;
   const tmp = path.join(DATA_DIR, 'backups', `export-${process.pid}.tmp`); try { fs.rmSync(tmp); } catch {}
   db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
+  // La clé qui protège une seconde fois les sauvegardes de clés des membres voyage avec la copie (elle-même chiffrée) :
+  // sans elle, une base restaurée sur un nouveau serveur ne permettrait plus aux membres de retrouver leurs messages.
+  if (process.env.BACKUP_KEY) { const t = new DatabaseSync(tmp); t.prepare(`INSERT OR REPLACE INTO settings(k,v) VALUES('backup_key_copy',?)`).run(process.env.BACKUP_KEY); t.close(); }
   const plain = zlib.gzipSync(fs.readFileSync(tmp)); fs.rmSync(tmp);
   const buf = bkSeal(plain);
   bkCache = { at: Date.now(), buf }; return buf;
