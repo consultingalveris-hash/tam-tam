@@ -263,18 +263,40 @@ backup(); setInterval(backup, 3600_000);
 // Copie de sauvegarde à emporter hors du serveur (chaque nuit, sur l'ordinateur de l'Éditeur) :
 // la base est compressée puis chiffrée avec une clé publique ; seule la clé privée, gardée sur cet ordinateur, peut l'ouvrir.
 // Le fichier est donc illisible pour quiconque le téléchargerait. Une seule copie fraîche toutes les 30 minutes au plus.
-const BK_PUB = (() => { try { return crypto.createPublicKey(fs.readFileSync(path.join(ROOT, 'backup-pub.pem'))); } catch { return null; } })();
+const BK_PUB = (() => { try { return crypto.createPublicKey(fs.readFileSync(process.env.BACKUP_PUB_FILE || path.join(ROOT, 'backup-pub.pem'))); } catch { return null; } })();
 let bkCache = null;
+// Chiffre un paquet avec la clé publique de sauvegarde (même format que la base : TTBK1).
+function bkSeal(plain) {
+  const key = crypto.randomBytes(32), iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const body = Buffer.concat([c.update(plain), c.final()]), tag = c.getAuthTag();
+  const wrapped = crypto.publicEncrypt({ key: BK_PUB, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, Buffer.concat([key, iv]));
+  const len = Buffer.alloc(4); len.writeUInt32BE(wrapped.length);
+  return Buffer.concat([Buffer.from('TTBK1\n'), len, wrapped, tag, body]);
+}
+// Photos et vidéos à emporter hors du serveur, par paquets d'environ 40 Mo, dans l'ordre d'arrivée.
+// Elles sont déjà chiffrées de bout en bout ; le paquet est en plus chiffré pour la clé de sauvegarde.
+// Contenu (avant chiffrement) : 4 octets = taille de l'index JSON, l'index [{id, size, at}], puis les fichiers à la suite.
+function exportMedia(cur) {
+  // Curseur « date:identifiant » : reprend exactement après le dernier fichier emporté, même à date égale.
+  const [at0, id0] = [Math.max(0, +String(cur).split(':')[0] || 0), String(cur).split(':')[1] || ''];
+  const rows = qa(`SELECT id, size, created_at FROM media WHERE created_at > ? OR (created_at = ? AND id > ?) ORDER BY created_at, id LIMIT 500`, at0, at0, id0);
+  const index = [], parts = []; let total = 0, next = `${at0}:${id0}`, done = 0;
+  for (const r of rows) {
+    let b = null; try { b = fs.readFileSync(path.join(MEDIA, r.id)); } catch {}
+    if (b && parts.length && total + b.length > 40_000_000) break;
+    if (b) { index.push({ id: r.id, size: b.length, at: r.created_at }); parts.push(b); total += b.length; }
+    next = `${r.created_at}:${r.id}`; done++;
+  }
+  const more = done < rows.length || rows.length === 500;
+  const ix = Buffer.from(JSON.stringify(index)), n = Buffer.alloc(4); n.writeUInt32BE(ix.length);
+  return { buf: bkSeal(Buffer.concat([n, ix, ...parts])), last: next, more, count: index.length };
+}
 function exportBackup() {
   if (bkCache && Date.now() - bkCache.at < 30 * 60_000) return bkCache.buf;
   const tmp = path.join(DATA_DIR, 'backups', `export-${process.pid}.tmp`); try { fs.rmSync(tmp); } catch {}
   db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
   const plain = zlib.gzipSync(fs.readFileSync(tmp)); fs.rmSync(tmp);
-  const key = crypto.randomBytes(32), iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const body = Buffer.concat([c.update(plain), c.final()]), tag = c.getAuthTag();
-  const wrapped = crypto.publicEncrypt({ key: BK_PUB, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, Buffer.concat([key, iv]));
-  const len = Buffer.alloc(4); len.writeUInt32BE(wrapped.length);
-  const buf = Buffer.concat([Buffer.from('TTBK1\n'), len, wrapped, tag, body]);
+  const buf = bkSeal(plain);
   bkCache = { at: Date.now(), buf }; return buf;
 }
 
@@ -395,6 +417,13 @@ R('GET', /^\/api\/backup\/export$/, async ({ req, res }) => {
   const buf = exportBackup();
   res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf.length, 'Cache-Control': 'no-store', 'Content-Disposition': `attachment; filename="tamtam-${new Date().toISOString().slice(0, 10)}.ttbk"` });
   res.end(buf); return null;
+}, false);
+R('GET', /^\/api\/backup\/media$/, async ({ req, res, url }) => {
+  if (!BK_PUB) E(404, 'Adresse inconnue.');
+  if (tooMany('bkm:' + ipOf(req), 120, 60 * 60_000)) E(429, 'Trop de demandes.');
+  const since = String(url.searchParams.get('since') || '0').slice(0, 80), x = exportMedia(/^\d+(:[A-Za-z0-9_-]{0,40})?$/.test(since) ? since : '0');
+  res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': x.buf.length, 'Cache-Control': 'no-store', 'X-TT-Next': String(x.last), 'X-TT-More': x.more ? '1' : '0', 'X-TT-Count': String(x.count) });
+  res.end(x.buf); return null;
 }, false);
 // Adresses de secours : la liste est publique (elle sert quand l'adresse principale ne répond plus).
 R('GET', /^\/api\/alt$/, async () => ({ primary: BASE_URL, alt: ALT_ORIGINS }), false);
