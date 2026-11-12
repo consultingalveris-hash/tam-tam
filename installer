@@ -93,7 +93,7 @@ docker run -d --name "$APP" --restart unless-stopped --network "$NET" --memory 5
   -v "$VOLUME:/data" \
   -e BASE_URL="https://$DOMAINE" -e OWNER_EMAIL="$PROPRIETAIRE" \
   -e TURN_SECRET="$SECRET_TURN" -e TURN_HOST="${IP_PUB:-$DOMAINE}" -e BACKUP_KEY="$SECRET_BK" \
-  -e LK_URL="${LK_KEY:+wss://$DOMAINE/lk}" -e LK_KEY="$LK_KEY" -e LK_SECRET="$LK_SECRET" \
+  -e LK_URL="${LK_KEY:+wss://$DOMAINE/lk}" -e LK_API="${LK_KEY:+http://tam-tam-lk:7880}" -e LK_KEY="$LK_KEY" -e LK_SECRET="$LK_SECRET" \
   "$APP:latest" >/dev/null
 sleep 3
 docker exec "$APP" node -e "fetch('http://localhost:3000/api/meta').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" \

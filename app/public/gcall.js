@@ -48,6 +48,8 @@ const GCall = {
     try { const o = await E2E.open(r.keyEnv, S.me.id); if (o.err || !o.payload.k) throw 0;
       if (L.isE2EESupported && L.isE2EESupported()) { const kp = new L.ExternalE2EEKeyProvider(); await kp.setKey(o.payload.k); opts.e2ee = {keyProvider: kp, worker: new Worker('/lkc/e2ee.worker.mjs', {type: 'module'})}; }
     } catch { toast('Vous n’avez pas la clé de cet appel (membre arrivé après son début).'); return this.leave(); }
+    // Jamais d'appel de groupe en clair : sans chiffrement de bout en bout, on ne rejoint pas.
+    if (!opts.e2ee) { toast('Ce navigateur ne sait pas chiffrer les grands appels de groupe. Mettez-le à jour ou essayez Chrome.'); return this.leave(); }
     const room = c.room = new L.Room(opts), E = L.RoomEvent;
     const peerOf = part => { const uid = +part.identity; if (!uid || uid === S.me.id) return null; let p = c.peers.get(uid); if (!p) { p = {uid, stream: new MediaStream(), cam: undefined, mic: true, state: 'connected', lk: true}; c.peers.set(uid, p); } return p; };
     room.on(E.ParticipantConnected, part => { peerOf(part); toast(`${first(uOf(+part.identity).name)} a rejoint l’appel`); this.render(); });

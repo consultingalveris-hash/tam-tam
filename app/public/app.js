@@ -527,7 +527,7 @@ function renderChatHead() {
   if (S.msel && S.msel.size) { h.innerHTML = `<button class="ib back" type="button" data-act="mselOff" aria-label="Annuler la sélection">${I.close}</button><b class="msel-n">${S.msel.size} sélectionné${S.msel.size > 1 ? 's' : ''}</b><span class="grow"></span><button class="ib dotb" type="button" data-act="mselMenu" aria-label="Actions" title="Actions">${DOT((S.chats.get(S.chatId) || {}).hidden)}</button>`; h.classList.add('msel-head'); return; }
   h.classList.remove('msel-head');
   const tu = typingIn(c.id); let sub;
-  if (c.type === 'group') sub = tu ? `<small class="on">${esc(first(uOf(tu).name))} écrit…</small>` : `<small>${c.members.map(m => m.id === S.me.id ? 'Vous' : first(uOf(m.id).name)).join(', ')}</small>`;
+  if (c.type === 'group') sub = tu ? `<small class="on">${esc(first(uOf(tu).name))} écrit…</small>` : `<small>${c.members.map(m => m.id === S.me.id ? 'Vous' : esc(first(uOf(m.id).name))).join(', ')}</small>`;
   else { const u = uOf(c.peer); sub = tu ? '<small class="on">écrit…</small>' : `<small class="${u.busy ? 'busy' : u.online ? 'on' : ''}">${presLabel(u)}</small>`; }
   h.innerHTML = `<button class="ib back" type="button" data-act="back" aria-label="Retour">${I.back}</button>
     <button class="chat-id" type="button" data-act="chatInfo">${c.type === 'group' ? grpAv(c, 'sm') : stRing(uOf(c.peer), avatar(uOf(c.peer), 'sm'))}<span style="min-width:0"><b>${numSm(chatTitle(c))}</b>${sub}</span></button>
@@ -1079,17 +1079,18 @@ function reactsHtml(m) {
   if (!m.reacts || !m.reacts.length) return '';
   const g = {}; for (const r of m.reacts) (g[r.e] = g[r.e] || []).push(r.u);
   const mine = m.reacts.some(r => r.u === S.me.id);
-  return `<button type="button" class="reacts${mine ? ' mine' : ''}" data-act="reactWho" data-id="${m.id}" aria-label="Réactions">${Object.entries(g).map(([e, us]) => `<span>${e}${us.length > 1 ? `<small>${us.length}</small>` : ''}</span>`).join('')}</button>`;
+  return `<button type="button" class="reacts${mine ? ' mine' : ''}" data-act="reactWho" data-id="${m.id}" aria-label="Réactions">${Object.entries(g).map(([e, us]) => `<span>${esc(e)}${us.length > 1 ? `<small>${us.length}</small>` : ''}</span>`).join('')}</button>`;
 }
 const fsz = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.', ',') + ' Mo' : Math.max(1, Math.round(n / 1e3)) + ' Ko';
 function docHtml(m) {
-  const ext = ((m.fname || '').split('.').pop() || '').slice(0, 4).toUpperCase();
+  const ext = (String(m.fname || '').split('.').pop() || '').slice(0, 4).toUpperCase();
   return `<button type="button" class="docb" data-act="docOpen" data-id="${m.id}"><span class="doc-ic" aria-hidden="true">${esc(ext || 'DOC')}</span><span class="doc-t"><b>${esc(m.fname || 'Document')}</b><small>${m.fsize ? fsz(m.fsize) + ' · ' : ''}Touchez pour ouvrir</small></span></button>`;
 }
 async function docOpen(m) {
   try {
-    toast('Ouverture du document…'); const b = await msgBytes(m), url = URL.createObjectURL(new Blob([b], {type: m.fmime || 'application/octet-stream'}));
-    const a = document.createElement('a'); a.href = url; a.download = m.fname || 'document'; a.rel = 'noopener'; if (/pdf|image|text/.test(m.fmime || '')) a.target = '_blank';
+    toast('Ouverture du document…'); const b = await msgBytes(m), safe = /^(application\/pdf|image\/(jpeg|png|webp|gif)|text\/plain)$/.test(m.fmime || ''), url = URL.createObjectURL(new Blob([b], {type: safe ? m.fmime : 'application/octet-stream'}));
+    // Seuls les documents sans danger (PDF, photo, texte simple) s'ouvrent dans un onglet ; les autres sont téléchargés.
+    const a = document.createElement('a'); a.href = url; a.download = m.fname || 'document'; a.rel = 'noopener'; if (safe) a.target = '_blank';
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60_000);
   } catch (e) { toast(e.message || 'Document illisible sur cet appareil.'); }
 }
@@ -1175,7 +1176,7 @@ function stQuote(m, out, c) {
   const r = m.sr; if (!r) return '';
   const who = out ? `Statut de ${esc(first(chatTitle(c)))}` : 'Votre statut';
   const owner = out ? c.peer : S.me.id;
-  return `<span class="quote st-q" data-act="stQuoteOpen" data-id="${r.id || ''}" data-u="${owner}" role="button" tabindex="0"><b>↩ ${who}</b><span>${r.k === 'video' ? '🎥 Vidéo' : r.k === 'image' ? '📷 Photo' : ''}${r.t ? (r.k === 'text' ? '' : ' · ') + esc(r.t) : ''}</span></span>`;
+  return `<span class="quote st-q" data-act="stQuoteOpen" data-id="${esc(r.id || '')}" data-u="${owner}" role="button" tabindex="0"><b>↩ ${who}</b><span>${r.k === 'video' ? '🎥 Vidéo' : r.k === 'image' ? '📷 Photo' : ''}${r.t ? (r.k === 'text' ? '' : ' · ') + esc(r.t) : ''}</span></span>`;
 }
 function locHtml(m) {
   const l = m.loc || {}; if (l.la == null) return '<span class="txt gone">📍 Position illisible</span>';
@@ -1348,7 +1349,7 @@ async function locFollow(uid) {
     try {
       const r = await api('/api/loc/' + uid); const o = r.env ? await E2E.open(r.env, S.me.id) : null, p = o && o.payload;
       if (!p) { box.innerHTML = `<p class="hint">${esc(first(u.name))} partage sa position avec vous, mais aucune position n’a encore été reçue. Elle arrive dès que Tam-Tam est ouvert sur son téléphone.</p>`; return; }
-      const ago = Math.max(0, Math.round((Date.now() - p.t) / 60000)), q = `${p.lat},${p.lng}`;
+      const ago = Math.max(0, Math.round((Date.now() - p.t) / 60000)), q = `${(+p.lat).toFixed(6)},${(+p.lng).toFixed(6)}`;
       box.innerHTML = `<a class="locb live" href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener"><span class="loc-pin" aria-hidden="true">📍</span><span><b>Ouvrir sur la carte</b><small>${ago < 1 ? 'À l’instant' : ago < 60 ? `Il y a ${ago} min` : `Il y a ${Math.round(ago / 60)} h`}${p.acc ? ` · précision ${p.acc < 1000 ? Math.round(p.acc) + ' m' : (p.acc / 1000).toFixed(1) + ' km'}` : ''}</small></span></a>
         <p class="hint">Mise à jour automatique toutes les 20 secondes, tant que cette fenêtre est ouverte.</p>`;
     } catch (e) { box.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
@@ -2039,7 +2040,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.96</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.97</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -2132,7 +2133,7 @@ const ACT = {
   reactMore(d) { moreEmoji(+d.id); },
   reactWho(d) {
     const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +d.id); if (!m || !m.reacts) return;
-    sheet(`${head('Réactions')}<div class="sheet-scroll">${m.reacts.map(r => { const u = r.u === S.me.id ? S.me : uOf(r.u); return `<div class="row">${avOn(u)}<span class="row-name">${esc(r.u === S.me.id ? 'Vous' : u.name)}</span><span class="row-end react-e">${r.e}</span>${r.u === S.me.id ? `<span class="row-prev"><button class="linkless" type="button" data-act="react" data-id="${m.id}" data-e="${r.e}">Touchez pour retirer</button></span>` : ''}</div>`; }).join('')}</div>`, 'Réactions');
+    sheet(`${head('Réactions')}<div class="sheet-scroll">${m.reacts.map(r => { const u = r.u === S.me.id ? S.me : uOf(r.u); return `<div class="row">${avOn(u)}<span class="row-name">${esc(r.u === S.me.id ? 'Vous' : u.name)}</span><span class="row-end react-e">${esc(r.e)}</span>${r.u === S.me.id ? `<span class="row-prev"><button class="linkless" type="button" data-act="react" data-id="${m.id}" data-e="${esc(r.e)}">Touchez pour retirer</button></span>` : ''}</div>`; }).join('')}</div>`, 'Réactions');
   },
   fwd(d) { fwdSheet(+d.id); },
   fwdGo() {

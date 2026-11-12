@@ -1,5 +1,5 @@
 /* tam-tam — travailleur de fond : notifications et ouverture hors connexion. */
-const CACHE = 'tamtam-v96';
+const CACHE = 'tamtam-v97';
 const SHELL = ['/', '/style.css', '/kit.js', '/secure.js', '/app.js', '/call.js', '/gcall.js', '/device.js', '/tabs.js', '/emoji.js', '/camera.js', '/memories.js', '/sounds.js', '/icon.svg', '/logo-tamtam.svg', '/icon-192.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k !== MEDIA).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
@@ -16,6 +16,8 @@ self.addEventListener('message', e => {
 });
 const ivAt = (base, i) => { const v = new Uint8Array(base); const dv = new DataView(v.buffer); dv.setUint32(8, dv.getUint32(8) ^ i); return v; };
 async function vstream(req, id, ev) {
+  // Lecture par le lecteur vidéo seulement : jamais une page ouverte à cette adresse (un piège envoyé par lien).
+  if (req.mode === 'navigate' || req.destination === 'document' || req.destination === 'iframe') return new Response('', {status: 404});
   const v = VS.get(id) || await vsTx('readonly', st => st.get(id)); if (!v) return new Response('', {status: 404});
   VS.set(id, v);
   // Déjà gardée sur l'appareil : lue sans réseau. Sinon, elle se garde en arrière-plan pendant qu'on la regarde.
@@ -34,7 +36,7 @@ async function vstream(req, id, ev) {
   const buf = v.buf ? v.buf.subarray(from, to + 1) : new Uint8Array(await (await fetch(v.url, {headers: {Range: `bytes=${from}-${to}`}, credentials: 'same-origin'})).arrayBuffer()), out = new Uint8Array((i1 - i0 + 1) * CK); let len = 0;
   for (let i = i0; i <= i1; i++) { const off = (i - i0) * E; const p = new Uint8Array(await crypto.subtle.decrypt({name: 'AES-GCM', iv: ivAt(base, i)}, v.key, buf.subarray(off, off + E))); out.set(p, len); len += p.length; }
   const s0 = a - i0 * CK, body = out.slice(s0, s0 + (b - a + 1));
-  return new Response(body, {status: rg ? 206 : 200, headers: {'Content-Type': v.mime || 'video/mp4', ...(rg ? {'Content-Range': `bytes ${a}-${a + body.length - 1}/${v.total}`} : {}), 'Content-Length': String(body.length), 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store'}});
+  return new Response(body, {status: rg ? 206 : 200, headers: {'Content-Type': /^(video|audio)\/[\w.+-]{1,40}$/.test(v.mime || '') ? v.mime : 'video/mp4', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox", ...(rg ? {'Content-Range': `bytes ${a}-${a + body.length - 1}/${v.total}`} : {}), 'Content-Length': String(body.length), 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store'}});
 }
 // Photos et vidéos chiffrées : gardées sur l'appareil après le premier chargement (elles restent illisibles sans la clé).
 async function mediaFirst(req) {
