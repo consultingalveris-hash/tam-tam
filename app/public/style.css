@@ -1389,3 +1389,8 @@ body:has(#pop) .rrail,body:has(#layer .layer) .rrail{display:none}
 .mem-filts::-webkit-scrollbar{display:none}
 .mem-filts .chip{flex:none;white-space:nowrap}
 .mem-filts .chip .act-dot{position:absolute;top:-2px;right:-2px;margin:0}
+/* v1.96 — le point : anneau turquoise clair (au lieu du jaune), plus léger que le point */
+.dot1,:root:not([data-theme="dark"]) .head .dot1,:root:not([data-theme="dark"]) #chatHead .dot1{background:#0a6f7b;box-shadow:0 0 0 7px rgb(20 184 201/.22)}
+.dot1.priv,:root .head .dot1.priv,:root #chatHead .dot1.priv,:root:not([data-theme="dark"]) .head .dot1.priv,:root:not([data-theme="dark"]) #chatHead .dot1.priv{background:var(--accent)}
+:root[data-theme="dark"] .dot1:not(.priv){background:#7fe3ee}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .dot1:not(.priv){background:#7fe3ee}}
