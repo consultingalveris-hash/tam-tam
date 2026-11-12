@@ -98,22 +98,29 @@ docker exec "$APP" node -e "fetch('http://localhost:3000/api/meta').then(r=>proc
   || { echo "ERREUR : tam-tam ne démarre pas. Journal :"; docker logs --tail 30 "$APP"; exit 1; }
 echo "tam-tam lancé."
 
-# Vidéos : envois jusqu'à 45 Mo (bloc tam-tam déjà présent : on relève la limite, seulement dans ce bloc).
-if grep -q "^$DOMAINE" "$CF" && sed -n "/^$DOMAINE {/,/^}/p" "$CF" | grep -q "max_size 8MB"; then
-  SAUVE="$CF.avant-video-$(date +%Y%m%d-%H%M%S)"; cp -p "$CF" "$SAUVE"
-  sed -i "/^$DOMAINE {/,/^}/ s/max_size 8MB/max_size 45MB/" "$CF"
-  if docker exec "$C" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
-    docker exec "$C" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; echo "Limite d'envoi relevée à 45 Mo (vidéos)."
-  else cat "$SAUVE" > "$CF"; echo "ATTENTION : limite d'envoi inchangée."; fi
-fi
-
-# Appels de groupe : l'adresse /lk mène au serveur de répartition (bloc tam-tam déjà présent : on l'ajoute une fois).
-if [ -n "$LK_KEY" ] && grep -q "^$DOMAINE" "$CF" && ! sed -n "/^$DOMAINE {/,/^}/p" "$CF" | grep -q "tam-tam-lk"; then
-  SAUVE="$CF.avant-lk-$(date +%Y%m%d-%H%M%S)"; cp -p "$CF" "$SAUVE"
-  sed -i "/^$DOMAINE {/,/^}/ s#^\(\s*\)reverse_proxy $APP:3000 {#\1handle_path /lk/* {\n\1\treverse_proxy tam-tam-lk:7880\n\1}\n\1reverse_proxy $APP:3000 {#" "$CF"
-  if docker exec "$C" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
-    docker exec "$C" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; echo "Appels de groupe reliés (adresse /lk)."
-  else cat "$SAUVE" > "$CF"; echo "ATTENTION : adresse des appels de groupe non ajoutée."; fi
+# Caddy lit son fichier de réglages par un « montage » : il faut écrire DANS le même fichier (jamais le remplacer),
+# vérifier la nouvelle version AVANT de l'appliquer, puis la faire relire (ou relancer Caddy s'il voit encore l'ancienne).
+caddy_ok() { docker cp "$1" "$C":/tmp/Caddyfile.test >/dev/null 2>&1 && docker exec "$C" caddy validate --config /tmp/Caddyfile.test --adapter caddyfile >/dev/null 2>&1; }
+caddy_apply() {
+  if docker exec "$C" cat /etc/caddy/Caddyfile | cmp -s - "$CF"; then docker exec "$C" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || true
+  else docker restart "$C" >/dev/null && sleep 3 && echo "Caddy relancé avec ses nouveaux réglages." || echo "ATTENTION : Caddy n'a pas pu être relancé."; fi
+}
+caddy_edit() { # $1 = modification (sed) ; $2 = message
+  local T=/tmp/caddy-tt.$$; sed "$1" "$CF" > "$T" || return 0
+  if cmp -s "$T" "$CF"; then rm -f "$T"; return 0; fi
+  if caddy_ok "$T"; then cp -p "$CF" "$CF.avant-$(date +%Y%m%d-%H%M%S)"; cat "$T" > "$CF"; rm -f "$T"; echo "$2"; return 0; fi
+  rm -f "$T"; echo "ATTENTION : réglage refusé ($2), rien n'a été changé."; return 0
+}
+# Réglages déjà écrits sur le disque mais pas encore vus par Caddy (anciennes versions de cet installateur) : on les applique s'ils sont valides.
+if ! docker exec "$C" cat /etc/caddy/Caddyfile | cmp -s - "$CF" && caddy_ok "$CF"; then caddy_apply; fi
+if grep -q "^$DOMAINE" "$CF"; then
+  # Vidéos : envois jusqu'à 45 Mo.
+  if sed -n "/^$DOMAINE {/,/^}/p" "$CF" | grep -q "max_size 8MB"; then caddy_edit "/^$DOMAINE {/,/^}/ s/max_size 8MB/max_size 45MB/" "Limite d'envoi relevée à 45 Mo (vidéos)."; fi
+  # Appels de groupe : l'adresse /lk mène au serveur de répartition.
+  if [ -n "$LK_KEY" ] && ! sed -n "/^$DOMAINE {/,/^}/p" "$CF" | grep -q "tam-tam-lk"; then
+    caddy_edit "/^$DOMAINE {/,/^}/ s#^\\(\\s*\\)reverse_proxy $APP:3000 {#\\1handle_path /lk/* {\\n\\1\\treverse_proxy tam-tam-lk:7880\\n\\1}\\n\\1reverse_proxy $APP:3000 {#" "Appels de groupe reliés (adresse /lk)."
+  fi
+  caddy_apply
 fi
 
 if ! grep -q "^$DOMAINE" "$CF"; then
@@ -139,12 +146,12 @@ $DOMAINE {
 	}
 }
 BLOC
-  if ! docker exec "$C" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+  if ! caddy_ok "$CF"; then
     cat "$SAUVE" > "$CF"
     echo "ERREUR : configuration refusée, le Caddyfile du CRM a été remis comme avant."
     exit 1
   fi
-  docker exec "$C" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1
+  caddy_apply
   echo "Adresse ajoutée : https://$DOMAINE"
 fi
 echo
