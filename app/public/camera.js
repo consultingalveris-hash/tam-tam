@@ -402,6 +402,7 @@ async function hydrateVids(chatId) {
   for (const el of document.querySelectorAll('#msgs video[data-vid]:not([src])')) {
     const id = +el.dataset.vid; if (E2E.vids.has(id)) { el.src = E2E.vids.get(id); continue; }
     const m = list.find(x => x.id === id); if (!m || !m._key || !m.miv || el.dataset.busy) continue; el.dataset.busy = '1';
+    if (VStream.ok(m)) { try { const vid = `m${id}-${S.me.id}`; await VStream.reg(vid, m.media, m._key, m.miv, m.amime || 'video/mp4'); const t0 = performance.now(); el.addEventListener('loadeddata', () => Perf.add('vid', performance.now() - t0), {once: true}); el.src = '/vs/' + vid; E2E.vids.set(id, el.src); Stock.note(m); continue; } catch {} }
     try { const t0 = performance.now(); const r = await fetch(m.media, {credentials: 'same-origin'}); if (!r.ok) throw 0; Perf.add('vid', performance.now() - t0); const url = URL.createObjectURL(new Blob([await E2E.decBytes(m._key, m.miv, await r.arrayBuffer())], {type: m.amime || 'video/mp4'})); E2E.vids.set(id, url); el.src = url; }
     catch { const w = el.closest('.vidb'); if (w) w.insertAdjacentHTML('beforeend', '<small class="hint">Vidéo illisible sur cet appareil</small>'); }
   }

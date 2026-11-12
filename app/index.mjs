@@ -1127,7 +1127,7 @@ R('POST', /^\/api\/media\/up\/([A-Za-z0-9_-]{24})\/done$/, async ({ me, m }) => 
   run(`INSERT INTO media(id,owner,mime,size,enc,created_at) VALUES(?,?,?,?,?,?)`, m[1], me.id, 'application/octet-stream', have, 1, now());
   return { id: m[1], url: mediaUrl(m[1]) };
 });
-R('GET', /^\/api\/media\/([A-Za-z0-9_-]{10,40})$/, async ({ me, m, res }) => {
+R('GET', /^\/api\/media\/([A-Za-z0-9_-]{10,40})$/, async ({ me, m, res, req }) => {
   const md = q1(`SELECT * FROM media WHERE id=?`, m[1]); if (!md) E(404, 'Introuvable');
   let ok = md.owner === me.id;
   if (!ok && md.scope === 'avatar') ok = true;
@@ -1136,6 +1136,7 @@ R('GET', /^\/api\/media\/([A-Za-z0-9_-]{10,40})$/, async ({ me, m, res }) => {
   if (!ok && md.scope === 'chat') {
     ok = isMember(md.ref, me.id);
     const om = ok && q1(`SELECT id FROM messages WHERE media=? AND once=1`, md.id); if (om && q1(`SELECT 1 FROM once_views WHERE msg_id=? AND user_id=?`, om.id, me.id)) ok = false;
+    if (om) res.__nostore = true; // vue unique : jamais gardée sur l'appareil
   }
   if (!ok && md.scope === 'grp') ok = isMember(md.ref, me.id);
   if (!ok && md.scope === 'mem') {
@@ -1145,8 +1146,18 @@ R('GET', /^\/api\/media\/([A-Za-z0-9_-]{10,40})$/, async ({ me, m, res }) => {
   }
   if (!ok && md.scope === 'status') { const s = q1(`SELECT * FROM statuses WHERE id=?`, md.ref); ok = !!s && statusVisible(s, me.id); }
   if (!ok) E(404, 'Introuvable');
-  res.writeHead(200, { 'Content-Type': md.mime, 'Cache-Control': res.__nostore ? 'no-store' : 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' });
-  fs.createReadStream(path.join(MEDIA, md.id)).on('error', () => res.end()).pipe(res);
+  // Lecture par morceaux (Range) : une vidéo démarre sans attendre la fin du téléchargement.
+  const fp = path.join(MEDIA, md.id); let size = 0; try { size = fs.statSync(fp).size; } catch { E(404, 'Introuvable'); }
+  const head = { 'Content-Type': md.mime, 'Cache-Control': res.__nostore ? 'no-store' : 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff', 'Accept-Ranges': 'bytes' };
+  const rg = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
+  if (rg && size) {
+    let a = rg[1] === '' ? Math.max(0, size - +rg[2]) : +rg[1], b = rg[1] !== '' && rg[2] !== '' ? +rg[2] : size - 1; b = Math.min(b, size - 1);
+    if (a > b || a >= size) { res.writeHead(416, { 'Content-Range': `bytes */${size}` }); res.end(); return null; }
+    res.writeHead(206, { ...head, 'Content-Range': `bytes ${a}-${b}/${size}`, 'Content-Length': String(b - a + 1) });
+    fs.createReadStream(fp, { start: a, end: b }).on('error', () => res.end()).pipe(res); return null;
+  }
+  res.writeHead(200, { ...head, 'Content-Length': String(size) });
+  fs.createReadStream(fp).on('error', () => res.end()).pipe(res);
   return null;
 });
 

@@ -101,7 +101,12 @@ async function boot() {
   if (rst) { A.mode = 'reset'; A.token = rst; return renderAuth(); }
   const qs = new URLSearchParams(location.search), gtok = qs.get('g'), gerr = qs.get('g_err');
   if (gtok || gerr) history.replaceState(null, '', location.pathname);
-  try { const r = await api('/api/me'); S.me = r.me; keepUsers([r.me]); history.replaceState(null, '', '/'); return start(); } catch {}
+  try { const r = await api('/api/me'); S.me = r.me; keepUsers([r.me]); history.replaceState(null, '', '/'); return start(); }
+  catch (e) {
+    // Sans réseau : Tam-Tam s'ouvre quand même avec ce qui est gardé sur l'appareil (messages lisibles, envois mis en attente).
+    let uid = 0; try { uid = +localStorage.getItem('tt-last-uid') || 0; } catch {}
+    if (!e.status && uid) { S.me = {id: uid}; const me = await Local.get('me'); if (me && me.id === uid) { S.me = me; S.offline = true; keepUsers([me]); return start(); } S.me = null; Local.db = null; }
+  }
   try { const m = await api('/api/meta' + (S.invite ? '?invite=' + encodeURIComponent(S.invite) : '')); A.meta = m; if (m.ownerSetup || m.invite) A.mode = 'register'; } catch { A.meta = {}; }
   if (gtok) { try { A.g = await api('/api/oauth/google/pending?t=' + encodeURIComponent(gtok)); A.g.tok = gtok; A.mode = 'register'; if (A.g.invite) S.invite = A.g.invite; } catch (e) { return renderAuth(e.message); } }
   renderAuth(gerr || undefined);
@@ -164,6 +169,7 @@ async function submitAuth() {
 /* ---------- démarrage ---------- */
 let es = null;
 async function start() {
+  if (!S.offline && S.me && S.me.email) { try { localStorage.setItem('tt-last-uid', String(S.me.id)); } catch {} Local.put('me', S.me); }
   if (!(await E2E.load(S.me.id))) return keySetup();
   const srv = S.me.pubkey;
   if (!srv || srv.x !== E2E.pubJwk.x) { /* clé locale sans sauvegarde côté serveur : on redemande un code */ return keySetup(true); }
@@ -173,11 +179,15 @@ async function start() {
 async function startApp() {
   root.innerHTML = `<div class="app" data-view="list"><aside class="side" id="side"><div class="head" id="head"></div><div class="body" id="body"></div><nav class="tabs" id="tabs" aria-label="Rubriques"></nav><button class="fab" id="fab" type="button" data-act="fab" aria-label="Nouvelle discussion">${I.newchat}</button></aside><main class="main" id="main"></main></div>`;
   renderMain();
-  await Promise.all([loadChats(), loadContacts(), loadStatuses()]).catch(e => toast(e.message));
+  // Ouverture instantanée : les discussions gardées sur l'appareil s'affichent tout de suite, le réseau complète ensuite.
+  let fast = false;
+  try { const [c0, k0, s0] = await Promise.all([Local.get('chats'), Local.get('contacts'), Local.get('statuses')]);
+    if (c0) { await loadChats(c0); if (k0) await loadContacts(k0); if (s0) await loadStatuses(s0); renderAll(); fast = true; Perf.add('open', performance.now()); } } catch {}
+  await Promise.all([loadChats(), loadContacts(), loadStatuses()]).catch(e => { if (!fast) toast(e.message); });
   await PP.init().catch(() => {});
   try { Object.keys(localStorage).filter(k => k.startsWith('tt-trlearn:')).forEach(k => localStorage.removeItem(k)); } catch {}
   Tr.loadSt();
-  renderAll(); Perf.add('open', performance.now()); connect(); Outbox.flush(); if (S.locked) showLock(); if (!S.me.handleSet) HPick.open();
+  renderAll(); if (!fast) Perf.add('open', performance.now()); connect(); Outbox.flush(); Prefetch.run(); if (S.locked) showLock(); if (!S.me.handleSet) HPick.open();
   GCall.loadActive(); Call.checkPending(); Device.badge(); LocShare.sync();
   if (S.lock.type === 'off') return requireLock();
   if (S.pendingChat && S.chats.has(S.pendingChat)) openChat(S.pendingChat); S.pendingChat = 0;
@@ -252,15 +262,15 @@ async function reveal(m) {
   else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.w > 0 && r.payload.h > 0) { m.w = +r.payload.w; m.h = +r.payload.h; } if (Thumb.ok(r.payload.th)) m.th = r.payload.th; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; if (r.payload.loc) m.loc = r.payload.loc; if (r.payload.sr) m.sr = r.payload.sr; if (r.payload.fl) m.fl = true; if (r.payload.name) { m.fname = r.payload.name; m.fsize = r.payload.size || 0; m.fmime = r.payload.mime || 'application/octet-stream'; } }
   return m;
 }
-async function loadChats() { const r = await api('/api/chats'); const map = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); await reveal(c.last); if (c.pinMsg) await reveal(c.pinMsg); map.set(c.id, c); } S.chats = map; }
-async function loadContacts() {
-  const r = await api('/api/contacts'); S.contacts = r;
+async function loadChats(pre) { const r = pre || await api('/api/chats'); if (!pre) Local.put('chats', r); const map = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); await reveal(c.last); if (c.pinMsg) await reveal(c.pinMsg); map.set(c.id, c); } S.chats = map; }
+async function loadContacts(pre) {
+  const r = pre || await api('/api/contacts'); if (!pre) Local.put('contacts', r); S.contacts = r;
   await Promise.all(r.contacts.filter(u => u.telEnv || u.privEnv).map(u => PP.reveal(u).catch(() => {})));
   keepUsers([...r.contacts, ...r.incoming, ...r.outgoing, ...r.suggestions]);
   if (PP.data) PP.check();
 }
-async function loadStatuses() {
-  const r = await api('/api/statuses');
+async function loadStatuses(pre) {
+  const r = pre || await api('/api/statuses'); if (!pre) Local.put('statuses', r);
   for (const it of [...r.mine.items, ...r.others.flatMap(g => g.items)]) if (it.enc) {
     const o = E2E.ready() ? await E2E.open(it.enc, S.me.id) : {err: 1};
     if (o.err) { it.text = '🔒 Statut chiffré'; it.locked = true; } else { it.text = o.payload.t || ''; it.miv = o.payload.miv || null; it._key = o.key; it.font = o.payload.f || 0; it.vmime = o.payload.mime || null; it.dur = o.payload.dur || 0; it.mir = !!o.payload.mir; it.mmiv = o.payload.mmiv || null; it.mname = o.payload.mname || ''; }
@@ -467,17 +477,19 @@ function focusComposer() {
   if (document.activeElement === i) return; try { i.focus({preventScroll: true}); } catch { i.focus(); }
 }
 async function loadMessages(id, fresh) {
-  const t0 = performance.now();
+  const t0 = performance.now(); let shown = false;
+  // D'abord les messages gardés sur l'appareil (lecture immédiate, même sans réseau), puis les nouveaux.
+  if (!S.msgs.has(id)) { const raw = await Local.get('m:' + id); if (raw && raw.length && S.chatId === id && !S.msgs.has(id)) { const list = []; for (const x of raw) { try { const m = JSON.parse(x); m._raw = x; list.push(await reveal(m)); } catch {} } S.msgs.set(id, list); S.more.set(id, true); Outbox.restore(id); renderMessages(); shown = true; Perf.add('chat', performance.now() - t0); } }
   try {
-    const r = await api(`/api/chats/${id}/messages`); for (const m of r.messages) await reveal(m); S.msgs.set(id, r.messages); S.more.set(id, r.more);
+    const r = await api(`/api/chats/${id}/messages`); for (const m of r.messages) { m._raw = JSON.stringify(m); await reveal(m); } S.msgs.set(id, r.messages); S.more.set(id, r.more);
     Outbox.restore(id);
-    if (S.chatId === id) { renderMessages(); markRead(); Perf.add('chat', performance.now() - t0); }
-  } catch (e) { toast(e.message); }
+    if (S.chatId === id) { renderMessages(shown); markRead(); if (!shown) Perf.add('chat', performance.now() - t0); }
+  } catch (e) { if (!shown) toast(e.message); else if (!navigator.onLine) toast('Hors connexion : vous lisez les messages gardés sur cet appareil.'); }
 }
 async function loadOlder() {
   const id = S.chatId, list = S.msgs.get(id) || []; if (!list.length) return;
   const box = $('#msgs'), h0 = box.scrollHeight;
-  const r = await api(`/api/chats/${id}/messages?before=${list[0].id}`); for (const m of r.messages) await reveal(m); S.msgs.set(id, r.messages.concat(list)); S.more.set(id, r.more);
+  const r = await api(`/api/chats/${id}/messages?before=${list[0].id}`); for (const m of r.messages) { m._raw = JSON.stringify(m); await reveal(m); } S.msgs.set(id, r.messages.concat(list)); S.more.set(id, r.more);
   renderMessages(true); box.scrollTop = box.scrollHeight - h0;
 }
 function renderMain() {
@@ -616,7 +628,7 @@ function renderMessages(keep) {
   const tu = typingIn(c.id); if (tu) h += `<div class="msg in first typing-b"><div class="bubble" aria-label="En train d’écrire"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
   morph(box, h);
   if (!keep || atBottom || box._stick) box.scrollTop = box.scrollHeight;
-  hydrateImgs(c.id); hydrateAuds(c.id); if (typeof hydrateVids === 'function') hydrateVids(c.id); Tr.autoRun(c);
+  hydrateImgs(c.id); hydrateAuds(c.id); if (typeof hydrateVids === 'function') hydrateVids(c.id); Tr.autoRun(c); Local.saveChat(c.id);
 }
 /* ---------- taille des photos et vidéos réservée à l'avance ----------
    Comme les grandes messageries : la place de chaque photo ou vidéo est connue avant son chargement
@@ -670,7 +682,7 @@ function morph(box, html) {
   const same = next.length === box.children.length && next.every((el, i) => box.children[i] === el);
   if (!same) box.replaceChildren(...next);
 }
-function onMsg(m, update) { reveal(m).then(() => onMsgIn(m, update)); }
+function onMsg(m, update) { if (m && !m._raw && m.id > 0) { try { m._raw = JSON.stringify(m); } catch {} } reveal(m).then(() => onMsgIn(m, update)); }
 async function hydrateImgs(chatId) {
   const list = S.msgs.get(chatId) || [];
   for (const el of document.querySelectorAll('#msgs img[data-enc]:not([src])')) {
@@ -678,7 +690,7 @@ async function hydrateImgs(chatId) {
     try {
       const t0 = performance.now(); const r = await fetch(m.media, {credentials: 'same-origin'}); const buf = await r.arrayBuffer();
       const url = URL.createObjectURL(new Blob([await E2E.decBytes(m._key, m.miv, buf)], {type: 'image/jpeg'})); Perf.add('img', performance.now() - t0);
-      E2E.imgs.set(m.id, url); const box = $('#msgs'), stick = box && box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+      E2E.imgs.set(m.id, url); Stock.note(m); const box = $('#msgs'), stick = box && box.scrollHeight - box.scrollTop - box.clientHeight < 80;
       el.src = url; el.onload = () => { if (stick && box) box.scrollTop = box.scrollHeight; };
     } catch { el.alt = 'Photo illisible sur cet appareil'; }
   }
@@ -784,6 +796,69 @@ async function sendCore(c, t, reply, once, cid) {
     const r = await api(`/api/chats/${c.id}/messages`, body); Perf.add('send', performance.now() - t0); return r.msg;
   }
 }
+/* ---------- données gardées sur l'appareil, chiffrées avec une clé qui ne quitte jamais l'appareil ---------- */
+const Local = {
+  db: null, k: null, t: new Map(),
+  name: () => 'tt-local-' + (S.me ? S.me.id : 0),
+  open() { if (this.db) return this.db; this.db = new Promise((ok, ko) => { if (!window.indexedDB) return ko(); const r = indexedDB.open(this.name(), 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); }).catch(() => null); return this.db; },
+  async tx(mode, fn) { const db = await this.open(); if (!db) return null; return new Promise(ok => { let q; try { const t = db.transaction('kv', mode); q = fn(t.objectStore('kv')); t.oncomplete = () => ok(q && q.result); t.onerror = t.onabort = () => ok(null); } catch { ok(null); } }); },
+  async key() { if (this.k) return this.k; let k = await this.tx('readonly', st => st.get('__k')); if (!k) { k = await crypto.subtle.generateKey({name: 'AES-GCM', length: 256}, false, ['encrypt', 'decrypt']); await this.tx('readwrite', st => st.put(k, '__k')); } return (this.k = k); },
+  async put(name, v) { const txt = typeof v === 'string' ? v : JSON.stringify(v); try { const k = await this.key(), iv = crypto.getRandomValues(new Uint8Array(12)), ct = await crypto.subtle.encrypt({name: 'AES-GCM', iv}, k, new TextEncoder().encode(txt)); await this.tx('readwrite', st => st.put({iv, ct, at: Date.now()}, name)); } catch {} },
+  async get(name) { try { const r = await this.tx('readonly', st => st.get(name)); if (!r || !r.ct) return null; const k = await this.key(); return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name: 'AES-GCM', iv: r.iv}, k, r.ct))); } catch { return null; } },
+  async del(name) { await this.tx('readwrite', st => st.delete(name)); },
+  async keys() { return (await this.tx('readonly', st => st.getAllKeys())) || []; },
+  async meta(name) { const r = await this.tx('readonly', st => st.get(name)); return r && r.ct ? {n: r.ct.byteLength, at: r.at} : null; },
+  // Les 150 derniers messages de chaque discussion ouverte (encore chiffrés de bout en bout, comme le serveur les envoie).
+  saveChat(id) { clearTimeout(this.t.get(id)); this.t.set(id, setTimeout(() => { const l = (S.msgs.get(id) || []).filter(x => x.id > 0 && x._raw).slice(-150).map(x => x._raw); if (l.length) this.put('m:' + id, l); }, 1500)); },
+  wipe() { this.k = null; const n = this.name(); this.db = null; return new Promise(ok => { try { const r = indexedDB.deleteDatabase(n); r.onsuccess = r.onerror = r.onblocked = () => ok(); } catch { ok(); } }); },
+};
+/* ---------- écran « Gérer le stockage » ---------- */
+const Stock = {
+  map: null,
+  async load() { if (!this.map) this.map = (await Local.get('medmap')) || {}; return this.map; },
+  note(m) { if (!m || !m.media || !/^\/api\/media\//.test(m.media)) return; this.load().then(mp => { if (mp[m.media] === m.chatId) return; mp[m.media] = m.chatId; clearTimeout(this.t); this.t = setTimeout(() => Local.put('medmap', mp), 2000); }); },
+  async scan() {
+    const mp = await this.load(), per = new Map(), big = []; let total = 0, n = 0;
+    try { const c = await caches.open('tt-media'); for (const rq of await c.keys()) { const p = new URL(rq.url).pathname, r = await c.match(rq); const sz = +(r && r.headers.get('Content-Length')) || (r ? (await r.clone().blob()).size : 0); total += sz; n++; const cid = mp[p] || 0; per.set(cid, (per.get(cid) || 0) + sz); big.push({p, sz, cid}); } } catch {}
+    for (const k of await Local.keys()) { if (!/^m:\d+$/.test(k)) continue; const cid = +k.slice(2), mt = await Local.meta(k); if (mt) { per.set(cid, (per.get(cid) || 0) + mt.n); total += mt.n; } }
+    let est = null; try { est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null; } catch {}
+    return {total, n, per: [...per.entries()].sort((a, b) => b[1] - a[1]), big: big.sort((a, b) => b.sz - a.sz).slice(0, 8), est};
+  },
+  fmt: b => b < 1e6 ? `${Math.max(1, Math.round(b / 1e3))} Ko` : `${(b / 1e6).toLocaleString('fr-FR', {maximumFractionDigits: 1})} Mo`,
+  async sheet() {
+    if (!$('#stoBody')) sheet(`${head('Gérer le stockage')}<div class="sheet-body" id="stoBody"><p class="hint">Calcul de la place utilisée…</p></div>`, 'Gérer le stockage');
+    const r = await this.scan(), box = $('#stoBody'); if (!box) return;
+    const name = cid => { const c = cid && S.chats.get(cid); return c ? esc(chatTitle(c)) : 'Autres (statuts, souvenirs, profils)'; };
+    box.innerHTML = `<p class="sto-tot"><b>${this.fmt(r.total)}</b> gardés sur cet appareil, dont ${r.n} photo${r.n > 1 ? 's' : ''} ou vidéo${r.n > 1 ? 's' : ''}.</p>
+      <p class="hint">Vider ne supprime rien de vos discussions : les fichiers se téléchargent à nouveau quand vous les ouvrez.</p>
+      <span class="lbl">Par discussion</span><div class="sto-list">${r.per.length ? r.per.map(([cid, sz]) => `<div class="sto-row"><span>${name(cid)}</span><b>${this.fmt(sz)}</b><button class="btn sm ghost" type="button" data-act="stoClear" data-c="${cid}">Vider</button></div>`).join('') : '<p class="hint" style="padding:8px 12px">Rien n’est encore gardé sur cet appareil.</p>'}</div>
+      ${r.big.length ? `<span class="lbl">Les plus gros fichiers</span><div class="sto-list">${r.big.map(x => `<div class="sto-row"><span>${name(x.cid)}</span><b>${this.fmt(x.sz)}</b><button class="btn sm ghost" type="button" data-act="stoDrop" data-p="${esc(x.p)}">Retirer</button></div>`).join('')}</div>` : ''}
+      ${r.total ? '<div class="actions"><button class="btn danger" type="button" data-act="stoAll">Tout vider sur cet appareil</button></div>' : ''}`;
+  },
+  async clearChat(cid) {
+    const mp = await this.load(), c = await caches.open('tt-media').catch(() => null);
+    if (c) for (const rq of await c.keys()) { const p = new URL(rq.url).pathname; if ((+mp[p] || 0) === +cid) { await c.delete(rq); delete mp[p]; } }
+    if (+cid) await Local.del('m:' + cid); await Local.put('medmap', mp);
+  },
+  async drop(p) { try { const c = await caches.open('tt-media'); await c.delete(p); } catch {} },
+  async all() { try { await caches.delete('tt-media'); } catch {} for (const k of await Local.keys()) if (/^m:\d+$/.test(k)) await Local.del(k); this.map = {}; await Local.put('medmap', {}); },
+  async wipe() { try { await caches.delete('tt-media'); } catch {} try { indexedDB.deleteDatabase('tt-vs'); } catch {} try { localStorage.removeItem('tt-outbox:' + (S.me ? S.me.id : 0)); } catch {} await Local.wipe(); },
+};
+/* ---------- préchargement : la dernière photo ou vidéo reçue est déjà là quand on ouvre la discussion ---------- */
+const Prefetch = {
+  weak() { const c = navigator.connection || {}; return dataSaver() || !!c.saveData || /(^|-)2g$/.test(c.effectiveType || '') || !!(navigator.deviceMemory && navigator.deviceMemory < 2); },
+  run() {
+    if (this.weak()) return;
+    const go = async () => { const list = [...S.chats.values()].filter(c => c.unread && c.last && c.last.media && /^\/api\/media\//.test(c.last.media)).slice(0, 6);
+      for (const c of list) { if (this.weak()) break; try { await fetch(c.last.media, {credentials: 'same-origin'}); Stock.note({media: c.last.media, chatId: c.id}); } catch {} } };
+    (window.requestIdleCallback || (f => setTimeout(f, 1500)))(() => { go(); });
+  },
+};
+/* ---------- lecture des vidéos pendant le téléchargement ---------- */
+const VStream = {
+  ok: m => !!(m && m.miv && m.miv[0] === 'c' && m._key && navigator.serviceWorker && navigator.serviceWorker.controller),
+  reg(id, url, key, iv, mime) { return new Promise((ok, ko) => { const ch = new MessageChannel(), t = setTimeout(() => ko(new Error('lent')), 2500); ch.port1.onmessage = () => { clearTimeout(t); ok(); }; navigator.serviceWorker.controller.postMessage({vs: id, url, key, iv, mime, keep: !Prefetch.weak()}, [ch.port2]); }); },
+};
 /* ---------- file d'envoi : rien ne se perd sans réseau ---------- */
 const Outbox = {
   key: () => 'tt-outbox:' + (S.me ? S.me.id : 0),
@@ -807,9 +882,9 @@ const Outbox = {
   },
   drop(tmp) { this.save(this.list().filter(x => x.tmp !== tmp)); for (const l of S.msgs.values()) { const i = l.findIndex(x => x.id === tmp); if (i >= 0) l.splice(i, 1); } if (S.chatId) renderMessages(true); },
 };
-window.addEventListener('online', () => Outbox.flush());
+window.addEventListener('online', () => { if (S.offline) { S.offline = false; Promise.all([loadChats(), loadContacts(), loadStatuses()]).then(() => { renderAll(); if (S.chatId) loadMessages(S.chatId); }).catch(() => {}); } Outbox.flush(); });
 /* ---------- vitesse mesurée chez les utilisateurs (des durées seulement, rien d'autre) ---------- */
-const APP_V = '1.91';
+const APP_V = '1.92';
 const Perf = {
   q: [],
   add(k, ms) { if (!(ms >= 0) || ms > 120000) return; this.q.push([k, Math.round(ms)]); if (this.q.length >= 40) this.flush(); },
@@ -1235,7 +1310,7 @@ async function exportChat(id, withMedia) {
   toast('Préparation de l’export…');
   try {
     let list = S.msgs.get(id) || [];
-    while (S.more.get(id) && list.length) { const r = await api(`/api/chats/${id}/messages?before=${list[0].id}`); for (const m of r.messages) await reveal(m); list = r.messages.concat(list); S.msgs.set(id, list); S.more.set(id, r.more); }
+    while (S.more.get(id) && list.length) { const r = await api(`/api/chats/${id}/messages?before=${list[0].id}`); for (const m of r.messages) { m._raw = JSON.stringify(m); await reveal(m); } list = r.messages.concat(list); S.msgs.set(id, list); S.more.set(id, r.more); }
     const files = [], lines = [], enc = new TextEncoder(); let n = 0, size = 0;
     const ext = m => m.kind === 'video' ? ((m.amime || '').includes('webm') ? 'webm' : 'mp4') : m.kind === 'audio' ? ((m.amime || '').includes('ogg') ? 'ogg' : (m.amime || '').includes('mp4') ? 'm4a' : 'webm') : 'jpg';
     for (const m of list) {
@@ -1946,6 +2021,7 @@ function settingsBody() {
       <p class="hint">${(me.locTo || []).length ? `✅ Partagée avec ${(me.locTo || []).length} personne${(me.locTo || []).length > 1 ? 's' : ''}. Sur ordinateur et dans le navigateur, la position est envoyée tant que Tam-Tam est ouvert.` : 'Partage désactivé : cochez une personne pour l’activer.'}</p></details></div>
     ${fold('tones', Tones.settingsHtml(), esc(Tones.name(Tones.get('call'))))}
     <div class="set-block"><h2>🌍 Ambassadeurs des langues</h2><p class="hint">Des bénévoles font vivre leur langue maternelle sur Tam-Tam en corrigeant les traductions. Ils portent le badge « Ambassadeur » sur leur profil.</p><div class="actions"><button class="btn sm ghost" type="button" data-act="ambList">Voir les ambassadeurs</button><a class="btn sm ghost" href="/ambassadeurs" target="_blank" rel="noopener">Devenir ambassadeur</a></div></div>
+    <div class="set-block"><h2>${I.download || ''} Stockage sur cet appareil</h2><p class="hint">Photos, vidéos et messages gardés sur cet appareil pour s’ouvrir tout de suite, même sans réseau.</p><div><button class="btn sm ghost" type="button" data-act="stoOpen">Gérer le stockage</button></div></div>
     <div class="set-block"><details class="loc-det" data-fold="hd"${S.fold.has('hd') ? ' open' : ''}><summary><h2>${I.image} Qualité des photos et vidéos envoyées</h2><span class="loc-st${hdOn() ? ' on' : ''}">${hdOn() ? 'HD' : 'Standard'}</span></summary><p class="hint">Standard : photos et vidéos allégées avant l’envoi, comme sur WhatsApp. Elles partent et arrivent beaucoup plus vite. HD : meilleure qualité, mais plus lourd et plus lent.</p>
       <div class="seg"><button type="button" data-act="hdSet" data-v="" aria-pressed="${!hdOn()}">Standard (conseillé)</button><button type="button" data-act="hdSet" data-v="1" aria-pressed="${hdOn()}">HD</button></div>${dataSaver() ? '<p class="hint">L’économie de données est activée : les envois restent allégés.</p>' : ''}</details></div>
     <div class="set-block"><details class="loc-det" data-fold="eco"${S.fold.has('eco') ? ' open' : ''}><summary><h2>${I.download || ''} Économie de données</h2><span class="loc-st${dataSaver() ? ' on' : ''}">${dataSaver() ? 'Activée' : 'Désactivée'}</span></summary><p class="hint">Pour les petits forfaits : photos et vidéos envoyées plus légères, et Tam-Tam ne télécharge rien à l’avance (le statut suivant se charge quand vous y arrivez).</p>
@@ -1963,7 +2039,7 @@ function settingsBody() {
     ${me.admin ? googleBox() : ''}
     ${me.admin ? `<div class="set-block" id="adm"><h2>${I.shield} Administration</h2><div><button class="btn sm" type="button" data-act="admLoad">Afficher les membres et les signalements</button></div></div>` : ''}
     <div class="set-block danger-zone"><h2>Supprimer mon compte</h2><p class="hint">Efface définitivement votre compte, votre profil, vos photos et vos statuts. Votre mot de passe vous sera demandé pour confirmer.</p><div><button class="btn sm danger" type="button" data-act="delSheet">Supprimer mon compte…</button></div></div>
-    <p class="hint" style="text-align:center">Tam-Tam · version 1.91</p></div>`;
+    <p class="hint" style="text-align:center">Tam-Tam · version 1.92</p></div>`;
 }
 let saveT, pending = {};
 function queueSave(patch) {
@@ -2371,11 +2447,15 @@ const ACT = {
   async devOut(d) { try { await api('/api/sessions/revoke', {id: +d.id}); toast('Appareil déconnecté'); ACT.devList(); } catch (e) { toast(e.message); } },
   async devOthers() { try { await api('/api/sessions/revoke', {others: true}); toast('Tous les autres appareils sont déconnectés'); ACT.devList(); } catch (e) { toast(e.message); } },
   hdSet(d) { try { localStorage.setItem('tt:hd', d.v ? '1' : '0'); } catch {} renderBody(); toast(d.v ? 'Photos et vidéos envoyées en HD' : 'Photos et vidéos allégées avant l’envoi'); },
+  stoOpen() { Stock.sheet(); },
+  async stoClear(d) { await Stock.clearChat(+d.c); toast('Place libérée'); Stock.sheet(); },
+  async stoDrop(d) { await Stock.drop(d.p); Stock.sheet(); },
+  async stoAll() { await Stock.all(); toast('Tout est vidé sur cet appareil'); Stock.sheet(); },
   saverTog() { const on = !dataSaver(); try { localStorage.setItem('tt:saver', on ? '1' : '0'); } catch {} toast(on ? 'Économie de données activée sur cet appareil' : 'Économie de données désactivée'); },
   listedTog() { saveNow({listed: !S.me.listed}, S.me.listed ? 'Vous n’apparaissez plus dans la liste des membres' : 'Vous apparaissez dans la liste des membres'); },
   pwSheet() { sheet(`${head('Changer le mot de passe')}<form data-form="pw"><div class="sheet-body"><div class="field"><label for="pwOld">Mot de passe actuel</label><input id="pwOld" type="password" autocomplete="current-password"></div><div class="field"><label for="pwNew">Nouveau mot de passe (8 caractères minimum)</label><input id="pwNew" type="password" autocomplete="new-password"></div><p class="err" id="pwErr" role="alert" hidden></p><div class="actions"><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Mot de passe', '#pwOld'); },
   delSheet() { sheet(`${head('Supprimer mon compte')}<form data-form="del"><div class="sheet-body"><p>Votre compte, votre profil, vos photos et vos statuts seront effacés. Vos messages seront remplacés par « Ce message a été supprimé ». C’est définitif.</p><div class="field"><label for="delPw">Votre mot de passe pour confirmer</label><input id="delPw" type="password" autocomplete="current-password"></div><p class="err" id="delErr" role="alert" hidden></p><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn danger" type="submit">Supprimer définitivement</button></div></div></form>`, 'Supprimer', '#delPw'); },
-  async logout() { await Device.disableHere(); await api('/api/logout', {}).catch(() => {}); if (es) es.close(); S.me = null; location.href = '/'; },
+  async logout() { try { localStorage.removeItem('tt-last-uid'); } catch {} await Stock.wipe(); await Device.disableHere(); await api('/api/logout', {}).catch(() => {}); if (es) es.close(); S.me = null; location.href = '/'; },
   admLoad() { adminLoad(); },
   async admDone(d) { await api('/api/admin/report-done', {id: +d.id}).catch(e => toast(e.message)); adminLoad(); },
   async ambList() { try { const r = await api('/api/ambassadors'); const g = {}; r.list.forEach(a => (g[a.lang] = g[a.lang] || []).push(a)); sheet(`${head('Ambassadeurs des langues')}<div class="sheet-body">${r.list.length ? Object.keys(g).sort().map(l => `<p class="lbl">${esc(l)}</p><p>${g[l].map(a => '@' + esc(a.handle)).join(' · ')}</p>`).join('') : '<p class="hint">Les premiers ambassadeurs arrivent bientôt. Vous parlez bien votre langue maternelle ? Rejoignez-nous !</p>'}<div class="actions"><a class="btn sm ghost" href="/ambassadeurs" target="_blank" rel="noopener">Devenir ambassadeur</a><button class="btn" type="button" data-act="close">Fermer</button></div></div>`, 'Ambassadeurs'); } catch (e) { toast(e.message); } },

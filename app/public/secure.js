@@ -85,8 +85,26 @@ const E2E = {
       return {payload: JSON.parse(td.decode(await subtle.decrypt({name: 'AES-GCM', iv: unb64(env.iv)}, k, unb64(env.ct)))), key: k};
     } catch { return {err: 'illisible'}; }
   },
-  async encBytes(k, bytes) { const iv = crypto.getRandomValues(new Uint8Array(12)); return {iv: b64(iv), data: await subtle.encrypt({name: 'AES-GCM', iv}, k, bytes)}; },
-  async decBytes(k, iv, bytes) { return subtle.decrypt({name: 'AES-GCM', iv: unb64(iv)}, k, bytes); },
+  // Gros fichiers (vidéos…) : chiffrés par morceaux de 256 Ko, chacun avec son propre numéro.
+  // On peut ainsi lire une vidéo pendant qu'elle se télécharge (les morceaux se déchiffrent un par un).
+  CK: 262144,
+  ivAt(base, i) { const v = new Uint8Array(base); const d = new DataView(v.buffer); d.setUint32(8, d.getUint32(8) ^ i); return v; },
+  async encBytes(k, bytes) {
+    const u = bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : new Uint8Array(bytes.buffer, bytes.byteOffset || 0, bytes.byteLength);
+    if (u.byteLength > this.CK * 6) {
+      const base = crypto.getRandomValues(new Uint8Array(12)), parts = [];
+      for (let i = 0, off = 0; off < u.byteLength; i++, off += this.CK) parts.push(await subtle.encrypt({name: 'AES-GCM', iv: this.ivAt(base, i)}, k, u.subarray(off, off + this.CK)));
+      return {iv: 'c' + this.CK + ':' + b64(base), data: await new Blob(parts).arrayBuffer()};
+    }
+    const iv = crypto.getRandomValues(new Uint8Array(12)); return {iv: b64(iv), data: await subtle.encrypt({name: 'AES-GCM', iv}, k, u)};
+  },
+  async decBytes(k, iv, bytes) {
+    const m = /^c(\d+):(.+)$/.exec(iv || '');
+    if (!m) return subtle.decrypt({name: 'AES-GCM', iv: unb64(iv)}, k, bytes);
+    const CK = +m[1], E = CK + 16, base = unb64(m[2]), u = new Uint8Array(bytes), n = Math.ceil(u.byteLength / E), out = new Uint8Array(u.byteLength - 16 * n);
+    for (let i = 0, len = 0; i < n; i++) { const p = new Uint8Array(await subtle.decrypt({name: 'AES-GCM', iv: this.ivAt(base, i)}, k, u.subarray(i * E, (i + 1) * E))); out.set(p, len); len += p.length; }
+    return out.buffer;
+  },
   async fingerprint(pub) {
     if (!pub) return '';
     const h = new Uint8Array(await subtle.digest('SHA-256', te.encode(pub.x + '.' + pub.y)));
