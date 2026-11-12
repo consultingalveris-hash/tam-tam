@@ -39,14 +39,14 @@ const GCall = {
     for (const uid of r.parts) { const p = await this.peer(uid); await p.pc.setLocalDescription(await p.pc.createOffer()); this.sig(uid, 'offer', p.pc.localDescription); }
   },
   // Serveur de répartition (LiveKit) : chargé seulement quand il sert.
-  lkLib() { return window.LivekitClient ? Promise.resolve(window.LivekitClient) : (this.lkP = this.lkP || new Promise((ok, ko) => { const s = document.createElement('script'); s.src = '/lk/livekit-client.umd.js'; s.onload = () => ok(window.LivekitClient); s.onerror = () => { this.lkP = null; ko(new Error('Chargement impossible')); }; document.head.appendChild(s); })); },
+  lkLib() { return window.LivekitClient ? Promise.resolve(window.LivekitClient) : (this.lkP = this.lkP || new Promise((ok, ko) => { const s = document.createElement('script'); s.src = '/lkc/livekit-client.umd.js'; s.onload = () => ok(window.LivekitClient); s.onerror = () => { this.lkP = null; ko(new Error('Chargement impossible')); }; document.head.appendChild(s); })); },
   async lk(r) {
     const c = this.c; let L;
     try { L = await this.lkLib(); } catch { toast('Impossible de rejoindre l’appel. Vérifiez votre connexion.'); return this.leave(); }
     if (this.c !== c) return;
     let opts = {adaptiveStream: true, dynacast: true};
     try { const o = await E2E.open(r.keyEnv, S.me.id); if (o.err || !o.payload.k) throw 0;
-      if (L.isE2EESupported && L.isE2EESupported()) { const kp = new L.ExternalE2EEKeyProvider(); await kp.setKey(o.payload.k); opts.e2ee = {keyProvider: kp, worker: new Worker('/lk/e2ee.worker.mjs', {type: 'module'})}; }
+      if (L.isE2EESupported && L.isE2EESupported()) { const kp = new L.ExternalE2EEKeyProvider(); await kp.setKey(o.payload.k); opts.e2ee = {keyProvider: kp, worker: new Worker('/lkc/e2ee.worker.mjs', {type: 'module'})}; }
     } catch { toast('Vous n’avez pas la clé de cet appel (membre arrivé après son début).'); return this.leave(); }
     const room = c.room = new L.Room(opts), E = L.RoomEvent;
     const peerOf = part => { const uid = +part.identity; if (!uid || uid === S.me.id) return null; let p = c.peers.get(uid); if (!p) { p = {uid, stream: new MediaStream(), cam: undefined, mic: true, state: 'connected', lk: true}; c.peers.set(uid, p); } return p; };

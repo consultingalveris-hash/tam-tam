@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Diagnostic des appels de groupe : bloc Caddy de tam-tam, serveur de répartition, réponses.
+C=$(docker ps --format '{{.Names}}' | grep -E 'caddy' | head -n1)
+echo "== Caddy : $C"
+docker exec "$C" cat /etc/caddy/Caddyfile | sed -n '/^tam-tam/,/^}/p'
+echo "== Serveur de répartition"
+docker ps --filter name=tam-tam-lk --format '{{.Names}} {{.Status}} {{.Ports}}'
+docker logs --tail 5 tam-tam-lk 2>&1
+echo "== Réponses"
+curl -s -o /dev/null -w 'lk: %{http_code}\n' https://tam-tam.alveris-consulting.com/lk/
+docker exec "$C" wget -qO- http://tam-tam-lk:7880/ 2>&1 | head -c 80; echo
