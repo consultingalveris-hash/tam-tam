@@ -1,6 +1,6 @@
 // Relais Tam-Tam pour Cloudflare Workers : un second chemin vers le même serveur.
 // Il ne voit que des données chiffrées (les messages restent chiffrés de bout en bout) et ne garde rien.
-const ORIGINE = 'https://tam-tam.africa';
+const ORIGINE = 'https://secours.tam-tam.africa';
 export default {
   async fetch(req) {
     const u = new URL(req.url), dest = new URL(u.pathname + u.search, ORIGINE);

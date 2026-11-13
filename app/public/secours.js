@@ -56,3 +56,12 @@ Object.assign(ACT, {
 });
 FORMS.relais = f => { if (Secours.add(f.o.value)) renderBody(); };
 window.addEventListener('online', () => { Secours.fails = 0; });
+/* Changement d'adresse : quelqu'un qui ouvre une ancienne adresse (ou une adresse de secours) est envoyé tout seul
+   vers l'adresse principale, mais SEULEMENT si celle-ci répond. Sinon il reste ici : l'ancienne adresse sert de secours.
+   Pas dans l'application Android (elle choisit elle-même son adresse), ni avec « ?rester » dans l'adresse. */
+(async () => {
+  if (window.Capacitor || window.TamTamAndroid || /[?&]rester\b/.test(location.search)) return;
+  let l; try { const r = await fetch('/api/alt', {cache: 'no-store'}); if (!r.ok) return; l = await r.json(); localStorage.setItem(Secours.K, JSON.stringify(l)); } catch { return; }
+  if (!l || !l.primary || l.primary === location.origin || !/^(https:\/\/|http:\/\/localhost:)/.test(l.primary)) return;
+  if (await Secours.ping(l.primary, 4000)) location.replace(l.primary + location.pathname + location.search + location.hash);
+})();

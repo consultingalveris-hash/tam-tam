@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Installe (ou met à jour) tam-tam v1 à côté du CRM et de Genius Recrutement, sans les redémarrer :
 # un conteneur fait tourner l'application, et le Caddy du CRM (déjà sur les ports 80/443)
-# reçoit un bloc pour tam-tam.alveris-consulting.com.
+# reçoit un bloc pour web.tam-tam.africa (adresse principale depuis le 13/11/2026 ; les anciennes adresses restent servies
+# et renvoient d'elles-mêmes vers la principale quand elle répond).
 # Usage : cd ~/tam-tam && git pull && bash installer
 set -euo pipefail
 DOSSIER="$(cd "$(dirname "$0")" && pwd)"
-DOMAINE=tam-tam.alveris-consulting.com
+DOMAINE=web.tam-tam.africa
+# Anciennes adresses (servies par le même bloc, elles deviennent des adresses de secours) et vitrine (tam-tam.africa).
+ANCIENNES="tam-tam.alveris-consulting.com"
+VITRINE="tam-tam.africa www.tam-tam.africa"
 APP=tam-tam-app
 VOLUME=tam-tam-data
 PROPRIETAIRE="${PROPRIETAIRE:-ngossodesire@gmail.com}"
@@ -13,7 +17,7 @@ PROPRIETAIRE="${PROPRIETAIRE:-ngossodesire@gmail.com}"
 # Copie séparée (ses propres comptes et messages), sur sa propre adresse ; les relais d'appels sont partagés.
 ESSAI=""
 if [ "$(basename "$DOSSIER")" = "tam-tam-essai" ]; then
-  ESSAI=1; DOMAINE=essai-tam-tam.alveris-consulting.com; APP=tam-tam-essai; VOLUME=tam-tam-essai-data
+  ESSAI=1; DOMAINE=essai.tam-tam.africa; ANCIENNES="essai-tam-tam.alveris-consulting.com"; VITRINE=""; APP=tam-tam-essai; VOLUME=tam-tam-essai-data
   echo "=== SITE D'ESSAI : https://$DOMAINE ==="
 fi
 
@@ -98,10 +102,10 @@ SECRET_BK=$(cat "$SECRET_BK_F")
 
 # Adresse de secours (même serveur, autre nom de domaine, sans Cloudflare) et relais déclarés :
 # l'adresse de secours n'est branchée que lorsque son nom pointe bien vers ce serveur.
-SECOURS="${SECOURS:-tam-tam.africa}"; SECOURS_OK=""
+SECOURS="${SECOURS:-secours.tam-tam.africa}"; SECOURS_OK=""
 if [ -z "$ESSAI" ] && [ -n "$IP_PUB" ] && getent ahostsv4 "$SECOURS" 2>/dev/null | awk '{print $1}' | grep -qx "$IP_PUB"; then SECOURS_OK=1; fi
 RELAIS_F=/root/.tam-tam-relais; touch "$RELAIS_F"
-ALT=$( [ -n "$ESSAI" ] || { [ -n "$SECOURS_OK" ] && echo "https://$SECOURS"; cat "$DOSSIER/relais/liste" "$RELAIS_F" 2>/dev/null | grep -E '^https://[A-Za-z0-9.-]+$' | sort -u || true; } | paste -sd, -)
+ALT=$( { for A in $ANCIENNES; do echo "https://$A"; done; [ -n "$ESSAI" ] || { [ -n "$SECOURS_OK" ] && echo "https://$SECOURS"; cat "$DOSSIER/relais/liste" "$RELAIS_F" 2>/dev/null | grep -E '^https://[A-Za-z0-9.-]+$' | sort -u || true; }; } | paste -sd, -)
 [ -n "$ESSAI" ] || { [ -n "$SECOURS_OK" ] && echo "Adresse de secours : https://$SECOURS" || echo "Adresse de secours $SECOURS : pas encore reliée à ce serveur (on la branchera dès qu'elle le sera)."; }
 
 echo "Construction de tam-tam (une minute la première fois)…"
@@ -134,6 +138,13 @@ caddy_edit() { # $1 = modification (sed) ; $2 = message
 }
 # Réglages déjà écrits sur le disque mais pas encore vus par Caddy (anciennes versions de cet installateur) : on les applique s'ils sont valides.
 if ! docker exec "$C" cat /etc/caddy/Caddyfile | cmp -s - "$CF" && caddy_ok "$CF"; then caddy_apply; fi
+# Changement d'adresse : l'ancien bloc (première ancienne adresse en tête) devient « adresse principale, anciennes adresses ».
+TETE="$DOMAINE"; for A in $ANCIENNES; do TETE="$TETE, $A"; done
+if ! grep -q "^$DOMAINE[ ,]" "$CF"; then
+  for A in $ANCIENNES; do
+    if grep -qE "^$A( |,)" "$CF"; then caddy_edit "s/^$A\(, [^{]*\)\? {/$TETE {/" "Adresse principale : https://$DOMAINE (anciennes adresses gardées : $ANCIENNES)"; caddy_apply; break; fi
+  done
+fi
 if grep -q "^$DOMAINE" "$CF"; then
   # Vidéos : envois jusqu'à 45 Mo.
   if sed -n "/^$DOMAINE[ ,]/,/^}/p" "$CF" | grep -q "max_size 8MB"; then caddy_edit "/^$DOMAINE[ ,]/,/^}/ s/max_size 8MB/max_size 45MB/" "Limite d'envoi relevée à 45 Mo (vidéos)."; fi
@@ -142,9 +153,13 @@ if grep -q "^$DOMAINE" "$CF"; then
     caddy_edit "/^$DOMAINE[ ,]/,/^}/ s#^\\(\\s*\\)reverse_proxy $APP:3000 {#\\1handle_path /lk/* {\\n\\1\\treverse_proxy tam-tam-lk:7880\\n\\1}\\n\\1reverse_proxy $APP:3000 {#" "Appels de groupe reliés (adresse /lk)."
   fi
   # Adresse de secours : servie par le même bloc (mêmes réglages, certificat obtenu automatiquement).
-  if [ -n "$SECOURS_OK" ] && ! grep -q "^$DOMAINE, $SECOURS {" "$CF"; then
-    caddy_edit "s/^$DOMAINE {/$DOMAINE, $SECOURS {/" "Adresse de secours branchée : https://$SECOURS"
+  if [ -n "$SECOURS_OK" ] && ! grep -E "^$DOMAINE[ ,]" "$CF" | grep -q "$SECOURS"; then
+    caddy_edit "s/^\($DOMAINE[^{]*\) {/\1, $SECOURS {/" "Adresse de secours branchée : https://$SECOURS"
   fi
+  # L'ancienne adresse de secours (tam-tam.africa) devient la vitrine : on la retire du bloc de l'application.
+  for V in $VITRINE; do
+    if grep -E "^$DOMAINE[ ,]" "$CF" | grep -qE ", $V( |,)"; then caddy_edit "/^$DOMAINE[ ,]/ s/, $V\([ ,]\)/\1/" "$V retirée du bloc de l'application (elle devient la vitrine)."; fi
+  done
   caddy_apply
 fi
 
@@ -153,7 +168,7 @@ if ! grep -q "^$DOMAINE" "$CF"; then
   cp -p "$CF" "$SAUVE"
   cat >> "$CF" <<BLOC
 
-$DOMAINE {
+$TETE {
 	encode zstd gzip
 	header {
 		Strict-Transport-Security "max-age=31536000"
@@ -178,6 +193,15 @@ BLOC
   fi
   caddy_apply
   echo "Adresse ajoutée : https://$DOMAINE"
+fi
+# Vitrine (tam-tam.africa) : en attendant la page de présentation, elle renvoie vers l'application.
+if [ -n "$VITRINE" ]; then
+  V1=$(echo $VITRINE | tr ' ' ',' | sed 's/,/, /g')
+  if ! grep -q "^$V1 {" "$CF"; then
+    T=/tmp/caddy-vit.$$; cp "$CF" "$T"; printf '\n%s {\n\tredir https://%s{uri} 302\n}\n' "$V1" "$DOMAINE" >> "$T"
+    if caddy_ok "$T"; then cp -p "$CF" "$CF.avant-$(date +%Y%m%d-%H%M%S)"; cat "$T" > "$CF"; caddy_apply; echo "Vitrine $V1 : renvoie vers https://$DOMAINE (en attendant la page de présentation)."; else echo "ATTENTION : bloc vitrine refusé."; fi
+    rm -f "$T"
+  fi
 fi
 echo
 docker stats --no-stream --format "{{.Name}} {{.MemUsage}}" 2>/dev/null || true

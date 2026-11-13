@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Met à jour le SITE D'ESSAI (https://essai-tam-tam.alveris-consulting.com) avec la version en préparation.
+# Met à jour le SITE D'ESSAI (https://essai.tam-tam.africa) avec la version en préparation.
 # Usage, depuis ~/tam-tam :  bash essai
 # Le vrai site n'est pas touché. Quand la version est validée sur le site d'essai :  git pull && bash installer
 set -euo pipefail

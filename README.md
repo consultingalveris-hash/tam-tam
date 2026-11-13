@@ -1,6 +1,6 @@
 # tam-tam — version 1 (test entre proches)
 
-En ligne sur https://tam-tam.alveris-consulting.com, sur le VPS LWS qui héberge aussi le CRM et Genius Recrutement.
+En ligne sur https://web.tam-tam.africa (ancienne adresse : tam-tam.alveris-consulting.com), sur le VPS LWS qui héberge aussi le CRM et Genius Recrutement.
 
 - Inscription sur invitation : le premier compte est celui du propriétaire (adresse fixée dans l'installeur), puis chaque membre crée des liens d'invitation.
 - Contacts : demande d'ami à accepter ; une personne invitée devient directement contact de celle qui l'a invitée.

@@ -5,7 +5,7 @@
 <button id="again">Réessayer</button>
 <script>
 // L'adresse habituelle ne répond pas : on essaie ses adresses de secours (même serveur, autre chemin) avant d'afficher l'erreur.
-var ADR = ['https://tam-tam.alveris-consulting.com', 'https://tam-tam.africa', 'https://tam-tam-relais.consultingalveris.workers.dev'];
+var ADR = ['https://web.tam-tam.africa', 'https://secours.tam-tam.africa', 'https://tam-tam.alveris-consulting.com', 'https://tam-tam-relais.consultingalveris.workers.dev'];
 function ping(o) { return new Promise(function (ok) { var t = setTimeout(function () { ok(false); }, 6000);
   fetch(o + '/api/ping', {cache: 'no-store', mode: 'cors', credentials: 'omit'}).then(function (r) { clearTimeout(t); ok(r.ok); }).catch(function () { clearTimeout(t); ok(false); }); }); }
 async function essai() { var st = document.getElementById('st'); st.textContent = 'Recherche d’une adresse qui répond…';

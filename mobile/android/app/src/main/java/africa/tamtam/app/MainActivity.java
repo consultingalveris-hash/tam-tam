@@ -18,7 +18,7 @@ import com.getcapacitor.BridgeActivity;
  * - Ailleurs, les captures restent possibles mais sont signalées à l'interlocuteur (Android 14 et plus).
  */
 public class MainActivity extends BridgeActivity {
-    private static final String SITE = "https://tam-tam.alveris-consulting.com";
+    private static final String SITE = "https://web.tam-tam.africa";
     private Activity.ScreenCaptureCallback captureCallback;
 
     @Override

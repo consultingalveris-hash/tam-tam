@@ -3,12 +3,13 @@
   "appName": "Tam-Tam",
   "webDir": "www",
   "server": {
-    "url": "https://tam-tam.alveris-consulting.com",
+    "url": "https://web.tam-tam.africa",
     "cleartext": false,
     "errorPath": "index.html",
     "allowNavigation": [
+      "web.tam-tam.africa",
+      "secours.tam-tam.africa",
       "tam-tam.alveris-consulting.com",
-      "tam-tam.africa",
       "*.workers.dev"
     ]
   },

@@ -2,7 +2,7 @@
   "name": "tam-tam-android",
   "version": "1.0.0",
   "private": true,
-  "description": "Application Android Tam-Tam (enveloppe de tam-tam.alveris-consulting.com)",
+  "description": "Application Android Tam-Tam (enveloppe de web.tam-tam.africa)",
   "dependencies": {
     "@capacitor/android": "8.6.0",
     "@capacitor/core": "8.6.0"
