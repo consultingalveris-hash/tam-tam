@@ -139,7 +139,10 @@ R('POST', /^\/api\/chats\/(\d+)\/messages$/, async ({ me, m, body }) => {
     if (!o || blockedEither(me.id, o)) E(403, 'Vous ne pouvez plus écrire à cette personne.');
     if (relation(me.id, o) !== 'contact') E(403, 'Vous n’êtes plus en contact avec cette personne.');
   }
-  let text = clean(body.text, 4000), media = null, e2e = 0;
+  // Tout message de membre doit être chiffré de bout en bout : un texte en clair (application modifiée) est refusé,
+  // pour que le serveur ne garde jamais une conversation lisible.
+  if (!body.enc) E(400, 'Message non chiffré refusé : mettez Tam-Tam à jour.');
+  let text = '', media = null, e2e = 0;
   if (body.enc) {
     // Message chiffré de bout en bout : le serveur ne garde qu'une enveloppe illisible.
     const env = body.enc; if (typeof env !== 'object' || typeof env.ct !== 'string' || typeof env.iv !== 'string' || typeof env.keys !== 'object') E(400, 'Message chiffré invalide.');
