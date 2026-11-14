@@ -194,12 +194,14 @@ BLOC
   caddy_apply
   echo "Adresse ajoutée : https://$DOMAINE"
 fi
-# Vitrine (tam-tam.africa) : en attendant la page de présentation, elle renvoie vers l'application.
+# Vitrine (tam-tam.africa) : la page de présentation (/vitrine/index.html) ; tout autre lien part vers l'application.
 if [ -n "$VITRINE" ]; then
   V1=$(echo $VITRINE | tr ' ' ',' | sed 's/,/, /g')
-  if ! grep -q "^$V1 {" "$CF"; then
-    T=/tmp/caddy-vit.$$; cp "$CF" "$T"; printf '\n%s {\n\tredir https://%s{uri} 302\n}\n' "$V1" "$DOMAINE" >> "$T"
-    if caddy_ok "$T"; then cp -p "$CF" "$CF.avant-$(date +%Y%m%d-%H%M%S)"; cat "$T" > "$CF"; caddy_apply; echo "Vitrine $V1 : renvoie vers https://$DOMAINE (en attendant la page de présentation)."; else echo "ATTENTION : bloc vitrine refusé."; fi
+  if ! sed -n "/^$V1 {/,/^}/p" "$CF" | grep -q "rewrite @racine"; then
+    T=/tmp/caddy-vit.$$
+    awk -v h="$V1 {" 'BEGIN{skip=0} $0==h{skip=1;next} skip&&/^}/{skip=0;next} !skip' "$CF" > "$T"
+    printf '\n%s {\n\tencode zstd gzip\n\theader -Server\n\t@app not path / /vitrine/* /logo-tamtam.svg /icon.svg /icon-192.png /icon-512.png /apple-touch-icon.png /favicon.ico\n\tredir @app https://%s{uri} 302\n\t@racine path /\n\trewrite @racine /vitrine/index.html\n\treverse_proxy %s:3000\n}\n' "$V1" "$DOMAINE" "$APP" >> "$T"
+    if caddy_ok "$T"; then cp -p "$CF" "$CF.avant-$(date +%Y%m%d-%H%M%S)"; cat "$T" > "$CF"; caddy_apply; echo "Vitrine en ligne : https://$(echo $VITRINE | cut -d' ' -f1)"; else echo "ATTENTION : bloc vitrine refusé, rien n'a changé."; fi
     rm -f "$T"
   fi
 fi
