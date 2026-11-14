@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tam-Tam — la messagerie qui parle votre langue</title>
+<meta name="description" content="Tam-Tam, la messagerie africaine qui traduit vos conversations : écrivez en français, votre ami vous lit en anglais. Chiffrée de bout en bout.">
+<meta property="og:title" content="Tam-Tam — la messagerie qui parle votre langue">
+<meta property="og:description" content="Écrivez dans votre langue, votre ami vous lit dans la sienne. Statuts privés, souvenirs, localisation partagée.">
+<meta property="og:image" content="/vitrine/img/video-apercu.jpg">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--t:#14B8C9;--n:#0B1730;--j:#FFC83D;--txt:#1d2b38;--mut:#5b6b78;--bg:#f4fbfc}
+*{box-sizing:border-box;margin:0}
+html{scroll-behavior:smooth}
+body{font-family:Poppins,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--txt);background:#fff;line-height:1.6}
+a{color:inherit}
+.wrap{max-width:1160px;margin:0 auto;padding:0 max(20px,env(safe-area-inset-left))}
+header{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-bottom:1px solid #e6f1f3}
+header .wrap{display:flex;align-items:center;justify-content:space-between;height:72px;gap:16px}
+header img{height:40px}
+nav{display:flex;gap:26px;align-items:center;font-weight:500;font-size:15px}
+nav a{text-decoration:none;color:var(--mut)}nav a:hover{color:var(--t)}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:13px 24px;border-radius:14px;font-weight:600;text-decoration:none;font-size:16px;transition:transform .15s}
+.btn:hover{transform:translateY(-2px)}
+.b1{background:var(--t);color:#fff;box-shadow:0 10px 24px rgba(20,184,201,.3)}
+.b2{background:#fff;color:var(--n);border:2px solid #dbeef1}
+.b3{background:var(--n);color:#fff}
+.hero{background:radial-gradient(ellipse at 70% 30%,#fff 0%,#eefafb 50%,#dff4f7 100%);padding:70px 0 80px;overflow:hidden}
+.hero .wrap{display:grid;grid-template-columns:1fr 1.15fr;gap:54px;align-items:center}
+h1{font-size:clamp(34px,4.4vw,54px);line-height:1.12;color:var(--n);text-wrap:balance}h1 b{color:var(--t)}
+.lead{font-size:19px;color:var(--mut);margin:20px 0 28px;max-width:30em}
+.cta{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.qr{display:flex;align-items:center;gap:16px;margin-top:30px;background:#fff;border-radius:20px;padding:14px 20px 14px 14px;box-shadow:0 14px 34px rgba(11,23,48,.08);width:fit-content}
+.qr img{width:104px;height:104px;border-radius:10px}.qr b{display:block;color:var(--n)}.qr span{font-size:14px;color:var(--mut)}
+.video{position:relative;border-radius:24px;overflow:hidden;box-shadow:0 30px 70px rgba(11,23,48,.22);background:#000;aspect-ratio:16/9}
+.video video{width:100%;height:100%;display:block}
+.chip{display:inline-flex;gap:8px;align-items:center;background:#fff;border-radius:30px;padding:6px 14px 6px 8px;font-size:14px;font-weight:600;color:var(--t);box-shadow:0 4px 14px rgba(11,23,48,.06);margin-bottom:18px}
+.chip i{font-style:normal;background:var(--t);color:#fff;border-radius:20px;padding:2px 10px}
+section{padding:90px 0}
+h2{font-size:clamp(28px,3.2vw,40px);line-height:1.2;color:var(--n);text-wrap:balance}
+.sub{color:var(--mut);font-size:18px;margin-top:12px;max-width:36em}
+.feat{display:grid;grid-template-columns:1fr 1fr;gap:60px;align-items:center;margin-top:80px}
+.feat.rev .phones{order:2}
+.feat h3{font-size:30px;color:var(--n);line-height:1.2;margin:8px 0 14px}
+.feat p{color:var(--mut);font-size:17px}
+.feat ul{margin-top:18px;padding:0;list-style:none;display:grid;gap:10px}
+.feat li{display:flex;gap:12px;align-items:flex-start;font-size:16px}.feat li::before{content:"";flex:none;width:22px;height:22px;margin-top:2px;border-radius:50%;background:var(--t) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 12.5l4 4 8-9' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/14px no-repeat}
+.num{font-size:14px;font-weight:700;color:var(--t);letter-spacing:.08em;text-transform:uppercase}
+.phones{display:flex;justify-content:center;gap:22px;position:relative}
+.ph{width:min(250px,42vw);border-radius:38px;padding:8px;background:linear-gradient(145deg,#d9dde2,#8f969f 40%,#e9ecef 60%,#7d848d);box-shadow:20px 34px 60px rgba(20,40,60,.22)}
+.ph div{border-radius:31px;background:#111;padding:6px}.ph img{display:block;width:100%;border-radius:26px}
+.ph.b{margin-top:60px}
+.bub{position:absolute;display:flex;align-items:center;gap:10px;background:#fff;border-radius:18px;padding:10px 16px;font-weight:600;font-size:15px;box-shadow:0 12px 28px rgba(11,23,48,.14);white-space:nowrap}
+.bub img{width:38px;height:38px;border-radius:50%}
+.bub.y{background:#FFF4D6}
+.alt{background:var(--bg)}
+.langs{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
+.langs span{background:#fff;border-radius:30px;padding:10px 18px;font-weight:600;box-shadow:0 6px 16px rgba(11,23,48,.06)}
+.people{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;margin-top:44px}
+.pp{display:flex;align-items:center;gap:12px;background:#fff;border-radius:20px;padding:12px;box-shadow:0 10px 26px rgba(11,23,48,.07)}
+.pp img{width:56px;height:56px;border-radius:50%}.pp b{display:block}.pp small{color:var(--mut)}
+.final{background:var(--n);color:#fff;border-radius:32px;padding:56px;display:grid;grid-template-columns:1fr auto;gap:40px;align-items:center}
+.final h2{color:#fff}.final p{color:#b9c6d3;margin-top:12px;font-size:18px}
+.final .qr{margin:0;background:#fff;color:var(--txt)}
+.soon{display:inline-flex;align-items:center;gap:12px;background:#000;color:#fff;border-radius:14px;padding:10px 20px;border:1px solid #333}.soon small{display:block;font-size:12px;opacity:.8}.soon b{font-size:18px}
+footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+@media (max-width:860px){
+ nav a:not(.btn){display:none}
+ .hero .wrap,.feat,.final{grid-template-columns:1fr}
+ .feat.rev .phones{order:0}
+ .people{grid-template-columns:1fr 1fr}
+ .final{padding:34px}
+ .bub{display:none}
+ section{padding:64px 0}.feat{margin-top:56px}
+}
+</style>
+</head>
+<body>
+<header><div class="wrap"><a href="#"><img src="/logo-tamtam.svg" alt="Tam-Tam"></a>
+<nav><a href="#fonctions">Fonctionnalités</a><a href="#langues">Langues</a><a href="#telecharger">Télécharger</a><a class="btn b1" href="https://web.tam-tam.africa">Ouvrir Tam-Tam</a></nav></div></header>
+
+<div class="hero"><div class="wrap">
+ <div>
+  <span class="chip"><i>Nouveau</i>Traduction automatique</span>
+  <h1>La messagerie qui parle <b>votre langue</b></h1>
+  <p class="lead">Écrivez en français, votre ami vous lit en anglais. Il répond en anglais, et vous lisez en français. Tam-Tam traduit vos discussions, en toute confidentialité.</p>
+  <div class="cta"><a class="btn b1" href="https://web.tam-tam.africa">Ouvrir Tam-Tam</a><a class="btn b2" href="https://web.tam-tam.africa/telecharger">Télécharger pour Android</a></div>
+  <div class="qr"><img src="/vitrine/img/qr-telecharger.png" alt="Code QR pour télécharger Tam-Tam"><div><b>Scannez avec votre téléphone</b><span>pour installer Tam-Tam</span></div></div>
+ </div>
+ <div class="video"><video src="/vitrine/tam-tam-presentation.mp4" poster="/vitrine/img/video-apercu.jpg" controls preload="none" playsinline></video></div>
+</div></div>
+
+<section id="fonctions"><div class="wrap">
+ <h2>Tout ce qu'il faut pour parler à ceux qu'on aime</h2>
+ <p class="sub">Une messagerie pensée pour l'Afrique et sa diaspora : vos langues, vos proches, votre vie privée.</p>
+
+ <div class="feat">
+  <div class="phones" style="padding-bottom:20px">
+   <div class="ph"><div><img src="/vitrine/img/chat-awa.jpg" alt="Discussion d'Awa en français"></div></div>
+   <div class="ph b"><div><img src="/vitrine/img/chat-james.jpg" alt="La même discussion lue par James en anglais"></div></div>
+   <span class="bub" style="left:-10px;top:30px"><img src="/vitrine/img/p04.jpg" alt="">🇫🇷 Awa écrit en français</span>
+   <span class="bub y" style="right:-10px;bottom:0">🇬🇧 James lit en anglais</span>
+  </div>
+  <div><span class="num">1 · Traduction</span><h3>Chacun écrit dans sa langue</h3>
+   <p>Touchez l'icône de traduction, choisissez la langue dans laquelle vous recevez vos messages, puis celle dans laquelle votre ami les lira. C'est tout.</p>
+   <ul><li>Français, anglais, wolof, peul, lingala, swahili, bambara, haoussa, yoruba, arabe, portugais…</li><li>Chaque discussion garde ses propres langues</li><li>Vous pouvez corriger une traduction</li></ul></div>
+ </div>
+
+ <div class="feat rev">
+  <div class="phones">
+   <div class="ph"><div><img src="/vitrine/img/c1-chat.jpg" alt="Discussion chiffrée"></div></div>
+   <div class="ph b"><div><img src="/vitrine/img/st6-prive-ok.jpg" alt="Statut privé"></div></div>
+   <span class="bub" style="left:0;bottom:30px">🔒 Seuls vous deux pouvez lire</span>
+  </div>
+  <div><span class="num">2 · Confidentialité</span><h3>Vos discussions restent entre vous</h3>
+   <p>Les messages sont chiffrés de bout en bout : personne d'autre ne peut les lire, même pas Tam-Tam. Et pour vos statuts, c'est vous qui choisissez.</p>
+   <ul><li><b>Mes amis</b> : tous vos amis voient le statut pendant 24 h</li><li><b>Privé</b> : seules les personnes que vous cochez le voient</li><li>Messages à vue unique, discussions verrouillées</li></ul></div>
+ </div>
+
+ <div class="feat">
+  <div class="phones">
+   <div class="ph"><div><img src="/vitrine/img/m4-grille.jpg" alt="Souvenirs rangés par année"></div></div>
+   <div class="ph b"><div><img src="/vitrine/img/p2-resultat.jpg" alt="Recherche d'un ami par pseudo"></div></div>
+   <span class="bub" style="right:0;top:20px">📅 Il y a un an aujourd'hui…</span>
+  </div>
+  <div><span class="num">3 · Ensemble</span><h3>Vos souvenirs, vos proches</h3>
+   <p>Gardez vos photos et vidéos dans vos Souvenirs, rangés par année avec leur vraie date : Tam-Tam vous les rappelle chaque année. Retrouvez vos proches par leur pseudo, sans jamais donner votre numéro de téléphone.</p>
+   <ul><li>Souvenirs publics, privés (avec code) ou partagés avec vos amis</li><li>Recherche par @pseudo</li><li>Votre numéro reste privé</li></ul></div>
+ </div>
+
+ <div class="feat rev">
+  <div class="phones">
+   <div class="ph"><div><img src="/vitrine/img/l5-position.jpg" alt="Suivre la position d'un proche"></div></div>
+   <div class="ph b"><div><img src="/vitrine/img/carte.jpg" alt="Ibou est au stade"></div></div>
+   <span class="bub" style="left:0;top:20px"><img src="/vitrine/img/p16.jpg" alt="">⚽ Je vais au match !</span>
+  </div>
+  <div><span class="num">4 · Localisation</span><h3>Toujours rassuré</h3>
+   <p>Votre enfant part au match de foot avec ses amis ? Il partage sa position avec vous, en continu et chiffrée. Vous savez qu'il est bien arrivé.</p>
+   <ul><li>Vous choisissez avec qui partager votre position</li><li>Arrêt du partage à tout moment</li><li>Même le serveur ne peut pas lire la position</li></ul></div>
+ </div>
+</div></section>
+
+<section class="alt" id="langues"><div class="wrap">
+ <h2>Les langues d'Afrique et du monde</h2>
+ <p class="sub">Tam-Tam fait vivre nos langues maternelles. Des bénévoles, les « ambassadeurs », corrigent les traductions pour qu'elles sonnent juste.</p>
+ <div class="people">
+  <div class="pp"><img src="/vitrine/img/p06.jpg" alt=""><div><b>Nanga def ?</b><small>Wolof · Sénégal</small></div></div>
+  <div class="pp"><img src="/vitrine/img/p05.jpg" alt=""><div><b>Mbote na yo !</b><small>Lingala · RD Congo</small></div></div>
+  <div class="pp"><img src="/vitrine/img/p08.jpg" alt=""><div><b>Habari yako ?</b><small>Swahili · Kenya</small></div></div>
+  <div class="pp"><img src="/vitrine/img/p07.jpg" alt=""><div><b>Olá, tudo bem ?</b><small>Portugais · Angola</small></div></div>
+  <div class="pp"><img src="/vitrine/img/p20.jpg" alt=""><div><b>Salam !</b><small>Arabe · Maroc</small></div></div>
+  <div class="pp"><img src="/vitrine/img/p14.jpg" alt=""><div><b>Hello!</b><small>Anglais</small></div></div>
+  <div class="pp"><img src="/vitrine/img/p04.jpg" alt=""><div><b>Bonjour !</b><small>Français</small></div></div>
+  <div class="pp"><img src="/vitrine/img/p16.jpg" alt=""><div><b>I ni sogoma !</b><small>Bambara · Mali</small></div></div>
+ </div>
+ <div class="langs"><span>Français</span><span>Anglais</span><span>Wolof</span><span>Peul (pulaar)</span><span>Arabe</span><span>Portugais</span><span>Espagnol</span><span>Swahili</span><span>Lingala</span><span>Bambara</span><span>Haoussa</span><span>Yoruba</span><span>Amharique</span><span>Ewe</span><span>Igbo</span><span>… et bien d'autres</span></div>
+</div></section>
+
+<section id="telecharger"><div class="wrap">
+ <div class="final">
+  <div><h2>Rejoignez Tam-Tam</h2><p>Gratuit. Sur Android, iPhone et ordinateur.</p>
+   <div class="cta" style="margin-top:26px"><a class="btn b1" href="https://web.tam-tam.africa">Ouvrir Tam-Tam</a><a class="btn b2" href="https://web.tam-tam.africa/telecharger">Télécharger pour Android</a><span class="soon"><svg width="26" height="28" viewBox="0 0 44 48" aria-hidden="true"><path d="M4 4 L40 24 L4 44 Z" fill="#14B8C9"/></svg><span><small>Bientôt sur</small><b>Google Play</b></span></span></div></div>
+  <div class="qr"><img src="/vitrine/img/qr-telecharger.png" alt="Code QR pour télécharger Tam-Tam"><div><b>Scannez</b><span>pour installer</span></div></div>
+ </div>
+</div></section>
+
+<footer><div class="wrap"><span>© 2026 Tam-Tam · Alveris Consulting, Dakar</span><span><a href="https://web.tam-tam.africa/conditions">Conditions</a> · <a href="https://www.youtube.com/@tamtamafrica">YouTube</a></span></div></footer>
+</body>
+</html>
