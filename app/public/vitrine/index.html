@@ -29,7 +29,7 @@ nav a{text-decoration:none;color:var(--mut)}nav a:hover{color:var(--t)}
 .b2{background:#fff;color:var(--n);border:2px solid #dbeef1}
 .b3{background:var(--n);color:#fff}
 .hero{background:radial-gradient(ellipse at 70% 30%,#fff 0%,#eefafb 50%,#dff4f7 100%);padding:70px 0 80px;overflow:hidden}
-.hero .wrap{display:grid;grid-template-columns:1fr auto;gap:48px;align-items:center}
+.hero .wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:40px;align-items:center}
 h1{font-size:clamp(34px,4.4vw,54px);line-height:1.12;color:var(--n);text-wrap:balance}h1 b{color:var(--t)}
 .lead{font-size:19px;color:var(--mut);margin:20px 0 28px;max-width:30em}
 .cta{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
@@ -38,9 +38,9 @@ h1{font-size:clamp(34px,4.4vw,54px);line-height:1.12;color:var(--n);text-wrap:ba
 .vbox{display:flex;align-items:center;gap:22px}
 .video{position:relative;border-radius:28px;overflow:hidden;box-shadow:0 30px 70px rgba(11,23,48,.22);background:#fff;height:min(720px,80vh);aspect-ratio:9/16;max-width:100%;flex:none}
 .video video{width:100%;height:100%;display:block;object-fit:cover}
-.faces{display:flex;flex-direction:column;gap:22px;align-items:flex-end}
-.fc{display:flex;align-items:center;gap:10px}.fc:nth-child(even){margin-right:34px}
-.fc span{background:#fff;border-radius:16px;padding:8px 14px;font-weight:600;font-size:15px;white-space:nowrap;box-shadow:0 10px 24px rgba(11,23,48,.1)}
+.faces{display:flex;flex-direction:column;gap:22px;align-items:center;justify-content:center;flex:1;min-width:230px}
+.fc{display:flex;align-items:center;gap:10px;transition:transform 1.1s cubic-bezier(.45,.05,.35,1)}
+.fc span{display:inline-flex;align-items:center;gap:8px;background:#fff;border-radius:16px;padding:8px 14px;font-weight:600;font-size:15px;white-space:nowrap;box-shadow:0 10px 24px rgba(11,23,48,.1)}
 .fc img{width:54px;height:54px;border-radius:50%;box-shadow:0 6px 16px rgba(11,23,48,.18)}
 .chip{display:inline-flex;gap:8px;align-items:center;background:#fff;border-radius:30px;padding:6px 14px 6px 8px;font-size:14px;font-weight:600;color:var(--t);box-shadow:0 4px 14px rgba(11,23,48,.06);margin-bottom:18px}
 .chip i{font-style:normal;background:var(--t);color:#fff;border-radius:20px;padding:2px 10px}
@@ -59,7 +59,7 @@ h2{font-size:clamp(28px,3.2vw,40px);line-height:1.2;color:var(--n);text-wrap:bal
 .ph div{border-radius:31px;background:#111;padding:6px}.ph img{display:block;width:100%;border-radius:26px}
 .ph.b{margin-top:60px}
 .bub{position:absolute;display:flex;align-items:center;gap:10px;background:#fff;border-radius:18px;padding:10px 16px;font-weight:600;font-size:15px;box-shadow:0 12px 28px rgba(11,23,48,.14);white-space:nowrap}
-.bub img{width:38px;height:38px;border-radius:50%}
+.bub img{width:38px;height:38px;border-radius:50%}img.fl,.bub img.fl{width:22px;height:15px;border-radius:3px;box-shadow:0 0 0 1px rgba(11,23,48,.1);flex:none}
 .bub.y{background:#FFF4D6}
 .alt{background:var(--bg)}
 .langs{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
@@ -123,12 +123,13 @@ footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;
 .bp .intro button{border:0;cursor:pointer;font-family:inherit;justify-content:center}
 @media (max-width:560px){.modal .row{grid-template-columns:1fr}.bulle .hint{display:none}.modal form{padding:20px}}
 
+@media (max-width:1180px){.vbox{flex-direction:column}.faces{flex-direction:row;flex-wrap:wrap;justify-content:center;gap:12px;min-width:0}.video{height:min(640px,72vh)}}
 @media (max-width:860px){
  nav a:not(.btn){display:none}
  .hero .wrap,.feat,.final{grid-template-columns:1fr}
  .vbox{flex-direction:column}
  .video{height:auto;width:min(400px,100%)}
- .faces{flex-direction:row;flex-wrap:wrap;justify-content:center;gap:12px}.fc:nth-child(even){margin-right:0}
+ .faces{flex-direction:row;flex-wrap:wrap;justify-content:center;gap:12px;min-width:0}
  .feat.rev .phones{order:0}
  .people{grid-template-columns:1fr 1fr}
  .final{padding:34px}
@@ -150,7 +151,7 @@ footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;
   <div class="qr"><img src="/vitrine/img/qr-telecharger.png" alt="Code QR pour télécharger Tam-Tam"><div><b>Scannez avec votre téléphone</b><span>pour installer Tam-Tam</span></div></div>
  </div>
  <div class="vbox"><div class="video"><video src="/vitrine/tam-tam-presentation-v.mp4" poster="/vitrine/img/video-apercu-v.jpg" controls preload="none" playsinline></video></div>
-  <div class="faces" aria-hidden="true"><div class="fc"><span>🇸🇳 Nanga def ?</span><img src="/vitrine/img/p06.jpg" alt=""></div><div class="fc"><span>🇬🇧 Hello!</span><img src="/vitrine/img/p14.jpg" alt=""></div><div class="fc"><span>🇨🇩 Mbote !</span><img src="/vitrine/img/p05.jpg" alt=""></div><div class="fc"><span>🇰🇪 Habari ?</span><img src="/vitrine/img/p08.jpg" alt=""></div><div class="fc"><span>🇦🇴 Olá !</span><img src="/vitrine/img/p07.jpg" alt=""></div><div class="fc"><span>🇫🇷 Bonjour !</span><img src="/vitrine/img/p04.jpg" alt=""></div></div></div>
+  <div class="faces" aria-hidden="true"><div class="fc"><span><img class="fl" src="/vitrine/img/drapeaux/sn.svg" alt="">Nanga def ?</span><img src="/vitrine/img/p06.jpg" alt=""></div><div class="fc"><span><img class="fl" src="/vitrine/img/drapeaux/gb.svg" alt="">Hello!</span><img src="/vitrine/img/p14.jpg" alt=""></div><div class="fc"><span><img class="fl" src="/vitrine/img/drapeaux/cd.svg" alt="">Mbote !</span><img src="/vitrine/img/p05.jpg" alt=""></div><div class="fc"><span><img class="fl" src="/vitrine/img/drapeaux/ke.svg" alt="">Habari ?</span><img src="/vitrine/img/p08.jpg" alt=""></div><div class="fc"><span><img class="fl" src="/vitrine/img/drapeaux/ao.svg" alt="">Olá !</span><img src="/vitrine/img/p07.jpg" alt=""></div><div class="fc"><span><img class="fl" src="/vitrine/img/drapeaux/fr.svg" alt="">Bonjour !</span><img src="/vitrine/img/p04.jpg" alt=""></div></div></div>
 </div></div>
 
 <section id="fonctions"><div class="wrap">
@@ -161,8 +162,8 @@ footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;
   <div class="phones" style="padding-bottom:20px">
    <div class="ph"><div><img src="/vitrine/img/chat-awa.jpg" alt="Discussion d'Awa en français"></div></div>
    <div class="ph b"><div><img src="/vitrine/img/chat-james.jpg" alt="La même discussion lue par James en anglais"></div></div>
-   <span class="bub" style="left:-10px;top:30px"><img src="/vitrine/img/p04.jpg" alt="">🇫🇷 Awa écrit en français</span>
-   <span class="bub y" style="right:-10px;bottom:0">🇬🇧 James lit en anglais</span>
+   <span class="bub" style="left:-10px;top:30px"><img src="/vitrine/img/p04.jpg" alt=""><img class="fl" src="/vitrine/img/drapeaux/fr.svg" alt="">Awa écrit en français</span>
+   <span class="bub y" style="right:-10px;bottom:0"><img class="fl" src="/vitrine/img/drapeaux/gb.svg" alt="">James lit en anglais</span>
   </div>
   <div><span class="num">1 · Traduction</span><h3>Chacun écrit dans sa langue</h3>
    <p>Touchez l'icône de traduction, choisissez la langue dans laquelle vous recevez vos messages, puis celle dans laquelle votre ami les lira. C'est tout.</p>
@@ -264,6 +265,6 @@ footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;
  <div class="fil" hidden></div><div class="typ" hidden></div>
  <form hidden><textarea rows="1" placeholder="Écrivez un message…" maxlength="2000" aria-label="Votre message"></textarea><button type="submit" aria-label="Envoyer">➤</button></form>
 </div>
-<script src="/secure.js"></script><script src="/vitrine/contact.js"></script>
+<script src="/vitrine/anim.js"></script><script src="/secure.js"></script><script src="/vitrine/contact.js"></script>
 </body>
 </html>
