@@ -20,10 +20,10 @@ await v.reload(); await v.waitForTimeout(1200); await v.click('#bulle button'); 
 console.log('après rechargement :', await v.evaluate(() => document.querySelectorAll('#bp .m').length), 'messages');
 await v.click('#bp [data-fermer]');
 // formulaire
-await v.click('[data-ouvrir=ecrire]'); await v.fill('#ecrire [name=nom]', 'Awa Diop'); await v.fill('#ecrire [name=email]', 'awa@exemple.org'); await v.fill('#ecrire [name=tel]', '+221 77 000 00 00'); await v.fill('#ecrire [name=objet]', 'Partenariat'); await v.fill('#ecrire [name=message]', 'Nous aimerions travailler avec vous.');
+await v.click('button[data-ouvrir=ecrire]'); await v.fill('#ecrire [name=nom]', 'Awa Diop'); await v.fill('#ecrire [name=email]', 'awa@exemple.org'); await v.fill('#ecrire [name=tel]', '+221 77 000 00 00'); await v.fill('#ecrire [name=objet]', 'Partenariat'); await v.fill('#ecrire [name=message]', 'Nous aimerions travailler avec vous.');
 await v.screenshot({path: '/tmp/claude-0/-home-claude/2d8221e3-4f69-5cf7-8ee4-4297e639f621/scratchpad/form-test.png'});
 await v.click('#ecrire [type=submit]'); await v.waitForTimeout(1500);
-console.log('formulaire :', await v.textContent('#ecrire .ok'));
+console.log('formulaire :', await v.textContent('#ecrire .ok'), await v.inputValue('#ecrire [name=tel]'));
 const t2 = await p.evaluate(async id => { await new Promise(r => setTimeout(r, 300)); return [...document.querySelectorAll('.msg, .bubble, [data-mid]')].map(x => x.textContent).join(' | '); }, chat && chat.id);
 console.log('formulaire arrivé chez le porteur :', /Partenariat/.test(t2));
 // visiteur dans la recherche ?

@@ -131,7 +131,7 @@
   /* ---------- démarrage ---------- */
   async function load() {
     let st; try { st = await api('etat'); } catch { return; }
-    if (st.off) { bulle.hidden = true; document.querySelectorAll('[data-ouvrir="bulle"]').forEach(b => { b.closest('.cc').hidden = true; }); return; }
+    if (st.off) { bulle.hidden = true; const or = $('.ctc-or'); if (or) or.hidden = true; return; }
     V.owner = st.owner;
     if (st.guest) {
       V.guest = st.guest; V.chatId = st.chatId || 0; await E2E.load(KEY);
