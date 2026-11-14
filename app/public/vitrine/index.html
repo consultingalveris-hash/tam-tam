@@ -67,6 +67,10 @@ h2{font-size:clamp(28px,3.2vw,40px);line-height:1.2;color:var(--n);text-wrap:bal
 .final .qr{margin:0;background:#fff;color:var(--txt)}
 .soon{display:inline-flex;align-items:center;gap:12px;background:#000;color:#fff;border-radius:14px;padding:10px 20px;border:1px solid #333}.soon small{display:block;font-size:12px;opacity:.8}.soon b{font-size:18px}
 footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.contact{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:36px}
+.cc{background:#fff;border-radius:22px;padding:26px;box-shadow:0 12px 30px rgba(11,23,48,.07);text-decoration:none;display:block}
+.cc i{font-style:normal;font-size:30px;display:block;margin-bottom:10px}.cc b{display:block;color:var(--n);font-size:18px}.cc span{color:var(--mut);word-break:break-word}
+@media (max-width:860px){.contact{grid-template-columns:1fr}}
 @media (max-width:860px){
  nav a:not(.btn){display:none}
  .hero .wrap,.feat,.final{grid-template-columns:1fr}
@@ -80,7 +84,7 @@ footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;
 </head>
 <body>
 <header><div class="wrap"><a href="#"><img src="/logo-tamtam.svg" alt="Tam-Tam"></a>
-<nav><a href="#fonctions">Fonctionnalités</a><a href="#langues">Langues</a><a href="#telecharger">Télécharger</a><a class="btn b1" href="https://web.tam-tam.africa">Ouvrir Tam-Tam</a></nav></div></header>
+<nav><a href="#fonctions">Fonctionnalités</a><a href="#langues">Langues</a><a href="#telecharger">Télécharger</a><a href="#contact">Nous contacter</a><a class="btn b1" href="https://web.tam-tam.africa">Ouvrir Tam-Tam</a></nav></div></header>
 
 <div class="hero"><div class="wrap">
  <div>
@@ -164,6 +168,16 @@ footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;
   <div><h2>Rejoignez Tam-Tam</h2><p>Gratuit. Sur Android, iPhone et ordinateur.</p>
    <div class="cta" style="margin-top:26px"><a class="btn b1" href="https://web.tam-tam.africa">Ouvrir Tam-Tam</a><a class="btn b2" href="https://web.tam-tam.africa/telecharger">Télécharger pour Android</a><span class="soon"><svg width="26" height="28" viewBox="0 0 44 48" aria-hidden="true"><path d="M4 4 L40 24 L4 44 Z" fill="#14B8C9"/></svg><span><small>Bientôt sur</small><b>Google Play</b></span></span></div></div>
   <div class="qr"><img src="/vitrine/img/qr-telecharger.png" alt="Code QR pour télécharger Tam-Tam"><div><b>Scannez</b><span>pour installer</span></div></div>
+ </div>
+</div></section>
+
+<section class="alt" id="contact"><div class="wrap">
+ <h2>Nous contacter</h2>
+ <p class="sub">Une question, une idée, un partenariat ? Écrivez-nous, nous répondons rapidement.</p>
+ <div class="contact">
+  <a class="cc" href="mailto:consultingalveris@gmail.com?subject=Tam-Tam"><i>✉️</i><b>E-mail</b><span>consultingalveris@gmail.com</span></a>
+  <a class="cc" href="https://wa.me/221765956765"><i>💬</i><b>WhatsApp</b><span>+221 76 595 67 65</span></a>
+  <a class="cc" href="https://www.youtube.com/@tamtamafrica"><i>▶️</i><b>YouTube</b><span>Tam-Tam Africa</span></a>
  </div>
 </div></section>
 
