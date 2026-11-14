@@ -10,6 +10,7 @@ import { LK_URL } from './srv/groupes.mjs';
 import './srv/messages.mjs';
 import './srv/google.mjs';
 import './srv/traduction.mjs';
+import { VITRINE_ORIGIN } from './srv/visite.mjs';
 
 // Ordre des routes : celui des fichiers (rang), puis celui de déclaration dans chaque fichier (tri stable).
 routes.sort((a, b) => a.rank - b.rank);
@@ -23,7 +24,7 @@ const server = http.createServer(async (req, res) => {
   try {
     if (p.startsWith('/api/')) {
       // Protection contre les requêtes venues d'autres sites.
-      if (req.method !== 'GET') { const o = req.headers.origin; if (o && o !== BASE_URL && !ALT_ORIGINS.includes(o) && !(BASE_URL.startsWith('http://localhost') && o.startsWith('http://localhost'))) E(403, 'Origine refusée.'); }
+      if (req.method !== 'GET') { const o = req.headers.origin; if (o && o !== BASE_URL && !ALT_ORIGINS.includes(o) && !(p.startsWith('/api/visite/') && o === VITRINE_ORIGIN) && !(BASE_URL.startsWith('http://localhost') && o.startsWith('http://localhost'))) E(403, 'Origine refusée.'); }
       const rt = routes.find(r => r.method === req.method && r.re.test(p)); if (!rt) E(404, 'Adresse inconnue.');
       const me = currentUser(req); if (rt.auth && !me) E(401, 'Connectez-vous.');
       const body = req.method === 'POST' && !/^\/api\/media(\/up\/[A-Za-z0-9_-]+\/chunk)?$/.test(p) ? await readJson(req) : {};

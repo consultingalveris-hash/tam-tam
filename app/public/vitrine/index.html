@@ -13,7 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--t:#14B8C9;--n:#0B1730;--j:#FFC83D;--txt:#1d2b38;--mut:#5b6b78;--bg:#f4fbfc}
-*{box-sizing:border-box;margin:0}
+*{box-sizing:border-box;margin:0}[hidden]{display:none!important}
 html{scroll-behavior:smooth}
 body{font-family:Poppins,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--txt);background:#fff;line-height:1.6}
 a{color:inherit}
@@ -75,6 +75,46 @@ footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;
 .contact{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:36px}
 .cc{background:#fff;border-radius:22px;padding:26px;box-shadow:0 12px 30px rgba(11,23,48,.07);text-decoration:none;display:block}
 .cc i{font-style:normal;font-size:30px;display:block;margin-bottom:10px}.cc b{display:block;color:var(--n);font-size:18px}.cc span{color:var(--mut);word-break:break-word}
+.cc{font:inherit;text-align:left;border:0;cursor:pointer;width:100%;color:inherit;transition:transform .15s}.cc:hover{transform:translateY(-3px)}
+.cc i.tt{width:44px;height:36px;background:#fff;border:2px solid #d6f1f4;border-radius:14px 14px 14px 4px;display:grid;place-items:center}.cc i.tt img{width:32px}
+/* fenêtre « Nous écrire » */
+.modal{position:fixed;inset:0;z-index:50;background:rgba(11,23,48,.45);display:grid;place-items:center;padding:16px max(16px,env(safe-area-inset-left))}
+.modal form{background:#fff;border-radius:24px;width:min(520px,100%);max-height:calc(100dvh - 32px);overflow:auto;padding:28px;box-shadow:0 30px 80px rgba(11,23,48,.35);display:grid;gap:14px}
+.modal h3{font-size:24px;color:var(--n);line-height:1.2}.modal p{color:var(--mut);font-size:15px}
+.modal label{display:grid;gap:6px;font-weight:600;font-size:14px;color:var(--n)}.modal label small{font-weight:400;color:var(--mut)}
+.modal input,.modal textarea{font:inherit;font-size:16px;font-weight:400;border:2px solid #dbeef1;border-radius:12px;padding:11px 14px;color:var(--txt);background:#fff;width:100%}
+.modal input:focus,.modal textarea:focus,.bp input:focus,.bp textarea:focus{outline:none;border-color:var(--t)}
+.modal textarea{min-height:130px;resize:vertical}
+.modal .row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.modal .act{display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap;margin-top:4px}
+.modal button.btn{border:0;cursor:pointer;font-family:inherit}.modal button.b2{border:2px solid #dbeef1}
+.err{color:#c0392b;font-size:14px;font-weight:600}.ok{background:#e9f9ee;color:#1e7b3c;border-radius:12px;padding:14px;font-weight:600}
+/* bulle Tam-Tam */
+.bulle{position:fixed;right:max(20px,env(safe-area-inset-right));bottom:max(20px,env(safe-area-inset-bottom));z-index:40;display:flex;align-items:center;gap:12px}
+.bulle .hint{background:#fff;border-radius:14px;padding:9px 14px;font-weight:600;font-size:14px;color:var(--n);box-shadow:0 10px 28px rgba(11,23,48,.15);white-space:nowrap}
+.bulle button{width:72px;height:64px;border:0;cursor:pointer;background:#fff;border-radius:30px 30px 30px 8px;box-shadow:0 14px 34px rgba(11,23,48,.25);display:grid;place-items:center;position:relative;transition:transform .15s}
+.bulle button:hover{transform:scale(1.06)}.bulle button img{width:52px}
+.bulle button .pt{position:absolute;top:4px;right:6px;width:13px;height:13px;border-radius:50%;background:#2ecc71;border:2px solid #fff}
+.bulle button .nb{position:absolute;top:-6px;right:-6px;min-width:22px;height:22px;border-radius:11px;background:#e74c3c;color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center;padding:0 6px}
+.bp{position:fixed;right:max(20px,env(safe-area-inset-right));bottom:max(20px,env(safe-area-inset-bottom));z-index:45;width:min(380px,calc(100vw - 24px));height:min(580px,calc(100dvh - 40px));background:#f4fbfc;border-radius:24px;box-shadow:0 30px 80px rgba(11,23,48,.3);display:flex;flex-direction:column;overflow:hidden}
+.bp header{position:static;background:var(--t);color:#fff;border:0;display:flex;align-items:center;gap:12px;padding:14px 16px;backdrop-filter:none}
+.bp header .lg{width:46px;height:40px;background:#fff;border-radius:16px 16px 16px 5px;display:grid;place-items:center;flex:none}.bp header .lg img{width:34px;height:auto}
+.bp header b{display:block;font-size:16px}.bp header small{opacity:.9;font-size:13px}
+.bp header button{margin-left:auto;background:rgba(255,255,255,.2);border:0;color:#fff;width:34px;height:34px;border-radius:50%;font-size:20px;cursor:pointer;line-height:1}
+.bp .fil{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:8px}
+.bp .m{max-width:82%;padding:9px 13px;border-radius:16px;font-size:15px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word;box-shadow:0 2px 6px rgba(11,23,48,.06)}
+.bp .m small{display:block;font-size:11px;opacity:.6;margin-top:3px;text-align:right}
+.bp .m.moi{align-self:flex-end;background:#d7f5f8;border-bottom-right-radius:5px}.bp .m.eux{align-self:flex-start;background:#fff;border-bottom-left-radius:5px}
+.bp .note{align-self:center;text-align:center;font-size:13px;color:var(--mut);background:#fff;border-radius:12px;padding:8px 12px;max-width:92%}
+.bp .typ{font-size:13px;color:var(--mut);padding:0 16px 6px;min-height:20px}
+.bp form{display:flex;gap:8px;padding:10px 12px;background:#fff;border-top:1px solid #e3f0f2;align-items:flex-end}
+.bp textarea{flex:1;font:inherit;font-size:15px;border:2px solid #dbeef1;border-radius:18px;padding:9px 14px;resize:none;max-height:120px;min-height:42px}
+.bp form button{width:44px;height:44px;border-radius:50%;border:0;background:var(--t);color:#fff;font-size:18px;cursor:pointer;flex:none}
+.bp .intro{padding:18px;display:grid;gap:12px;overflow:auto}
+.bp .intro p{color:var(--txt);font-size:15px;background:#fff;border-radius:16px 16px 16px 5px;padding:12px 14px}
+.bp .intro input,.bp .intro textarea{font:inherit;font-size:15px;border:2px solid #dbeef1;border-radius:12px;padding:10px 12px;width:100%;resize:vertical;background:#fff}
+.bp .intro button{border:0;cursor:pointer;font-family:inherit;justify-content:center}
+@media (max-width:560px){.modal .row{grid-template-columns:1fr}.bulle .hint{display:none}.modal form{padding:20px}}
 @media (max-width:860px){.contact{grid-template-columns:1fr}}
 @media (max-width:860px){
  nav a:not(.btn){display:none}
@@ -184,12 +224,34 @@ footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;
  <h2>Nous contacter</h2>
  <p class="sub">Une question, une idée, un partenariat ? Écrivez-nous, nous répondons rapidement.</p>
  <div class="contact">
-  <a class="cc" href="mailto:consultingalveris@gmail.com?subject=Tam-Tam"><i>✉️</i><b>E-mail</b><span>consultingalveris@gmail.com</span></a>
-  <a class="cc" href="https://wa.me/221765956765"><i>💬</i><b>WhatsApp</b><span>+221 76 595 67 65</span></a>
+  <button class="cc" type="button" data-ouvrir="ecrire"><i>✉️</i><b>Nous écrire</b><span>Laissez-nous un message, nous vous répondons rapidement.</span></button>
+  <button class="cc" type="button" data-ouvrir="bulle"><i class="tt"><img src="/logo-tamtam.svg" alt=""></i><b>Discuter avec nous</b><span>Écrivez-nous en direct, comme sur Tam-Tam.</span></button>
   <a class="cc" href="https://www.youtube.com/@tamtamafrica"><i>▶️</i><b>YouTube</b><span>Tam-Tam Africa</span></a>
  </div>
 </div></section>
 
 <footer><div class="wrap"><span>© 2026 Tam-Tam · Alveris Consulting, Dakar</span><span><a href="https://web.tam-tam.africa/conditions">Conditions</a> · <a href="https://www.youtube.com/@tamtamafrica">YouTube</a></span></div></footer>
+<div class="modal" id="ecrire" hidden role="dialog" aria-modal="true" aria-labelledby="ecrire-t"><form novalidate>
+ <h3 id="ecrire-t">Nous écrire</h3><p>Remplissez ce formulaire : votre message arrive directement chez l’équipe Tam-Tam.</p>
+ <label>Nom<input name="nom" autocomplete="name" maxlength="80" required></label>
+ <div class="row"><label>E-mail<input name="email" type="email" autocomplete="email" maxlength="120" required></label>
+ <label><span>Numéro <small>(facultatif)</small></span><input name="tel" type="tel" autocomplete="tel" maxlength="40" placeholder="+221 …"></label></div>
+ <label>Objet<input name="objet" maxlength="120" required></label>
+ <label>Message<textarea name="message" maxlength="4000" required></textarea></label>
+ <div class="err" hidden></div><div class="ok" hidden></div>
+ <div class="act"><button class="btn b2" type="button" data-fermer>Annuler</button><button class="btn b1" type="submit">Envoyer</button></div>
+</form></div>
+<div class="bulle" id="bulle"><span class="hint">Une question ? Écrivez-nous</span><button type="button" aria-label="Discuter avec l’équipe Tam-Tam"><img src="/logo-tamtam.svg" alt=""><span class="pt" hidden></span><span class="nb" hidden></span></button></div>
+<div class="bp" id="bp" hidden role="dialog" aria-label="Discussion avec l’équipe Tam-Tam">
+ <header><span class="lg"><img src="/logo-tamtam.svg" alt=""></span><div><b>Équipe Tam-Tam</b><small class="st">Nous répondons dès que possible</small></div><button type="button" aria-label="Fermer" data-fermer>×</button></header>
+ <div class="intro"><p>Bonjour 👋 Une question sur Tam-Tam ? Écrivez-nous ici, nous vous répondons en direct.</p>
+  <input name="nom" placeholder="Votre prénom" maxlength="40" autocomplete="given-name">
+  <input name="contact" placeholder="E-mail ou numéro (facultatif)" maxlength="120">
+  <textarea name="msg" rows="3" placeholder="Votre message…" maxlength="2000"></textarea>
+  <div class="err" hidden></div><button class="btn b1" type="button" data-commencer>Envoyer</button></div>
+ <div class="fil" hidden></div><div class="typ" hidden></div>
+ <form hidden><textarea rows="1" placeholder="Écrivez un message…" maxlength="2000" aria-label="Votre message"></textarea><button type="submit" aria-label="Envoyer">➤</button></form>
+</div>
+<script src="/secure.js"></script><script src="/vitrine/contact.js"></script>
 </body>
 </html>

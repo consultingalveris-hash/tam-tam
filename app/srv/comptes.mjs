@@ -231,7 +231,7 @@ R('POST', /^\/api\/invites$/, async ({ me }) => {
 /* personnes et contacts */
 R('GET', /^\/api\/users\/search$/, async ({ me, url }) => {
   const q = clean(url.searchParams.get('q'), 60).toLowerCase().replace(/^@/, ''); if (q.length < 2) return { users: [] };
-  const rows = qa(`SELECT * FROM users WHERE id<>? AND (handle LIKE ? OR lower(name) LIKE ?) LIMIT 60`, me.id, q + '%', '%' + q + '%');
+  const rows = qa(`SELECT * FROM users WHERE id<>? AND guest IS NULL AND (handle LIKE ? OR lower(name) LIKE ?) LIMIT 60`, me.id, q + '%', '%' + q + '%');
   return { users: rows.filter(u => !blockedEither(me.id, u.id) && (u.handle.startsWith(q) || relation(me.id, u.id) === 'contact')).slice(0, 20).map(u => userCard(u, me.id)) };
 });
 R('GET', /^\/api\/users\/(\d+)$/, async ({ me, m }) => {
@@ -241,13 +241,13 @@ R('GET', /^\/api\/users\/(\d+)$/, async ({ me, m }) => {
 R('GET', /^\/api\/contacts$/, async ({ me }) => {
   const rows = qa(`SELECT * FROM contacts WHERE a=? OR b=?`, me.id, me.id), out = { contacts: [], incoming: [], outgoing: [] };
   for (const r of rows) {
-    const other = r.a === me.id ? r.b : r.a, u = getUser(other); if (!u) continue; const c = userCard(u, me.id);
+    const other = r.a === me.id ? r.b : r.a, u = getUser(other); if (!u || u.guest) continue; const c = userCard(u, me.id); // visiteurs du site : seulement dans les discussions
     if (r.status === 'accepted') out.contacts.push(c); else if (r.requester === me.id) out.outgoing.push(c); else if (!iBlocked(me.id, other)) out.incoming.push(c);
   }
   out.contacts.sort((x, y) => x.name.localeCompare(y.name, 'fr'));
   // Suggestions : contacts de mes contacts.
   const mine = new Set(out.contacts.map(c => c.id).concat(rows.map(r => r.a === me.id ? r.b : r.a))), seen = new Set(), sug = [];
-  for (const c of out.contacts) for (const id of contactIds(c.id)) if (id !== me.id && !mine.has(id) && !seen.has(id) && !blockedEither(me.id, id)) { seen.add(id); sug.push(userCard(getUser(id), me.id)); }
+  for (const c of out.contacts) for (const id of contactIds(c.id)) if (id !== me.id && !mine.has(id) && !seen.has(id) && !blockedEither(me.id, id)) { const su = getUser(id); if (!su || su.guest) continue; seen.add(id); sug.push(userCard(su, me.id)); }
   out.suggestions = sug.sort((a, b) => b.mutual - a.mutual).slice(0, 12);
   return out;
 });
