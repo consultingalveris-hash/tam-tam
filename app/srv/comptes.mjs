@@ -1,4 +1,4 @@
-import { ALT_ORIGINS, BASE_URL, BK_PUB, DAY, E, J, OWNER, PRIV_K, PUB_K, Rfor, avatarJson, backup, blockedEither, blockedNow, chatOut, checkPass, clean, contactIds, cookies, dropMedia, exportBackup, exportMedia, getUser, handleIdeas, hashPass, iBlocked, inviteValid, ipOf, isEmail, isMember, locDrop, meOut, memberIds, msgOut, nameInChat, normHandle, now, pair, passGuard, passOk, portraitFor, presence, push, pushMany, pushMsg, q1, qa, relation, rnd, routes, run, secure, setSession, sha, tooMany, userCard } from './core.mjs';
+import { ALT_ORIGINS, BASE_URL, OPEN_SIGNUP, BK_PUB, DAY, E, J, OWNER, PRIV_K, PUB_K, Rfor, avatarJson, backup, blockedEither, blockedNow, chatOut, checkPass, clean, contactIds, cookies, dropMedia, exportBackup, exportMedia, getUser, handleIdeas, hashPass, iBlocked, inviteValid, ipOf, isEmail, isMember, locDrop, meOut, memberIds, msgOut, nameInChat, normHandle, now, pair, passGuard, passOk, portraitFor, presence, push, pushMany, pushMsg, q1, qa, relation, rnd, routes, run, secure, setSession, sha, tooMany, userCard } from './core.mjs';
 const R = Rfor(1);
 import { chatTalk, getTransport } from './messages.mjs';
 import { googleSettings } from './google.mjs';
@@ -8,7 +8,7 @@ import { googleSettings } from './google.mjs';
 R('GET', /^\/api\/meta$/, async ({ req, url }) => {
   const code = url.searchParams.get('invite'), inv = inviteValid(code);
   const n = q1(`SELECT COUNT(*) n FROM users`).n;
-  return { mail: !!getTransport(), google: !!googleSettings(), ownerSetup: n === 0, ownerEmail: n === 0 && OWNER ? OWNER.replace(/^(.).*(@.*)$/, '$1•••$2') : null,
+  return { mail: !!getTransport(), google: !!googleSettings(), open: OPEN_SIGNUP, ownerSetup: n === 0, ownerEmail: n === 0 && OWNER ? OWNER.replace(/^(.).*(@.*)$/, '$1•••$2') : null,
     invite: inv ? { by: (u => u ? (inv.qr || !u.name ? '@' + u.handle : u.name) : '')(getUser(inv.by_user)) } : null };
 }, false);
 
@@ -43,8 +43,8 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   const first = q1(`SELECT COUNT(*) n FROM users`).n === 0;
   let inv = null;
   if (first) { if (OWNER && email !== OWNER) E(403, 'Le premier compte est réservé au propriétaire de tam-tam.'); }
-  else { inv = inviteValid(clean(body.invite, 60)); if (!inv) E(403, 'Il faut un lien d’invitation valide pour s’inscrire.');
-    if (inv.qr && q1(`SELECT COUNT(*) n FROM users WHERE invited_by=? AND created_at>?`, inv.by_user, now() - DAY).n >= 5) E(429, 'Ce code QR a déjà servi à beaucoup d’inscriptions aujourd’hui. Demandez plutôt un lien d’invitation.'); }
+  else { inv = inviteValid(clean(body.invite, 60)); if (!inv && !OPEN_SIGNUP) E(403, 'Il faut un lien d’invitation valide pour s’inscrire.');
+    if (inv && inv.qr && q1(`SELECT COUNT(*) n FROM users WHERE invited_by=? AND created_at>?`, inv.by_user, now() - DAY).n >= 5) E(429, 'Ce code QR a déjà servi à beaucoup d’inscriptions aujourd’hui. Demandez plutôt un lien d’invitation.'); }
   if (q1(`SELECT 1 FROM users WHERE email=?`, email)) E(409, 'Un compte existe déjà avec cette adresse. Connectez-vous.');
   if (!body.handle) E(400, 'Choisissez un pseudo : c’est lui que voient les membres.');
   const handle = normHandle(body.handle);

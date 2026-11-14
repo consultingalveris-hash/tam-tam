@@ -391,7 +391,7 @@ const Add = {
       <div class="sec">Inviter vos proches</div>
       <div class="invite-box" style="margin:0">
         ${S.lastInvite ? `<div class="invite-url">${esc(S.lastInvite.url)}</div><div class="actions" style="justify-content:flex-start"><button class="btn sm" type="button" data-act="invCopy">${I.copy}Copier le lien</button><a class="btn sm ghost" href="https://wa.me/?text=${encodeURIComponent(inviteText())}" target="_blank" rel="noopener">WhatsApp</a>${navigator.share ? '<button class="btn sm ghost" type="button" data-act="invShare">Partager…</button>' : ''}</div><span class="hint">Valable 14 jours, pour 20 personnes au plus.</span>`
-        : `<span class="hint">Seules les personnes qui ont un lien d’invitation ou votre code QR peuvent s’inscrire.</span><div><button class="btn sm" type="button" data-act="invNew">${I.userplus}Créer un lien d’invitation</button></div>`}
+        : `<span class="hint">Envoyez un lien à vos proches : en s’inscrivant avec, ils deviennent directement vos amis.</span><div><button class="btn sm" type="button" data-act="invNew">${I.userplus}Créer un lien d’invitation</button></div>`}
       </div>
       <div class="sec">Code QR</div>
       <div class="actions" style="justify-content:flex-start;margin-bottom:8px"><button class="btn sm ghost" type="button" data-act="qrShow">${I.qr}Mon code QR</button><button class="btn sm ghost" type="button" data-act="qrScan">${I.camera}Scanner un code</button></div></div>`;

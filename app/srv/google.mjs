@@ -1,4 +1,4 @@
-import { BASE_URL, E, J, OWNER, Rfor, clean, cookies, getUser, inviteValid, ipOf, now, q1, rnd, run, secure, setSession, sha, tooMany } from './core.mjs';
+import { BASE_URL, E, OPEN_SIGNUP, J, OWNER, Rfor, clean, cookies, getUser, inviteValid, ipOf, now, q1, rnd, run, secure, setSession, sha, tooMany } from './core.mjs';
 const R = Rfor(5);
 
 /* ---------- connexion avec Google ---------- */
@@ -31,7 +31,7 @@ R('GET', /^\/api\/oauth\/google\/callback$/, async ({ req, res, url }) => {
   let u = q1(`SELECT * FROM users WHERE google_sub=?`, sub) || q1(`SELECT * FROM users WHERE email=?`, email);
   if (u) { if (!u.google_sub) run(`UPDATE users SET google_sub=? WHERE id=?`, sub, u.id); setSession(res, u.id); const c = res.getHeader('Set-Cookie'); return redirect(res, '/', [c, 'tt_g=; Path=/api/oauth/google; Max-Age=0']); }
   const first = q1(`SELECT COUNT(*) n FROM users`).n === 0;
-  if (first ? (OWNER && email !== OWNER) : !inviteValid(invite)) return bad(first ? 'Le premier compte est réservé au propriétaire de tam-tam.' : 'Aucun compte tam-tam n’existe pour ' + email + '. Pour vous inscrire, ouvrez d’abord le lien d’invitation reçu d’un membre.');
+  if (first ? (OWNER && email !== OWNER) : !(OPEN_SIGNUP || inviteValid(invite))) return bad(first ? 'Le premier compte est réservé au propriétaire de tam-tam.' : 'Aucun compte tam-tam n’existe pour ' + email + '. Pour vous inscrire, ouvrez d’abord le lien d’invitation reçu d’un membre.');
   const tok = rnd(24); run(`INSERT INTO gpending(token,email,name,sub,invite,expires) VALUES(?,?,?,?,?,?)`, sha(tok), email, clean(info.name || email.split('@')[0], 40), sub, invite || null, now() + 30 * 60_000);
   return redirect(res, '/?g=' + tok, 'tt_g=; Path=/api/oauth/google; Max-Age=0');
 }, false);
