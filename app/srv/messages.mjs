@@ -503,6 +503,8 @@ export function unwrapBk(txt) {
 }
 if (BK_KEY) for (const r of qa(`SELECT id, keybackup FROM users WHERE keybackup IS NOT NULL AND keybackup NOT LIKE 'w1:%'`)) run(`UPDATE users SET keybackup=? WHERE id=?`, wrapBk(r.keybackup), r.id);
 /* clés de chiffrement de bout en bout : le serveur garde la clé publique et une sauvegarde chiffrée par le code du membre */
+// Anciens messages « code de sécurité changé » (avant la 2.01) : retirés, ils comptaient comme non lus dans toutes les discussions.
+run(`DELETE FROM messages WHERE kind='sys' AND text LIKE 'Le code de sécurité de @% a changé%'`);
 R('POST', /^\/api\/keys$/, async ({ me, body }) => {
   const pk = body.pubkey; if (!pk || pk.kty !== 'EC' || pk.crv !== 'P-256' || typeof pk.x !== 'string' || typeof pk.y !== 'string' || pk.d) E(400, 'Clé invalide.');
   const b = body.backup; if (!b || typeof b.ct !== 'string' || typeof b.iv !== 'string' || typeof b.salt !== 'string' || !(+b.iter >= 100000)) E(400, 'Sauvegarde invalide.');
