@@ -87,7 +87,6 @@ async function boot() {
 }
 const gIcon = () => '<svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
 const gBtn = (orTxt = 'ou') => (A.meta || {}).google ? `<a class="btn gbtn big" href="/api/oauth/google/start${S.invite ? '?invite=' + encodeURIComponent(S.invite) : ''}">${gIcon()}Continuer avec Google</a><div class="or"><span>${orTxt}</span></div>` : '';
-const cguLine = () => '<p class="cgu-line">En continuant, je confirme avoir 16 ans ou plus et j’accepte les <a href="/conditions" target="_blank" rel="noopener">Conditions générales et la Politique de confidentialité</a>.</p>';
 function renderAuth(msg) {
   if (A.mode === 'register' && !A.g) A.mode = 'start';
   const m = A.meta || {}, top = `<div class="auth-top"><h1 class="brand-h">${BRAND()}</h1></div>`;
@@ -111,8 +110,9 @@ function renderAuth(msg) {
   else if (A.mode === 'register') h = `<h2>${m.ownerSetup ? 'Créer le compte du propriétaire' : 'Dernière étape'}</h2>
     ${A.g ? `<p class="g-ok">${A.g.kind === 'mail' ? '' : gIcon()}<span>Adresse confirmée : <b>${esc(A.g.email)}</b></span></p>` : ''}
     <div class="field"><label for="aHandle">Choisissez votre pseudo</label><div class="at-in"><span>@</span><input id="aHandle" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="20" required placeholder="ex. lion.du.sahel" pattern="[A-Za-z0-9._]{3,20}"></div><small class="hint">C’est le nom que voient les autres membres. Vous pourrez ajouter votre prénom, votre photo et votre avatar plus tard, dans Réglages.</small></div>
-    <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Créer mon compte</button>
-    ${cguLine()}`;
+    <label class="pick chk"><input type="checkbox" id="aAge"><span>J’ai 16 ans ou plus.</span></label>
+    <label class="pick chk"><input type="checkbox" id="aCgu"><span>J’ai lu et j’accepte les <a href="/conditions" target="_blank" rel="noopener">Conditions générales et la Politique de confidentialité</a>.</span></label>
+    <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Créer mon compte</button>`;
   else if (A.mode === 'login') h = `<h2>Connexion avec mot de passe</h2>
     <div class="field"><label for="aMail">Adresse e-mail</label><input id="aMail" type="email" autocomplete="email" value="${esc(A.cmail || '')}" required></div>
     <div class="field"><label for="aPass">Mot de passe</label><div class="pw"><input id="aPass" type="password" autocomplete="current-password" required><button type="button" data-act="pwShow">Voir</button></div></div>
@@ -126,7 +126,6 @@ function renderAuth(msg) {
     <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Recevoir mon code</button>
     <p class="hint small">Pas de mot de passe à retenir : vous recevez un code par e-mail.</p>
     ${closed ? '<p class="hint small">Pour créer un compte, il faut un lien d’invitation envoyé par un membre.</p>' : ''}
-    ${cguLine()}
     <div class="auth-links"><button class="linkb" type="button" data-act="authMode" data-m="login">J’ai un mot de passe</button></div>`;
   }
   root.innerHTML = `<div class="auth"><form class="auth-card" data-form="auth" novalidate>${top}${h}</form></div>`;
@@ -146,7 +145,7 @@ async function submitAuth() {
     else if (A.mode === 'forgot' && A.step === 1) { A.fmail = v('fMail').trim(); await api('/api/forgot', {email: A.fmail}); A.step = 2; return renderAuth(); }
     else if (A.mode === 'forgot') r = await api('/api/forgot/verify', {email: A.fmail, code: v('fCode'), pass: v('aPass')});
     else if (A.mode === 'reset') r = await api('/api/reset', {token: A.token, pass: v('aPass')});
-    else if (A.mode === 'register') { const nm = A.g && A.g.kind !== 'mail' ? String(A.g.name || '').trim().split(/\s+/) : []; r = await api('/api/register', {first: nm[0] || '', last: nm.slice(1).join(' '), handle: v('aHandle'), gtok: A.g ? A.g.tok : undefined, avatar: A.avatar, age: true, cgu: true, invite: S.invite}); }
+    else if (A.mode === 'register') { const nm = A.g && A.g.kind !== 'mail' ? String(A.g.name || '').trim().split(/\s+/) : []; r = await api('/api/register', {first: nm[0] || '', last: nm.slice(1).join(' '), handle: v('aHandle'), gtok: A.g ? A.g.tok : undefined, avatar: A.avatar, age: $('#aAge').checked, cgu: $('#aCgu').checked, invite: S.invite}); }
     else r = await api('/api/login', {email: v('aMail'), pass: v('aPass')});
     S.me = r.me; keepUsers([r.me]); history.replaceState(null, '', '/'); start();
   } catch (e) { err(e.message); if (btn) btn.disabled = false; }

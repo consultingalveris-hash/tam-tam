@@ -6,7 +6,7 @@ await p.fill('#cMail', 'owner@exemple.org'); await p.click('button[type=submit]'
 await p.fill('#cCode', '000000'); await p.click('button[type=submit]'); await p.waitForTimeout(500);
 console.log('mauvais code refusé :', await p.textContent('#aErr'));
 await p.fill('#cCode', await p.evaluate(() => A.demo)); await p.click('button[type=submit]'); await p.waitForTimeout(700); await p.screenshot({path: S + 'auth-3.png'});
-await p.fill('#aHandle', 'porteur'); await p.click('button[type=submit]'); await p.waitForTimeout(4500);
+await p.fill('#aHandle', 'porteur'); await p.click('button[type=submit]'); await p.waitForTimeout(400); console.log('cases obligatoires :', await p.textContent('#aErr')); await p.check('#aAge'); await p.check('#aCgu'); await p.click('button[type=submit]'); await p.waitForTimeout(4500);
 const st = await p.evaluate(() => ({ me: !!S.me && S.me.handle, key: E2E.ready(), backup: S.me.hasBackup, lock: !!document.getElementById('lockScreen') }));
 console.log('compte créé :', st);
 await p.evaluate(async () => { const salt = btoa('sel-de-test-1234'); S.lock = {type: 'pattern', delay: 86400, salt, hash: await Lock.hashPattern([0, 1, 2, 5], salt)}; await Lock.set(S.me.id, S.lock); document.getElementById('lockScreen')?.remove(); });
