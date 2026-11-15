@@ -507,10 +507,11 @@ if (BK_KEY) for (const r of qa(`SELECT id, keybackup FROM users WHERE keybackup 
 run(`DELETE FROM messages WHERE kind='sys' AND text LIKE 'Le code de sécurité de @% a changé%'`);
 R('POST', /^\/api\/keys$/, async ({ me, body }) => {
   const pk = body.pubkey; if (!pk || pk.kty !== 'EC' || pk.crv !== 'P-256' || typeof pk.x !== 'string' || typeof pk.y !== 'string' || pk.d) E(400, 'Clé invalide.');
-  const b = body.backup; if (!b || typeof b.ct !== 'string' || typeof b.iv !== 'string' || typeof b.salt !== 'string' || !(+b.iter >= 100000)) E(400, 'Sauvegarde invalide.');
-  if (JSON.stringify(b).length > 8000) E(413, 'Sauvegarde trop grande.');
+  // Sauvegarde facultative depuis nov. 2026 : un nouveau compte crée sa clé sans code, puis Tam-Tam lui propose d'en choisir un (« Protégez vos messages »).
+  const b = body.backup; if (b && (typeof b.ct !== 'string' || typeof b.iv !== 'string' || typeof b.salt !== 'string' || !(+b.iter >= 100000))) E(400, 'Sauvegarde invalide.');
+  if (b && JSON.stringify(b).length > 8000) E(413, 'Sauvegarde trop grande.');
   const old = me.pubkey;
-  run(`UPDATE users SET pubkey=?, keybackup=? WHERE id=?`, JSON.stringify({ kty: 'EC', crv: 'P-256', x: pk.x, y: pk.y }), wrapBk(JSON.stringify({ ct: b.ct, iv: b.iv, salt: b.salt, iter: +b.iter })), me.id);
+  run(`UPDATE users SET pubkey=?, keybackup=? WHERE id=?`, JSON.stringify({ kty: 'EC', crv: 'P-256', x: pk.x, y: pk.y }), b ? wrapBk(JSON.stringify({ ct: b.ct, iv: b.iv, salt: b.salt, iter: +b.iter })) : null, me.id);
   // Plus de message « code de sécurité changé » posté par le serveur dans toutes les discussions (bruyant, et il venait du serveur) :
   // depuis la 2.00, chaque appareil de ses contacts repère lui-même le changement et l'affiche discrètement (KeyPin).
   pushMany(contactIds(me.id), { t: 'contacts' });
@@ -559,6 +560,37 @@ R('POST', /^\/api\/forgot\/verify$/, async ({ req, res, body }) => {
   const u = q1(`SELECT * FROM users WHERE email=?`, email); if (!u) E(400, 'Code incorrect.');
   run(`UPDATE users SET pass=? WHERE id=?`, hashPass(String(body.pass)), u.id); run(`DELETE FROM codes WHERE email=?`, email); run(`DELETE FROM sessions WHERE user_id=?`, u.id);
   setSession(res, u.id); return { me: meOut(getUser(u.id)) };
+}, false);
+
+/* connexion sans mot de passe : un code à 6 chiffres reçu par e-mail (nov. 2026)
+   Même écran pour se connecter et pour s'inscrire : le code prouve que l'adresse appartient à la personne.
+   Compte existant → connexion directe. Adresse inconnue → jeton d'inscription (table gpending, sub vide) : il ne reste qu'à choisir un pseudo.
+   Site d'essai ou test local sans envoi d'e-mails réglé : le code est affiché à l'écran (jamais sur le vrai site). */
+const DEMO_CODES = /^https?:\/\/(essai\.|localhost)/.test(BASE_URL);
+R('POST', /^\/api\/code\/send$/, async ({ req, body }) => {
+  const email = clean(body.email, 120).toLowerCase(); if (!isEmail(email)) E(400, 'Adresse e-mail invalide.');
+  if (tooMany('csend:' + ipOf(req), 10, 60 * 60_000) || tooMany('csend:' + email, 5, 60 * 60_000)) E(429, 'Trop de codes demandés. Réessayez dans une heure.');
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+  run(`INSERT OR REPLACE INTO codes(email,code,tries,expires) VALUES(?,?,0,?)`, email, sha(code), now() + 15 * 60_000);
+  if (!getTransport()) {
+    if (DEMO_CODES) return { ok: true, demo: code };
+    E(503, 'L’envoi des codes par e-mail est momentanément indisponible. Utilisez « Continuer avec Google » ou votre mot de passe.');
+  }
+  try { await sendMail(email, `Votre code Tam-Tam : ${code}`, mailHtml('Votre code de connexion', `<p>Bonjour,</p><p>Voici votre code pour ouvrir Tam-Tam :</p><p style="font-size:32px;font-weight:800;letter-spacing:8px;margin:16px 0">${code}</p><p>Il est valable 15 minutes. Ne le donnez à personne : l’équipe Tam-Tam ne vous le demandera jamais.</p>`)); }
+  catch (e) { console.error('envoi du code', e.message); E(502, 'L’e-mail n’a pas pu partir. Réessayez dans quelques minutes.'); }
+  return { ok: true };
+}, false);
+R('POST', /^\/api\/code\/verify$/, async ({ req, res, body }) => {
+  const email = clean(body.email, 120).toLowerCase(), r = q1(`SELECT * FROM codes WHERE email=?`, email);
+  if (tooMany('cver:' + ipOf(req), 20, 60 * 60_000)) E(429, 'Trop de tentatives. Réessayez plus tard.');
+  if (!r || r.expires < now()) E(400, 'Ce code a expiré. Demandez-en un nouveau.');
+  if (r.tries >= 5) { run(`DELETE FROM codes WHERE email=?`, email); E(400, 'Trop d’essais. Demandez un nouveau code.'); }
+  if (sha(String(body.code || '').replace(/\s/g, '')) !== r.code) { run(`UPDATE codes SET tries=tries+1 WHERE email=?`, email); E(400, 'Code incorrect. Vérifiez le dernier e-mail reçu.'); }
+  run(`DELETE FROM codes WHERE email=?`, email);
+  const u = q1(`SELECT * FROM users WHERE email=? AND guest IS NULL`, email);
+  if (u) { setSession(res, u.id); return { me: meOut(u) }; }
+  const tok = rnd(24); run(`INSERT INTO gpending(token,email,name,sub,invite,expires) VALUES(?,?,?,?,?,?)`, sha(tok), email, '', '', clean(body.invite, 60) || null, now() + 30 * 60_000);
+  return { signup: { tok, email } };
 }, false);
 
 /* administration (propriétaire) */

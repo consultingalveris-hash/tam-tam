@@ -33,7 +33,7 @@ R('GET', /^\/api\/ping$/, async ({ res }) => { res.setHeader('Access-Control-All
 R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   if (tooMany('reg:' + ipOf(req), 8, 60 * 60_000)) E(429, 'Trop de tentatives. Réessayez plus tard.');
   const gp = body.gtok ? q1(`SELECT * FROM gpending WHERE token=? AND expires>?`, sha(String(body.gtok)), now()) : null;
-  if (body.gtok && !gp) E(400, 'La connexion Google a expiré. Recommencez avec « Continuer avec Google ».');
+  if (body.gtok && !gp) E(400, 'Cette étape a expiré. Recommencez depuis le début.');
   const email = gp ? gp.email : clean(body.email, 120).toLowerCase(), fname = clean(body.first, 30), lname = clean(body.last, 30), name = (lname ? `${fname} ${lname}` : fname).slice(0, 40), pass = gp ? rnd(24) : String(body.pass || '');
   if (gp && !body.invite && gp.invite) body.invite = gp.invite;
   if (!isEmail(email)) E(400, 'Adresse e-mail invalide.');
@@ -54,7 +54,7 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
     email, hashPass(pass), name, handle, av, first ? 1 : 0, inv ? inv.by_user : null, now(), now()).lastInsertRowid;
   run(`UPDATE users SET tr_consent=?, handle_set=1 WHERE id=?`, body.trc ? 1 : 0, Number(id));
   if (!av) run(`UPDATE users SET avatar=? WHERE id=?`, portraitFor(Number(id)), Number(id));
-  if (gp) { run(`UPDATE users SET google_sub=? WHERE id=?`, gp.sub, Number(id)); run(`DELETE FROM gpending WHERE token=?`, gp.token); }
+  if (gp) { if (gp.sub) run(`UPDATE users SET google_sub=? WHERE id=?`, gp.sub, Number(id)); run(`DELETE FROM gpending WHERE token=?`, gp.token); }
   if (inv) {
     if (!inv.qr) run(`UPDATE invites SET uses=uses+1 WHERE code=?`, inv.code);
     // La personne qui invite et l'invité deviennent contacts directement : l'invitation vaut acceptation.

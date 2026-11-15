@@ -13,6 +13,12 @@ async function keySetup(reupload) {
   if (!reupload && r && (r.stale || r.err)) { S.ks = {mode: 'stale', msg: r.err}; return renderKeySetup(); }
   const bk = r && r.backup;
   const mode = reupload ? 'new' : bk ? 'restore' : 'new';
+  // Nouveau compte (aucune sauvegarde sur le serveur) : la clé est créée tout de suite, sans demander de code.
+  // Tam-Tam proposera ensuite de choisir un code de secours (bandeau « Protégez vos messages »).
+  if (mode === 'new' && !(r && r.has)) {
+    try { if (!reupload || !E2E.ready()) await E2E.create(S.me.id); await api('/api/keys', {pubkey: E2E.pubJwk}); const m = await api('/api/me'); S.me = m.me; keepUsers([m.me]); return start(); }
+    catch (e) { S.ks = {mode: 'new'}; return renderKeySetup(e.message); }
+  }
   S.ks = {mode, bk};
   renderKeySetup();
 }

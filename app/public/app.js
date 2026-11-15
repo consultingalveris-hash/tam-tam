@@ -64,7 +64,7 @@ function avGallery(sel, who) {
 }
 
 /* ---------- connexion et inscription ---------- */
-const A = {mode: 'login', avatar: null};
+const A = {mode: 'start', avatar: null};
 async function boot() {
   S.pendingChat = +((/[?&]chat=(\d+)/.exec(location.search) || [])[1] || 0);
   const gj = (/[?&]g=([A-Za-z0-9_-]{6,40})/.exec(location.search) || [])[1]; if (gj) S.pendingJoin = gj;
@@ -81,13 +81,15 @@ async function boot() {
     let uid = 0; try { uid = +localStorage.getItem('tt-last-uid') || 0; } catch {}
     if (!e.status && uid) { S.me = {id: uid}; const me = await Local.get('me'); if (me && me.id === uid) { S.me = me; S.offline = true; keepUsers([me]); return start(); } S.me = null; Local.db = null; }
   }
-  try { const m = await api('/api/meta' + (S.invite ? '?invite=' + encodeURIComponent(S.invite) : '')); A.meta = m; if (m.ownerSetup || m.invite) A.mode = 'register'; } catch { A.meta = {}; }
+  try { const m = await api('/api/meta' + (S.invite ? '?invite=' + encodeURIComponent(S.invite) : '')); A.meta = m; } catch { A.meta = {}; }
   if (gtok) { try { A.g = await api('/api/oauth/google/pending?t=' + encodeURIComponent(gtok)); A.g.tok = gtok; A.mode = 'register'; if (A.g.invite) S.invite = A.g.invite; } catch (e) { return renderAuth(e.message); } }
   renderAuth(gerr || undefined);
 }
 const gIcon = () => '<svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
-const gBtn = () => (A.meta || {}).google ? `<a class="btn gbtn" href="/api/oauth/google/start${S.invite ? '?invite=' + encodeURIComponent(S.invite) : ''}">${gIcon()}Continuer avec Google</a><div class="or"><span>ou</span></div>` : '';
+const gBtn = (orTxt = 'ou') => (A.meta || {}).google ? `<a class="btn gbtn big" href="/api/oauth/google/start${S.invite ? '?invite=' + encodeURIComponent(S.invite) : ''}">${gIcon()}Continuer avec Google</a><div class="or"><span>${orTxt}</span></div>` : '';
+const cguLine = () => '<p class="cgu-line">En continuant, je confirme avoir 16 ans ou plus et j’accepte les <a href="/conditions" target="_blank" rel="noopener">Conditions générales et la Politique de confidentialité</a>.</p>';
 function renderAuth(msg) {
+  if (A.mode === 'register' && !A.g) A.mode = 'start';
   const m = A.meta || {}, top = `<div class="auth-top"><h1 class="brand-h">${BRAND()}</h1></div>`;
   let h;
   if (A.mode === 'forgot') h = A.step === 1
@@ -101,28 +103,32 @@ function renderAuth(msg) {
   else if (A.mode === 'reset') h = `<h2>Nouveau mot de passe</h2><p class="hint">Choisissez un nouveau mot de passe pour votre compte.</p>
     <div class="field"><label for="aPass">Nouveau mot de passe (8 caractères minimum)</label><div class="pw"><input id="aPass" type="password" autocomplete="new-password" minlength="8" required><button type="button" data-act="pwShow">Voir</button></div></div>
     <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Enregistrer et me connecter</button>`;
-  else if (A.mode === 'register') h = `<h2>${m.ownerSetup ? 'Créer le compte du propriétaire' : 'Créer mon compte'}</h2>
-    <p class="hint">${A.g && !m.ownerSetup ? (A.g.by ? `${esc(A.g.by)} vous invite sur tam-tam.` : 'Bienvenue sur tam-tam.') : m.ownerSetup ? `Premier compte de tam-tam${m.ownerEmail ? ` : utilisez l’adresse ${esc(m.ownerEmail)}` : ''}.` : m.invite ? `${esc(m.invite.by)} vous invite sur tam-tam.` : m.open ? 'Bienvenue sur tam-tam ! Créez votre compte en quelques secondes.' : 'Pour créer un compte, il faut un lien d’invitation envoyé par un membre de Tam-Tam : demandez-le à un proche qui utilise déjà l’application, puis ouvrez ce lien. Vous pourrez aussi utiliser « Continuer avec Google » depuis ce lien.'}</p>
-    ${m.ownerSetup || m.invite || m.open || A.g ? `${A.g ? `<p class="g-ok">${gIcon()}<span>Compte Google confirmé : <b>${esc(A.g.email)}</b>. Il reste à choisir votre pseudo et à accepter les conditions.</span></p>` : gBtn()}
-    <div class="field"><label for="aHandle">Pseudo</label><div class="at-in"><span>@</span><input id="aHandle" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="20" required placeholder="ex. lion.du.sahel" pattern="[A-Za-z0-9._]{3,20}"></div><small class="hint">C’est le seul nom que voient les membres qui ne sont pas vos contacts. 3 à 20 caractères : lettres, chiffres, point ou tiret bas.</small></div>
-    <div class="field-row"><div class="field"><label for="aName">Prénom</label><input id="aName" autocomplete="given-name" maxlength="30" value="${esc(A.g ? (A.g.name || '').split(' ')[0] : '')}"></div>
-    <div class="field"><label for="aLast">Nom</label><input id="aLast" autocomplete="family-name" maxlength="30" value="${esc(A.g ? (A.g.name || '').split(' ').slice(1).join(' ') : '')}"></div></div>
-    <p class="hint">Votre prénom et votre nom, si vous les indiquez, ne sont visibles que par vos contacts.</p>
-    ${A.g ? '' : `<div class="field"><label for="aMail">Adresse e-mail</label><input id="aMail" type="email" autocomplete="email" required></div>
-    <div class="field"><label for="aPass">Mot de passe (8 caractères minimum)</label><div class="pw"><input id="aPass" type="password" autocomplete="new-password" minlength="8" required><button type="button" data-act="pwShow">Voir</button></div></div>`}
-    <p class="hint">Vous pourrez choisir votre avatar, votre photo et ses couleurs ensuite, dans <b>Réglages</b>.</p>
-    <label class="pick chk"><input type="checkbox" id="aAge"><span>J’ai 16 ans ou plus.</span></label>
-    <label class="pick chk"><input type="checkbox" id="aCgu"><span>J’ai lu et j’accepte les <a href="/conditions" target="_blank" rel="noopener">Conditions générales et la Politique de confidentialité</a>.</span></label>
-
-    <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Créer mon compte</button>` : ''}
-    <button class="linkb" type="button" data-act="authMode" data-m="login">J’ai déjà un compte : me connecter</button>`;
-  else h = `<h2>Bienvenue</h2><p class="hint">La messagerie qui fait vivre nos langues. Connectez-vous pour retrouver vos proches.</p>
-    ${gBtn()}
-    <div class="field"><label for="aMail">Adresse e-mail</label><input id="aMail" type="email" autocomplete="email" required></div>
+  else if (A.mode === 'code') h = `<h2>Vérifiez vos e-mails</h2><p class="hint">Nous avons envoyé un code à 6 chiffres à <b>${esc(A.cmail)}</b>. Pensez à regarder dans les indésirables. Il est valable 15 minutes.</p>
+    ${A.demo ? `<p class="g-ok"><span>Site d’essai : votre code est <b>${esc(A.demo)}</b>.</span></p>` : ''}
+    <div class="field"><label for="cCode">Code reçu</label><input id="cCode" class="code-in" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required placeholder="••••••"></div>
+    <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Valider</button>
+    <div class="auth-links"><button class="linkb" type="button" data-act="codeResend">Renvoyer le code</button><button class="linkb" type="button" data-act="authMode" data-m="start">Changer d’adresse</button></div>`;
+  else if (A.mode === 'register') h = `<h2>${m.ownerSetup ? 'Créer le compte du propriétaire' : 'Dernière étape'}</h2>
+    ${A.g ? `<p class="g-ok">${A.g.kind === 'mail' ? '' : gIcon()}<span>Adresse confirmée : <b>${esc(A.g.email)}</b></span></p>` : ''}
+    <div class="field"><label for="aHandle">Choisissez votre pseudo</label><div class="at-in"><span>@</span><input id="aHandle" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="20" required placeholder="ex. lion.du.sahel" pattern="[A-Za-z0-9._]{3,20}"></div><small class="hint">C’est le nom que voient les autres membres. Vous pourrez ajouter votre prénom, votre photo et votre avatar plus tard, dans Réglages.</small></div>
+    <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Créer mon compte</button>
+    ${cguLine()}`;
+  else if (A.mode === 'login') h = `<h2>Connexion avec mot de passe</h2>
+    <div class="field"><label for="aMail">Adresse e-mail</label><input id="aMail" type="email" autocomplete="email" value="${esc(A.cmail || '')}" required></div>
     <div class="field"><label for="aPass">Mot de passe</label><div class="pw"><input id="aPass" type="password" autocomplete="current-password" required><button type="button" data-act="pwShow">Voir</button></div></div>
     <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Me connecter</button>
-    <button class="linkb" type="button" data-act="forgot">Mot de passe oublié ?</button>
-    <div class="auth-new"><span>Pas encore de compte ?</span><button class="linkb strong" type="button" data-act="authMode" data-m="register">Créer un compte</button></div>`;
+    <div class="auth-links"><button class="linkb" type="button" data-act="forgot">Mot de passe oublié ?</button><button class="linkb" type="button" data-act="authMode" data-m="start">Recevoir plutôt un code par e-mail</button></div>`;
+  else {
+    const closed = !m.open && !m.invite && !m.ownerSetup;
+    h = `<h2>${m.ownerSetup ? 'Bienvenue, propriétaire' : 'Bienvenue sur Tam-Tam'}</h2><p class="hint">${m.ownerSetup ? `Premier compte de Tam-Tam${m.ownerEmail ? ` : utilisez l’adresse ${esc(m.ownerEmail)}` : ''}.` : m.invite ? `${esc(m.invite.by)} vous invite sur Tam-Tam.` : 'La messagerie qui parle votre langue.'}</p>
+    ${gBtn('ou avec votre e-mail')}
+    <div class="field"><label for="cMail">Adresse e-mail</label><input id="cMail" type="email" autocomplete="email" inputmode="email" value="${esc(A.cmail || '')}" required placeholder="vous@exemple.com"></div>
+    <p class="err" id="aErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p><button class="btn" type="submit">Recevoir mon code</button>
+    <p class="hint small">Pas de mot de passe à retenir : vous recevez un code par e-mail.</p>
+    ${closed ? '<p class="hint small">Pour créer un compte, il faut un lien d’invitation envoyé par un membre.</p>' : ''}
+    ${cguLine()}
+    <div class="auth-links"><button class="linkb" type="button" data-act="authMode" data-m="login">J’ai un mot de passe</button></div>`;
+  }
   root.innerHTML = `<div class="auth"><form class="auth-card" data-form="auth" novalidate>${top}${h}</form></div>`;
   const f = root.querySelector('input'); if (f) f.focus();
 }
@@ -131,10 +137,16 @@ async function submitAuth() {
   const btn = root.querySelector('button[type=submit]'); if (btn) btn.disabled = true;
   try {
     let r;
-    if (A.mode === 'forgot' && A.step === 1) { A.fmail = v('fMail').trim(); await api('/api/forgot', {email: A.fmail}); A.step = 2; return renderAuth(); }
-    if (A.mode === 'forgot') r = await api('/api/forgot/verify', {email: A.fmail, code: v('fCode'), pass: v('aPass')});
+    if (A.mode === 'start') { A.cmail = v('cMail').trim().toLowerCase(); const c = await api('/api/code/send', {email: A.cmail}); A.demo = c.demo || ''; A.mode = 'code'; return renderAuth(); }
+    if (A.mode === 'code') {
+      const c = await api('/api/code/verify', {email: A.cmail, code: v('cCode'), invite: S.invite});
+      if (c.signup) { A.g = {tok: c.signup.tok, email: c.signup.email, kind: 'mail'}; A.mode = 'register'; return renderAuth(); }
+      r = c;
+    }
+    else if (A.mode === 'forgot' && A.step === 1) { A.fmail = v('fMail').trim(); await api('/api/forgot', {email: A.fmail}); A.step = 2; return renderAuth(); }
+    else if (A.mode === 'forgot') r = await api('/api/forgot/verify', {email: A.fmail, code: v('fCode'), pass: v('aPass')});
     else if (A.mode === 'reset') r = await api('/api/reset', {token: A.token, pass: v('aPass')});
-    else if (A.mode === 'register') r = await api('/api/register', {first: v('aName'), last: v('aLast'), handle: v('aHandle'), email: v('aMail'), pass: v('aPass'), gtok: A.g ? A.g.tok : undefined, avatar: A.avatar, age: $('#aAge').checked, cgu: $('#aCgu').checked,  invite: S.invite});
+    else if (A.mode === 'register') { const nm = A.g && A.g.kind !== 'mail' ? String(A.g.name || '').trim().split(/\s+/) : []; r = await api('/api/register', {first: nm[0] || '', last: nm.slice(1).join(' '), handle: v('aHandle'), gtok: A.g ? A.g.tok : undefined, avatar: A.avatar, age: true, cgu: true, invite: S.invite}); }
     else r = await api('/api/login', {email: v('aMail'), pass: v('aPass')});
     S.me = r.me; keepUsers([r.me]); history.replaceState(null, '', '/'); start();
   } catch (e) { err(e.message); if (btn) btn.disabled = false; }
@@ -291,9 +303,16 @@ function renderHead() {
     renderStories();
   } else h.innerHTML = `<div class="title"><h1>${{contacts: 'Contacts', calls: 'Appels', settings: 'Réglages', souvenirs: 'Souvenirs'}[S.tab]}</h1><span class="grow"></span>${S.tab === 'settings' ? availPicker() : ''}${S.tab === 'souvenirs' ? `<button class="ib dotb mem-topdot" type="button" data-act="memTop" aria-label="Souvenirs : ajouter, envoyer, sélectionner…" title="Ajouter, envoyer, sélectionner…">${DOT(true)}</button>` : ''}${S.tab !== 'settings' ? `<button class="ib" type="button" data-act="tab" data-t="settings" aria-label="Réglages et profil" title="Réglages et profil">${I.settings}</button>` : ''}</div>`;
 }
+// Nouveau compte sans code de secours : on le propose doucement (« Plus tard » le cache 3 jours).
+function bkBanner() {
+  if (!S.me || S.me.hasBackup || S.offline) return '';
+  let t = 0; try { t = +localStorage.getItem('tt:bkLater') || 0; } catch {}
+  if (Date.now() - t < 3 * 864e5) return '';
+  return `<div class="inst bk"><span class="bk-ic">${I.lock}</span><div><b>Protégez vos messages</b><span>Choisissez un code de secours pour les retrouver si vous changez de téléphone.</span></div><button class="btn sm" type="button" data-act="keyCode">Choisir</button><button class="ib" type="button" data-act="bkLater" aria-label="Plus tard">${I.close}</button></div>`;
+}
 function renderBody() {
   const b = $('#body'); if (!b) return;
-  if (S.tab === 'chats') b.innerHTML = Device.banner() + gcallBanner() + chatRows();
+  if (S.tab === 'chats') b.innerHTML = bkBanner() + Device.banner() + gcallBanner() + chatRows();
   else if (S.tab === 'contacts') { b.innerHTML = Book.body(); Book.after(); }
   else if (S.tab === 'calls') { b.innerHTML = Calls.body(); Calls.after(); }
   else if (S.tab === 'souvenirs') { b.innerHTML = Mem.body(); Mem.hydrate(b); }

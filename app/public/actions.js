@@ -20,12 +20,14 @@ const ACT = {
     try { const c = await navigator.contacts.select(['name', 'tel'], {multiple: false}); const tel = c && c[0] && c[0].tel && c[0].tel[0]; if (!tel) return;
       location.href = `sms:${tel.replace(/\s+/g, '')}?body=${encodeURIComponent(inviteText())}`; } catch { toast('Le choix dans les contacts n’est pas disponible ici. Utilisez « Partager ».'); }
   },
-  keyCode() { sheet(`${head('Changer le code de sauvegarde')}<form data-form="rekey"><div class="sheet-body"><p class="hint">Le nouveau code remplace l’ancien pour retrouver vos messages sur un autre appareil.</p><div class="field"><label for="rk1">Nouveau code (8 caractères minimum)</label><input id="rk1" type="password" autocomplete="new-password"></div><div class="field"><label for="rk2">Confirmez</label><input id="rk2" type="password" autocomplete="new-password"></div><p class="err" id="rkErr" role="alert" hidden></p><div class="actions"><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Code', '#rk1'); },
+  keyCode() { const first = !S.me.hasBackup; sheet(`${head(first ? 'Protégez vos messages' : 'Changer le code de sauvegarde')}<form data-form="rekey"><div class="sheet-body"><p class="hint">${first ? 'Choisissez un code de secours. Il vous servira à retrouver vos messages si vous changez de téléphone. Notez-le en lieu sûr : personne ne pourra le retrouver pour vous.' : 'Le nouveau code remplace l’ancien pour retrouver vos messages sur un autre appareil.'}</p><div class="field"><label for="rk1">Nouveau code (8 caractères minimum)</label><input id="rk1" type="password" autocomplete="new-password"></div><div class="field"><label for="rk2">Confirmez</label><input id="rk2" type="password" autocomplete="new-password"></div><p class="err" id="rkErr" role="alert" hidden></p><div class="actions"><button class="btn" type="submit">Enregistrer</button></div></div></form>`, 'Code', '#rk1'); },
   forgot() { const em = ($('#aMail') || {}).value; if (em) A.fmail = em.trim(); A.mode = 'forgot'; A.step = 1; renderAuth(); },
   async gLoad() { try { S.gset = await api('/api/admin/google'); const el = $('#gBox'); if (el) el.outerHTML = googleBox(); } catch (e) { toast(e.message); } },
   async gOff() { try { await api('/api/admin/google', {off: true}); S.gset = await api('/api/admin/google'); $('#gBox').outerHTML = googleBox(); toast('Connexion Google désactivée'); } catch (e) { toast(e.message); } },
   async mailLoad() { try { const m = await api('/api/admin/mail'); S.mail = m; const el = $('#mailBox'); if (el) el.outerHTML = mailBox(); } catch (e) { toast(e.message); } },
   authMode(d) { A.mode = d.m; renderAuth(); },
+  bkLater() { try { localStorage.setItem('tt:bkLater', String(Date.now())); } catch {} renderBody(); },
+  async codeResend() { try { const c = await api('/api/code/send', {email: A.cmail}); A.demo = c.demo || ''; renderAuth(); toast('Nouveau code envoyé'); } catch (e) { renderAuth(e.message); } },
   pwShow(d, el) { const i = el.parentNode.querySelector('input'); i.type = i.type === 'password' ? 'text' : 'password'; el.textContent = i.type === 'password' ? 'Voir' : 'Masquer'; },
   avPick(d) {
     const a = {v: 3, p: d.p};
@@ -417,7 +419,7 @@ const FORMS = {
   auth: submitAuth,
   keys: submitKeys,
   async rekey() { const a = $('#rk1').value, b = $('#rk2').value, er = $('#rkErr'); if (codeWeak(a)) { er.textContent = codeWeak(a); er.hidden = false; return; } if (a !== b) { er.textContent = 'Les deux codes ne sont pas identiques.'; er.hidden = false; return; }
-    try { await api('/api/keys', {pubkey: E2E.pubJwk, backup: await E2E.backup(a)}); closeLayer(); toast('Code de sauvegarde changé'); } catch (e) { er.textContent = e.message; er.hidden = false; } },
+    try { const first = !S.me.hasBackup; await api('/api/keys', {pubkey: E2E.pubJwk, backup: await E2E.backup(a)}); S.me.hasBackup = true; closeLayer(); if (S.tab === 'chats') renderBody(); toast(first ? 'Vos messages sont protégés' : 'Code de sauvegarde changé'); } catch (e) { er.textContent = e.message; er.hidden = false; } },
   async mail(f) { const v = id => $('#' + id).value.trim(), er = $('#mlErr'), ok = $('#mlOk'); er.hidden = true; ok.hidden = true;
     try { await api('/api/admin/mail', {host: v('mlHost'), port: +v('mlPort'), user: v('mlUser'), pass: $('#mlPass').value, from: v('mlFrom'), test: true}); ok.textContent = `Réglage enregistré. Un e-mail de test a été envoyé à ${S.me.email}.`; ok.hidden = false; $('#mlPass').value = ''; }
     catch (e) { er.textContent = e.message; er.hidden = false; } },
