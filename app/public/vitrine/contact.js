@@ -31,6 +31,13 @@
     if (!V.owner || !V.owner.pubkey) throw new Error(T('La discussion n’est pas disponible pour le moment.', 'Chat is not available right now.'));
     return (await E2E.seal({t: text}, [[V.owner.id, V.owner.pubkey], [V.guest.id, E2E.pubJwk]])).env;
   }
+  // Langue du visiteur : celle de son navigateur, sinon celle de la page. Les réponses de l'équipe lui arrivent traduites.
+  const NAV = (navigator.language || '').slice(0, 2).toLowerCase();
+  const LANG = EN ? (NAV && NAV !== 'fr' ? NAV : 'en') : (NAV && NAV !== 'en' ? NAV : 'fr');
+  async function trad(d, text) {
+    if (LANG === 'fr' || !text.trim()) return;
+    try { const r = await api('traduire', {text, to: LANG}); if (r.text && r.from !== LANG && r.text.trim() !== text.trim()) { d.firstChild.nodeValue = r.text; d.title = T('Message d’origine : ', 'Original message: ') + text; } } catch {}
+  }
   async function textOf(m) {
     if (m.deleted) return {t: T('Message supprimé', 'Message deleted'), del: true};
     if (!m.enc) return {t: m.text || ''};
@@ -54,6 +61,7 @@
     d.className = 'm ' + (mine ? 'moi' : 'eux'); if (x.del) d.style.opacity = '.6';
     d.textContent = x.t; const s = document.createElement('small'); s.textContent = hhmm(m.at); d.append(s);
     fil.append(d); fil.scrollTop = fil.scrollHeight;
+    if (!mine && !x.del) trad(d, x.t);
     if (!mine) { if (V.open) read(m.id); else { V.unread++; status(); } }
   }
   let readT = 0; function read(id) { clearTimeout(readT); readT = setTimeout(() => api('lu', {upTo: id}).catch(() => {}), 400); }
@@ -113,8 +121,10 @@
     const err = $('.err', mf), ok = $('.ok', mf), btn = $('[type=submit]', mf);
     const f = {nom: mf.nom.value.trim(), email: mf.email.value.trim(), tel: mf.tel.value.trim(), objet: mf.objet.value.trim(), message: mf.message.value.trim()};
     err.hidden = true;
-    const miss = !f.nom ? T('votre nom', 'your name') : !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email) ? T('une adresse e-mail valide', 'a valid e-mail address') : !f.objet ? T('l’objet', 'the subject') : f.message.length < 5 ? T('votre message', 'your message') : '';
+    const miss = f.nom.length < 2 ? T('votre nom', 'your name') : !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email) ? T('une adresse e-mail valide', 'a valid e-mail address') : !f.message ? T('votre message', 'your message') : '';
     if (miss) { err.textContent = T('Merci d’indiquer ', 'Please enter ') + miss + '.'; err.hidden = false; return; }
+    if (f.message.length < 10) { err.textContent = T('Votre message est trop court : 10 caractères au moins.', 'Your message is too short: at least 10 characters.'); err.hidden = false; return; }
+    if (!f.objet) f.objet = T('Sans objet', 'No subject');
     btn.disabled = true;
     try {
       if (!V.owner) await load();

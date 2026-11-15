@@ -1,0 +1,22 @@
+// Vitrine : formulaire (nom, e-mail, message obligatoires), bulle traduite pour le visiteur, bouton FR, retour en haut.
+import { B, b, mk, reg, done, errs } from './lib.mjs';
+const p = await mk('Porteur'); await reg(p, B, 'porteur', 'Porteur', 'owner@exemple.org');
+await p.evaluate(async () => { await api('/api/admin/translate', {key: 'AIzaTESTTESTTESTTESTTESTTESTTESTTEST', provider: 'google'}); await saveNow({trConsent: true}); });
+const vc = await b.newContext({viewport: {width: 1280, height: 860}, locale: 'en-US'}); const v = await vc.newPage(); v.on('pageerror', e => errs.push('V: ' + e.message));
+await v.goto(B + '/vitrine/index.html'); await v.waitForTimeout(800); console.log('navigateur anglais →', new URL(v.url()).pathname);
+await v.click('button[data-ouvrir=ecrire]'); await v.fill('#ecrire [name=nom]', 'John Smith'); await v.fill('#ecrire [name=email]', 'john@example.org'); await v.fill('#ecrire [name=message]', 'Too short');
+await v.click('#ecrire [type=submit]'); await v.waitForTimeout(400); console.log('message court :', await v.textContent('#ecrire .err'));
+await v.fill('#ecrire [name=message]', 'Hello, is Tam-Tam available in Ghana?'); await v.click('#ecrire [type=submit]'); await v.waitForTimeout(1500);
+console.log('sans objet accepté :', await v.isVisible('#ecrire .ok'));
+await v.screenshot({path: '/tmp/en/form.png'});
+await v.click('#ecrire [data-fermer]');
+const cid = await p.evaluate(async () => { await loadChats(); const c = [...S.chats.values()].find(c => Object.values(c.users).some(u => /visiteur du site/.test(u.name))); await openChat(c.id); await new Promise(r => setTimeout(r, 800)); return {id: c.id, inL: Tr.inL(c.id)}; });
+console.log('porteur reçoit en :', cid.inL);
+await p.evaluate(() => { $('#msgIn').value = 'Bonjour John, oui bientôt !'; document.querySelector('form[data-form=send]').requestSubmit(); }); await p.waitForTimeout(2000);
+await v.click('#bulle button'); await v.waitForTimeout(800);
+console.log('réponse chez le visiteur :', await v.evaluate(() => [...document.querySelectorAll('#bp .m.eux')].map(x => x.firstChild.textContent)));
+await v.click('#bp [data-fermer]');
+await v.click('a.lang'); await v.waitForTimeout(1000); console.log('bouton FR →', new URL(v.url()).pathname + new URL(v.url()).search, await v.evaluate(() => document.documentElement.lang));
+await v.evaluate(() => window.scrollTo(0, document.body.scrollHeight)); await v.waitForTimeout(300); await v.reload(); await v.waitForTimeout(1500);
+console.log('après actualisation, position :', await v.evaluate(() => scrollY), '· page :', new URL(v.url()).pathname);
+await done();

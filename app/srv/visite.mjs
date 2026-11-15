@@ -7,6 +7,7 @@ import { BASE_URL, DAY, E, OWNER, Rfor, clean, cookies, db, ipOf, isEmail, membe
 import { webPush } from './appels.mjs';
 import { envPick } from './comptes.mjs';
 import { getTransport, mailHtml, sendMail } from './messages.mjs';
+import { translateText, trConf, trKey, trLangs } from './traduction.mjs';
 
 const R = Rfor(8);
 for (const sql of [`ALTER TABLE users ADD COLUMN guest TEXT`, `CREATE TABLE IF NOT EXISTS visit_sessions(token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires INTEGER NOT NULL)`]) { try { db.exec(sql); } catch {} }
@@ -82,11 +83,20 @@ R('POST', /^\/api\/visite\/message$/, async ({ req, body }) => {
 }, false);
 
 // Formulaire « Nous écrire » : le message chiffré arrive dans Tam-Tam, et une copie part par e-mail (si l'envoi d'e-mails est réglé).
+// Traduction pour le visiteur : il lit les réponses de l'équipe dans sa langue (le texte ne fait que passer, rien n'est gardé).
+R('POST', /^\/api\/visite\/traduire$/, async ({ req, body }) => {
+  const g = needGuest(req); if (!trKey()) return { text: '' };
+  const text = String(body.text || '').slice(0, 2000).trim(), to = String(body.to || '');
+  if (!text || !trLangs(trConf()).includes(to)) return { text: '' };
+  if (tooMany('vtr:' + g.id, 80, 60 * 60_000)) return { text: '' };
+  try { const t = await translateText(text, to); return { text: t.text || '', from: t.from || null }; } catch { return { text: '' }; }
+}, false);
 R('POST', /^\/api\/visite\/formulaire$/, async ({ req, body }) => {
   const g = needGuest(req), o = owner(); if (!o) E(503, 'Indisponible.');
   if (tooMany('vform:' + ipOf(req), 5, 60 * 60_000)) E(429, 'Trop de messages envoyés. Réessayez plus tard.');
   const f = { nom: clean(body.nom, 80), email: clean(body.email, 120), tel: clean(body.tel, 40), objet: clean(body.objet, 120), message: clean(body.message, 4000) };
-  if (f.nom.length < 2 || !isEmail(f.email) || f.objet.length < 2 || f.message.length < 5) E(400, 'Merci de remplir le nom, l’e-mail, l’objet et le message.');
+  if (f.nom.length < 2 || !isEmail(f.email) || f.message.length < 10) E(400, 'Merci de remplir le nom, l’e-mail et le message (10 caractères au moins).');
+  if (!f.objet) f.objet = 'Sans objet';
   const msg = store(g, o, body, '📩 Nouveau message du formulaire : ' + f.objet.slice(0, 60));
   run(`UPDATE users SET guest=? WHERE id=?`, JSON.stringify({ contact: f.email + (f.tel ? ' · ' + f.tel : '') }), g.id);
   let mailed = false;

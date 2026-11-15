@@ -1,5 +1,8 @@
 /* Vitrine : les visages bougent un par un, au hasard, tantôt vers la gauche, tantôt vers la droite. */
 'use strict';
+// Après une actualisation, la page repart du haut.
+try { history.scrollRestoration = 'manual'; } catch {}
+if (!location.hash) { window.scrollTo(0, 0); addEventListener('load', () => { const n = performance.getEntriesByType && performance.getEntriesByType('navigation')[0]; if (n && n.type === 'reload' && !location.hash) window.scrollTo(0, 0); }); }
 // Langue de la vitrine : le choix FR/EN est retenu ; un navigateur en anglais arrive sur la version anglaise.
 (() => {
   let pick = null; try { pick = localStorage.getItem('tt:vlang'); } catch {}

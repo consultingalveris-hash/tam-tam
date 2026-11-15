@@ -13,7 +13,9 @@ const Tr = {
   // Par discussion : la langue dans laquelle JE reçois, et celle dans laquelle MON CONTACT reçoit.
   // Discussion à deux : les langues sont partagées. Chacun choisit ce qu'il reçoit ; on peut proposer une langue à son contact.
   row(cid, mine) { const c = S.chats.get(cid); if (!c || (c.type !== 'direct' && !(mine && c.type === 'group'))) return null; return (c.members || []).find(x => mine ? x.id === S.me.id : x.id !== S.me.id) || null; },
-  inL(cid) { const r = this.row(cid, true); if (r && r.trIn !== undefined) return this.pendR(r, cid) ? '' : r.trIn || ''; return this.ls('tt-trin:' + cid) || (this.ls('tt-trauto:' + cid) === '1' ? this.lang() : ''); },
+  // Discussion avec un visiteur du site : je reçois toujours ses messages en français (sauf autre choix de ma part).
+  guest(cid) { const o = this.row(cid, false); return !!(o && / · visiteur du site$/.test((uOf(o.id) || {}).name || '')); },
+  inL(cid) { if (this.guest(cid) && !this.ls('tt-trin:' + cid)) return 'fr'; const r = this.row(cid, true); if (r && r.trIn !== undefined) return this.pendR(r, cid) ? '' : r.trIn || ''; return this.ls('tt-trin:' + cid) || (this.ls('tt-trauto:' + cid) === '1' ? this.lang() : ''); },
   outL(cid) { const r = this.row(cid, false); if (r && r.trIn !== undefined) return r.trIn || ''; return this.ls('tt-trout:' + cid) || ''; },
   setIn(cid, l) { this.ls('tt-trauto:' + cid, ''); this.ls('tt-trin:' + cid, l); this.share(cid, 'me', l); },
   setOut(cid, l) { const r = this.row(cid, false); if (r && r.trBy === r.id) { toast(`${first(chatTitle(S.chats.get(cid)))} a choisi sa propre langue de réception : vous ne pouvez plus la changer.`); return false; } this.ls('tt-trout:' + cid, l); this.share(cid, 'peer', l); return true; },

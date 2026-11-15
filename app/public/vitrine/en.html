@@ -139,11 +139,12 @@ footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;
  .bub{display:none}
  section{padding:64px 0}.feat{margin-top:56px}
 }
+.req{color:#e0464e;font-weight:700}.oblig{margin:0;font-size:12.5px;color:#6b7f8a}
 </style>
 </head>
 <body>
 <header><div class="wrap"><a href="#"><img src="/logo-tamtam.svg" alt="Tam-Tam"></a>
-<nav><a href="#fonctions">Features</a><a href="#langues">Languages</a><a href="#telecharger">Download</a><a href="#contact">Contact us</a><a class="btn b1" href="https://web.tam-tam.africa">Open Tam-Tam</a><a class="lang" href="/" hreflang="fr" data-lang="fr" title="Version française"><b>EN</b><span>FR</span></a></nav></div></header>
+<nav><a href="#fonctions">Features</a><a href="#langues">Languages</a><a href="#telecharger">Download</a><a href="#contact">Contact us</a><a class="btn b1" href="https://web.tam-tam.africa">Open Tam-Tam</a><a class="lang" href="/vitrine/index.html?fr" hreflang="fr" data-lang="fr" title="Version française"><b>EN</b><span>FR</span></a></nav></div></header>
 
 <div class="hero"><div class="wrap">
  <div>
@@ -249,12 +250,13 @@ footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;
 <footer><div class="wrap"><span>© 2026 Tam-Tam</span><span><a href="https://web.tam-tam.africa/conditions">Terms</a> · <a href="https://www.youtube.com/@tamtamafrica">YouTube</a></span></div></footer>
 <div class="modal" id="ecrire" hidden role="dialog" aria-modal="true" aria-labelledby="ecrire-t"><form novalidate>
  <h3 id="ecrire-t">Write to us</h3><p>Fill in this form: your message goes straight to the Tam-Tam team.</p>
- <label>Name<input name="nom" autocomplete="name" maxlength="80" required></label>
- <div class="row"><label>E-mail<input name="email" type="email" autocomplete="email" maxlength="120" required></label>
+ <label><span>Name <b class="req" aria-hidden="true">*</b></span><input name="nom" autocomplete="name" maxlength="80" required></label>
+ <div class="row"><label><span>E-mail <b class="req" aria-hidden="true">*</b></span><input name="email" type="email" autocomplete="email" maxlength="120" required></label>
  <label><span>Phone <small>(optional)</small></span><input name="tel" type="tel" autocomplete="tel" maxlength="40" placeholder="+221 …"></label></div>
- <label>Subject<input name="objet" maxlength="120" required></label>
- <label>Message<textarea name="message" maxlength="4000" required></textarea></label>
+ <label><span>Subject <small>(optional)</small></span><input name="objet" maxlength="120"></label>
+ <label><span>Message <b class="req" aria-hidden="true">*</b> <small>(at least 10 characters)</small></span><textarea name="message" maxlength="4000" minlength="10" required></textarea></label>
  <div class="err" hidden></div><div class="ok" hidden></div>
+ <p class="oblig"><b class="req">*</b> Required fields</p>
  <div class="act"><button class="btn b2" type="button" data-fermer>Cancel</button><button class="btn b1" type="submit">Send</button></div>
 </form></div>
 <div class="bulle" id="bulle"><span class="hint">A question? Write to us</span><button type="button" aria-label="Chat with the Tam-Tam team"><img src="/logo-tamtam.svg" alt=""><span class="pt" hidden></span><span class="nb" hidden></span></button></div>

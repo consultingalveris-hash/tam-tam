@@ -48,12 +48,9 @@ export async function trCall(c, text, to, ctx) {
 export const trMonth = () => 'tr:' + new Date().toISOString().slice(0, 7);
 export const trUsed = () => +(q1(`SELECT v FROM settings WHERE k=?`, trMonth())?.v || 0);
 R('GET', /^\/api\/translate\/status$/, async () => { const c = trConf(); return { on: !!c.key, left: (c.gkey ? Math.max(0, TR_CAP - trUsed()) : 0) + (c.ckey && usdSpent() < c.budget ? 1 : 0), langs: trLangs(c) }; });
-R('POST', /^\/api\/translate$/, async ({ me, body }) => {
-  const key = trKey(); if (!key) E(503, 'La traduction n’est pas encore activée sur Tam-Tam.');
-  const text = String(body.text || '').slice(0, 2000).trim(), to = String(body.to || 'fr');
-  if (!text) E(400, 'Rien à traduire.'); if (!trLangs(trConf()).includes(to)) E(400, 'Langue non prise en charge.');
-  if (tooMany('tr:' + me.id, 120, 60 * 60_000)) E(429, 'Trop de traductions d’un coup. Réessayez dans un moment.');
-  const conf = trConf(), ctx = (Array.isArray(body.ctx) ? body.ctx : []).slice(-4).map(x => String(x || '').slice(0, 300)).filter(Boolean);
+// Traduction d'un texte (Google, puis Claude) : sert à l'application et à la bulle de la vitrine.
+export async function translateText(text, to, ctx = []) {
+  const conf = trConf();
   // Google d'abord, tant que le plafond gratuit du mois n'est pas atteint ; sinon (ou en cas d'échec) Claude, dans son budget.
   const engines = [];
   if (conf.gkey && TR_LANGS.includes(to) && trUsed() + text.length <= TR_CAP) engines.push('google');
@@ -68,6 +65,14 @@ R('POST', /^\/api\/translate$/, async ({ me, body }) => {
   }
   if (!t) E(502, 'La traduction a échoué. Réessayez plus tard.');
   return t;
+}
+R('POST', /^\/api\/translate$/, async ({ me, body }) => {
+  const key = trKey(); if (!key) E(503, 'La traduction n’est pas encore activée sur Tam-Tam.');
+  const text = String(body.text || '').slice(0, 2000).trim(), to = String(body.to || 'fr');
+  if (!text) E(400, 'Rien à traduire.'); if (!trLangs(trConf()).includes(to)) E(400, 'Langue non prise en charge.');
+  if (tooMany('tr:' + me.id, 120, 60 * 60_000)) E(429, 'Trop de traductions d’un coup. Réessayez dans un moment.');
+  const conf = trConf(), ctx = (Array.isArray(body.ctx) ? body.ctx : []).slice(-4).map(x => String(x || '').slice(0, 300)).filter(Boolean);
+  return translateText(text, to, ctx);
 });
 // Traductions partagées : chiffrées par l'appareil avec une clé tirée du texte lui-même.
 // Le serveur ne peut pas les lire ; un même message n'est payé qu'une fois pour tout le monde.
