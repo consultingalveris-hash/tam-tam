@@ -19,8 +19,8 @@ body{font-family:Poppins,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;co
 a{color:inherit}
 .wrap{max-width:1160px;margin:0 auto;padding:0 max(20px,env(safe-area-inset-left))}
 header{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-bottom:1px solid #e6f1f3}
-header .wrap{display:flex;align-items:center;justify-content:space-between;height:72px;gap:16px}
-header img{height:40px}
+header .wrap{display:flex;align-items:center;justify-content:space-between;height:84px;gap:16px}
+header img{height:58px}
 nav{display:flex;gap:26px;align-items:center;font-weight:500;font-size:15px}
 nav a{text-decoration:none;color:var(--mut)}nav a:hover{color:var(--t)}
 .btn{display:inline-flex;align-items:center;gap:10px;padding:13px 24px;border-radius:14px;font-weight:600;text-decoration:none;font-size:16px;transition:transform .15s}
@@ -125,6 +125,7 @@ footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;
 
 @media (max-width:1180px){.vbox{flex-direction:column}.faces{flex-direction:row;flex-wrap:wrap;justify-content:center;gap:12px;min-width:0;padding:0}.faces .fc:nth-child(odd){margin-right:0}.video{height:min(640px,72vh)}}
 @media (max-width:860px){
+ header img{height:46px} header .wrap{height:70px}
  nav a:not(.btn){display:none}
  .hero .wrap,.feat,.final{grid-template-columns:1fr}
  .vbox{flex-direction:column}
