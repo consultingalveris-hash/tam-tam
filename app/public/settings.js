@@ -4,14 +4,14 @@
 /* ---------- réglages ---------- */
 function mailBox() {
   const m = S.mail;
-  if (!m) return `<div class="set-block" id="mailBox"><h2>E-mails « mot de passe oublié »</h2><p class="hint">Réglez l’adresse qui envoie les codes de réinitialisation.</p><div><button class="btn sm" type="button" data-act="mailLoad">Afficher le réglage</button></div></div>`;
-  return `<form class="set-block" id="mailBox" data-form="mail" autocomplete="off"><h2>E-mails « mot de passe oublié »</h2>
-    <p class="hint">Créez d’abord l’adresse dans votre espace LWS (par exemple ne-pas-repondre@alveris-consulting.com), puis entrez ici ses informations d’envoi. Le mot de passe de cette adresse n’est jamais affiché.</p>
-    <div class="field"><label for="mlHost">Serveur d’envoi (SMTP)</label><input id="mlHost" value="${esc(m.host || 'mail.alveris-consulting.com')}"></div>
+  if (!m) return `<div class="set-block" id="mailBox"><h2>E-mails des codes de connexion</h2><p class="hint">Réglez l’adresse qui envoie les codes de connexion et de mot de passe oublié.</p><div><button class="btn sm" type="button" data-act="mailLoad">Afficher le réglage</button></div></div>`;
+  return `<form class="set-block" id="mailBox" data-form="mail" autocomplete="off"><h2>E-mails des codes de connexion</h2>
+    <p class="hint">Adresse d’envoi des codes (créée chez Netim : ne-pas-repondre@tam-tam.africa, serveur mail1.netim.hosting, port 465). Le mot de passe de cette adresse n’est jamais affiché.</p>
+    <div class="field"><label for="mlHost">Serveur d’envoi (SMTP)</label><input id="mlHost" value="${esc(m.host || 'mail1.netim.hosting')}"></div>
     <div class="field"><label for="mlPort">Port</label><input id="mlPort" inputmode="numeric" value="${esc(m.port || 465)}"></div>
-    <div class="field"><label for="mlUser">Identifiant (l’adresse e-mail)</label><input id="mlUser" type="email" value="${esc(m.user || '')}" placeholder="ne-pas-repondre@alveris-consulting.com"></div>
+    <div class="field"><label for="mlUser">Identifiant (l’adresse e-mail)</label><input id="mlUser" type="email" value="${esc(m.user || '')}" placeholder="ne-pas-repondre@tam-tam.africa"></div>
     <div class="field"><label for="mlPass">Mot de passe de cette adresse${m.hasPass ? ' (laisser vide pour garder l’actuel)' : ''}</label><input id="mlPass" type="password" autocomplete="new-password"></div>
-    <div class="field"><label for="mlFrom">Nom et adresse d’expéditeur</label><input id="mlFrom" value="${esc(m.from || 'tam-tam <ne-pas-repondre@alveris-consulting.com>')}"></div>
+    <div class="field"><label for="mlFrom">Nom et adresse d’expéditeur</label><input id="mlFrom" value="${esc(m.from || 'Tam-Tam <ne-pas-repondre@tam-tam.africa>')}"></div>
     <p class="err" id="mlErr" role="alert" hidden></p><p class="hint" id="mlOk" role="status" hidden></p>
     <div><button class="btn sm" type="submit">Enregistrer et envoyer un test</button></div></form>`;
 }

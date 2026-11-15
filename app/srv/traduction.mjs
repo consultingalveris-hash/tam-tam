@@ -201,7 +201,7 @@ R('POST', /^\/api\/admin\/mail$/, async ({ me, body }) => {
   const m = { host: clean(body.host, 120), port: +body.port || 465, user: clean(body.user, 120), pass: body.pass ? String(body.pass).slice(0, 200) : old.pass, from: clean(body.from, 160) };
   if (!m.host || !m.user || !m.pass || !m.from) E(400, 'Remplissez le serveur, l’identifiant, le mot de passe et l’expéditeur.');
   run(`INSERT OR REPLACE INTO settings(k,v) VALUES('mail',?)`, JSON.stringify(m)); resetTransport();
-  if (body.test) { try { await sendMail(me.email, 'Test d’envoi tam-tam', mailHtml('L’envoi d’e-mails fonctionne', '<p>Les codes « mot de passe oublié » partiront depuis cette adresse.</p>')); } catch (e) { E(502, 'Réglage enregistré, mais le test a échoué : ' + String(e.message || e).slice(0, 160)); } }
+  if (body.test) { try { await sendMail(me.email, 'Test d’envoi tam-tam', mailHtml('L’envoi d’e-mails fonctionne', '<p>Les codes de connexion de Tam-Tam partiront depuis cette adresse.</p>')); } catch (e) { E(502, 'Réglage enregistré, mais le test a échoué : ' + String(e.message || e).slice(0, 160)); } }
   return { ok: true };
 });
 R('POST', /^\/api\/admin\/report-done$/, async ({ me, body }) => { adminOnly(me); run(`UPDATE reports SET done=1 WHERE id=?`, +body.id); return { ok: true }; });
