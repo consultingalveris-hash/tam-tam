@@ -13,6 +13,7 @@ await p.evaluate(async () => { const salt = btoa('sel-de-test-1234'); S.lock = {
 await p.waitForTimeout(500);
 console.log('bandeau visible :', await p.isVisible('.inst.bk'));
 await p.screenshot({path: S + 'auth-4.png'});
+await p.click('.inst.bk [data-act=lkLater]').catch(() => {}); await p.waitForTimeout(300);
 await p.click('.inst.bk [data-act=keyCode]'); await p.waitForTimeout(400); await p.fill('#rk1', 'Baobab-2026'); await p.fill('#rk2', 'Baobab-2026'); await p.click('form[data-form=rekey] button[type=submit]'); await p.waitForTimeout(1500);
 console.log('code de secours enregistré :', await p.evaluate(() => S.me.hasBackup), '· bandeau caché :', !(await p.isVisible('.inst.bk')));
 // nouvel appareil : reconnexion par code, puis récupération des messages avec le code de secours
