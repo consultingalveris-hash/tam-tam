@@ -1,5 +1,12 @@
 /* Vitrine : les visages bougent un par un, au hasard, tantôt vers la gauche, tantôt vers la droite. */
 'use strict';
+// Langue de la vitrine : le choix FR/EN est retenu ; un navigateur en anglais arrive sur la version anglaise.
+(() => {
+  let pick = null; try { pick = localStorage.getItem('tt:vlang'); } catch {}
+  document.querySelectorAll('a.lang').forEach(a => a.addEventListener('click', () => { try { localStorage.setItem('tt:vlang', a.dataset.lang); } catch {} }));
+  const fr = document.documentElement.lang === 'fr';
+  if (fr && !pick && /^en\b/i.test(navigator.language || '') && !/[?&]fr\b/.test(location.search)) location.replace('/vitrine/en.html');
+})();
 (() => {
   if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const faces = [...document.querySelectorAll('.faces .fc')]; if (!faces.length) return;

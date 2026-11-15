@@ -4,15 +4,16 @@
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   const KEY = 'visite';
+  const EN = document.documentElement.lang === 'en', T = (fr, en) => EN ? en : fr;
   const V = {owner: null, guest: null, chatId: 0, es: null, open: false, unread: 0, seen: new Set()};
 
   async function api(path, body) {
     const r = await fetch('/api/visite/' + path, body ? {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body), credentials: 'same-origin'} : {credentials: 'same-origin'});
     let j = {}; try { j = await r.json(); } catch {}
-    if (!r.ok) throw new Error(j.error || 'Connexion impossible. Réessayez.');
+    if (!r.ok) throw new Error(EN ? (r.status === 429 ? 'Too many attempts. Please try again later.' : 'Something went wrong. Please try again.') : (j.error || 'Connexion impossible. Réessayez.'));
     return j;
   }
-  const hhmm = t => new Date(t).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'});
+  const hhmm = t => new Date(t).toLocaleTimeString(document.documentElement.lang === 'en' ? 'en-GB' : 'fr-FR', {hour: '2-digit', minute: '2-digit'});
 
   /* ---------- clé et compte visiteur ---------- */
   async function ensureKey() {
@@ -27,21 +28,21 @@
   }
   async function seal(text) {
     await ensureKey();
-    if (!V.owner || !V.owner.pubkey) throw new Error('La discussion n’est pas disponible pour le moment.');
+    if (!V.owner || !V.owner.pubkey) throw new Error(T('La discussion n’est pas disponible pour le moment.', 'Chat is not available right now.'));
     return (await E2E.seal({t: text}, [[V.owner.id, V.owner.pubkey], [V.guest.id, E2E.pubJwk]])).env;
   }
   async function textOf(m) {
-    if (m.deleted) return {t: 'Message supprimé', del: true};
+    if (m.deleted) return {t: T('Message supprimé', 'Message deleted'), del: true};
     if (!m.enc) return {t: m.text || ''};
     const o = E2E.ready() ? await E2E.open(m.enc, V.guest.id) : {err: 1};
-    return o.err ? {t: '(message illisible sur cet appareil)', del: true} : {t: String(o.payload.t || '')};
+    return o.err ? {t: T('(message illisible sur cet appareil)', '(message unreadable on this device)'), del: true} : {t: String(o.payload.t || '')};
   }
 
   /* ---------- bulle ---------- */
   const bulle = $('#bulle'), bp = $('#bp'), fil = $('.fil', bp), form = $('form', bp), intro = $('.intro', bp), typ = $('.typ', bp);
   function status() {
     const on = V.owner && V.owner.online;
-    $('.st', bp).textContent = on ? 'En ligne' : 'Nous répondons dès que possible';
+    $('.st', bp).textContent = on ? T('En ligne', 'Online') : T('Nous répondons dès que possible', 'We reply as soon as possible');
     $('.pt', bulle).hidden = !on;
     const nb = $('.nb', bulle); nb.hidden = !V.unread || V.open; nb.textContent = V.unread;
   }
@@ -62,7 +63,7 @@
     V.es.onmessage = e => {
       let ev; try { ev = JSON.parse(e.data); } catch { return; }
       if (ev.t === 'msg' && ev.msg && ev.msg.chatId === V.chatId) { typ.textContent = ''; if (ev.update) return; add(ev.msg); }
-      else if (ev.t === 'typing' && ev.chatId === V.chatId && ev.user !== V.guest.id) { typ.textContent = 'L’équipe Tam-Tam écrit…'; clearTimeout(V.tt); V.tt = setTimeout(() => { typ.textContent = ''; }, 5000); }
+      else if (ev.t === 'typing' && ev.chatId === V.chatId && ev.user !== V.guest.id) { typ.textContent = T('L’équipe Tam-Tam écrit…', 'The Tam-Tam team is typing…'); clearTimeout(V.tt); V.tt = setTimeout(() => { typ.textContent = ''; }, 5000); }
       else if (ev.t === 'presence' && V.owner && ev.id === V.owner.id) { V.owner.online = !!ev.online; status(); }
     };
   }
@@ -80,12 +81,12 @@
   $('[data-commencer]', intro).addEventListener('click', async e => {
     const err = $('.err', intro), name = $('[name=nom]', intro).value.trim(), contact = $('[name=contact]', intro).value.trim(), msg = $('[name=msg]', intro).value.trim();
     err.hidden = true;
-    if (name.length < 2) { err.textContent = 'Indiquez votre prénom.'; err.hidden = false; return; }
-    if (!msg) { err.textContent = 'Écrivez votre message.'; err.hidden = false; return; }
+    if (name.length < 2) { err.textContent = T('Indiquez votre prénom.', 'Please enter your first name.'); err.hidden = false; return; }
+    if (!msg) { err.textContent = T('Écrivez votre message.', 'Please write your message.'); err.hidden = false; return; }
     e.target.disabled = true;
     try {
       await ensureGuest(name, contact); showChat(); await send(msg);
-      if (!V.owner.online) note(contact ? 'Merci ! Nous ne sommes pas connectés pour le moment : nous vous répondrons ici ou à l’adresse indiquée.' : 'Merci ! Nous ne sommes pas connectés pour le moment. Revenez sur cette page plus tard, ou laissez ici votre e-mail ou numéro pour que nous vous répondions.');
+      if (!V.owner.online) note(contact ? T('Merci ! Nous ne sommes pas connectés pour le moment : nous vous répondrons ici ou à l’adresse indiquée.', 'Thank you! We are not online right now: we will reply here or at the address you gave.') : T('Merci ! Nous ne sommes pas connectés pour le moment. Revenez sur cette page plus tard, ou laissez ici votre e-mail ou numéro pour que nous vous répondions.', 'Thank you! We are not online right now. Come back to this page later, or leave your e-mail or phone number here so we can reply.'));
     } catch (x) { err.textContent = x.message; err.hidden = false; }
     e.target.disabled = false;
   });
@@ -112,18 +113,18 @@
     const err = $('.err', mf), ok = $('.ok', mf), btn = $('[type=submit]', mf);
     const f = {nom: mf.nom.value.trim(), email: mf.email.value.trim(), tel: mf.tel.value.trim(), objet: mf.objet.value.trim(), message: mf.message.value.trim()};
     err.hidden = true;
-    const miss = !f.nom ? 'votre nom' : !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email) ? 'une adresse e-mail valide' : !f.objet ? 'l’objet' : f.message.length < 5 ? 'votre message' : '';
-    if (miss) { err.textContent = 'Merci d’indiquer ' + miss + '.'; err.hidden = false; return; }
+    const miss = !f.nom ? T('votre nom', 'your name') : !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email) ? T('une adresse e-mail valide', 'a valid e-mail address') : !f.objet ? T('l’objet', 'the subject') : f.message.length < 5 ? T('votre message', 'your message') : '';
+    if (miss) { err.textContent = T('Merci d’indiquer ', 'Please enter ') + miss + '.'; err.hidden = false; return; }
     btn.disabled = true;
     try {
       if (!V.owner) await load();
       await ensureGuest(f.nom, f.email + (f.tel ? ' · ' + f.tel : ''));
-      const text = `📩 Formulaire « Nous écrire »\nObjet : ${f.objet}\nNom : ${f.nom}\nE-mail : ${f.email}\nNuméro : ${f.tel || '—'}\n\n${f.message}`;
+      const text = `📩 Formulaire « Nous écrire »${EN ? ' (site en anglais)' : ''}\nObjet : ${f.objet}\nNom : ${f.nom}\nE-mail : ${f.email}\nNuméro : ${f.tel || '—'}\n\n${f.message}`;
       const r = await api('formulaire', {...f, enc: await seal(text)});
       await add(r.msg);
-      ok.textContent = 'Merci ' + f.nom.split(' ')[0] + ' ! Votre message est bien arrivé. Nous vous répondrons par e-mail' + (f.tel ? ' ou par téléphone' : '') + ', ou ici dans la bulle Tam-Tam en bas de la page.';
+      ok.textContent = EN ? 'Thank you ' + f.nom.split(' ')[0] + '! Your message has arrived. We will reply by e-mail' + (f.tel ? ' or phone' : '') + ', or here in the Tam-Tam bubble at the bottom of the page.' : 'Merci ' + f.nom.split(' ')[0] + ' ! Votre message est bien arrivé. Nous vous répondrons par e-mail' + (f.tel ? ' ou par téléphone' : '') + ', ou ici dans la bulle Tam-Tam en bas de la page.';
       ok.hidden = false; btn.hidden = true; mf.objet.value = ''; mf.message.value = '';
-      $('[data-fermer]', mf).textContent = 'Fermer';
+      $('[data-fermer]', mf).textContent = T('Fermer', 'Close');
     } catch (x) { err.textContent = x.message; err.hidden = false; }
     btn.disabled = false;
   });

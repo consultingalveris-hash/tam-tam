@@ -8,7 +8,7 @@
 <meta property="og:title" content="Tam-Tam — la messagerie qui parle votre langue">
 <meta property="og:description" content="Écrivez dans votre langue, votre ami vous lit dans la sienne. Statuts privés, souvenirs, localisation partagée.">
 <meta property="og:image" content="/vitrine/img/video-apercu.jpg">
-<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="alternate" hreflang="en" href="https://tam-tam.africa/vitrine/en.html"><link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -23,6 +23,7 @@ header .wrap{display:flex;align-items:center;justify-content:space-between;heigh
 header img{height:58px}
 nav{display:flex;gap:26px;align-items:center;font-weight:500;font-size:15px}
 nav a{text-decoration:none;color:var(--mut)}nav a:hover{color:var(--t)}
+.lang{display:inline-flex;align-items:center;gap:2px;border:2px solid #dbeef1;border-radius:12px;padding:3px;text-decoration:none;font-weight:700;font-size:14px}.lang b,.lang span{padding:6px 9px;border-radius:9px}.lang b{background:var(--n);color:#fff}.lang span{color:var(--mut)}.lang:hover span{color:var(--t)}
 .btn{display:inline-flex;align-items:center;gap:10px;padding:13px 24px;border-radius:14px;font-weight:600;text-decoration:none;font-size:16px;transition:transform .15s}
 .btn:hover{transform:translateY(-2px)}
 .b1{background:var(--t);color:#fff;box-shadow:0 10px 24px rgba(20,184,201,.3)}
@@ -126,7 +127,8 @@ footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;
 @media (max-width:1180px){.vbox{flex-direction:column}.faces{flex-direction:row;flex-wrap:wrap;justify-content:center;gap:12px;min-width:0;padding:0}.faces .fc:nth-child(odd){margin-right:0}.video{height:min(640px,72vh)}}
 @media (max-width:860px){
  header img{height:46px} header .wrap{height:70px}
- nav a:not(.btn){display:none}
+ nav a:not(.btn):not(.lang){display:none}
+ nav{gap:10px} nav .btn{padding:10px 14px;font-size:14px;white-space:nowrap} .lang b,.lang span{padding:5px 7px}
  .hero .wrap,.feat,.final{grid-template-columns:1fr}
  .vbox{flex-direction:column}
  .video{height:auto;width:min(400px,100%)}
@@ -141,7 +143,7 @@ footer{padding:40px 0;color:var(--mut);font-size:14px}footer .wrap{display:flex;
 </head>
 <body>
 <header><div class="wrap"><a href="#"><img src="/logo-tamtam.svg" alt="Tam-Tam"></a>
-<nav><a href="#fonctions">Fonctionnalités</a><a href="#langues">Langues</a><a href="#telecharger">Télécharger</a><a href="#contact">Nous contacter</a><a class="btn b1" href="https://web.tam-tam.africa">Ouvrir Tam-Tam</a></nav></div></header>
+<nav><a href="#fonctions">Fonctionnalités</a><a href="#langues">Langues</a><a href="#telecharger">Télécharger</a><a href="#contact">Nous contacter</a><a class="btn b1" href="https://web.tam-tam.africa">Ouvrir Tam-Tam</a><a class="lang" href="/vitrine/en.html" hreflang="en" data-lang="en" title="English version"><b>FR</b><span>EN</span></a></nav></div></header>
 
 <div class="hero"><div class="wrap">
  <div>
