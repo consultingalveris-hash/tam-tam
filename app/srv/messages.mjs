@@ -535,7 +535,7 @@ export function getTransport() {
   if (key !== transportKey) { transport = nodemailer.createTransport({ host: m.host, port: +m.port || 465, secure: (+m.port || 465) === 465, auth: { user: m.user, pass: m.pass } }); transportKey = key; }
   return { t: transport, from: m.from };
 }
-export const mailHtml = (title, inner) => `<div style="font-family:Arial,Helvetica,sans-serif;background:#eef6f7;padding:24px"><div style="max-width:520px;margin:auto;background:#fff;border-radius:14px;padding:26px;color:#0f2430;font-size:15px;line-height:1.5"><div style="font-weight:800;font-size:20px;color:#0b7a89;margin-bottom:14px">tam-tam</div><h1 style="font-size:19px;margin:0 0 10px">${title}</h1>${inner}<p style="color:#5d7380;font-size:12px;margin-top:26px">Message envoyé automatiquement par tam-tam. Si vous n’êtes pas à l’origine de cette demande, ignorez ce message : votre compte reste protégé.</p></div></div>`;
+export const mailHtml = (title, inner, en) => `<div style="font-family:Arial,Helvetica,sans-serif;background:#eef6f7;padding:24px"><div style="max-width:520px;margin:auto;background:#fff;border-radius:14px;padding:26px;color:#0f2430;font-size:15px;line-height:1.5"><div style="font-weight:800;font-size:20px;color:#0b7a89;margin-bottom:14px">tam-tam</div><h1 style="font-size:19px;margin:0 0 10px">${title}</h1>${inner}<p style="color:#5d7380;font-size:12px;margin-top:26px">${en ? 'Message sent automatically by Tam-Tam. If you did not make this request, ignore this message: your account remains protected.' : 'Message envoyé automatiquement par tam-tam. Si vous n’êtes pas à l’origine de cette demande, ignorez ce message : votre compte reste protégé.'}</p></div></div>`;
 export async function sendMail(to, subject, html) { const tr = getTransport(); if (!tr) return false; await tr.t.sendMail({ from: tr.from, to, subject, html }); return true; }
 R('POST', /^\/api\/forgot$/, async ({ req, body }) => {
   const email = clean(body.email, 120).toLowerCase(); if (!isEmail(email)) E(400, 'Adresse e-mail invalide.');
@@ -576,7 +576,11 @@ R('POST', /^\/api\/code\/send$/, async ({ req, body }) => {
     if (DEMO_CODES) return { ok: true, demo: code };
     E(503, 'L’envoi des codes par e-mail est momentanément indisponible. Utilisez « Continuer avec Google » ou votre mot de passe.');
   }
-  try { await sendMail(email, `Votre code Tam-Tam : ${code}`, mailHtml('Votre code de connexion', `<p>Bonjour,</p><p>Voici votre code pour ouvrir Tam-Tam :</p><p style="font-size:32px;font-weight:800;letter-spacing:8px;margin:16px 0">${code}</p><p>Il est valable 15 minutes. Ne le donnez à personne : l’équipe Tam-Tam ne vous le demandera jamais.</p>`)); }
+  const big = `<p style="font-size:32px;font-weight:800;letter-spacing:8px;margin:16px 0">${code}</p>`;
+  try {
+    if (body.lang === 'en') await sendMail(email, `Your Tam-Tam code: ${code}`, mailHtml('Your sign-in code', `<p>Hello,</p><p>Here is your code to open Tam-Tam:</p>${big}<p>It is valid for 15 minutes. Do not give it to anyone: the Tam-Tam team will never ask you for it.</p>`, true));
+    else await sendMail(email, `Votre code Tam-Tam : ${code}`, mailHtml('Votre code de connexion', `<p>Bonjour,</p><p>Voici votre code pour ouvrir Tam-Tam :</p>${big}<p>Il est valable 15 minutes. Ne le donnez à personne : l’équipe Tam-Tam ne vous le demandera jamais.</p>`));
+  }
   catch (e) { console.error('envoi du code', e.message); E(502, 'L’e-mail n’a pas pu partir. Réessayez dans quelques minutes.'); }
   return { ok: true };
 }, false);

@@ -1412,3 +1412,8 @@ body:has(#pop) .rrail,body:has(#layer .layer) .rrail{display:none}
 .code-in{font-size:26px!important;letter-spacing:10px;text-align:center;font-weight:700}
 .inst.bk .bk-ic{width:40px;height:40px;border-radius:12px;background:var(--surface);color:var(--accent);display:grid;place-items:center;flex:none}
 .inst.bk .bk-ic svg{width:22px;height:22px}
+
+.ui-lang{display:flex;justify-content:center;gap:6px;margin:8px 0 2px}
+.ui-lang button{border:1px solid var(--line);background:transparent;color:inherit;border-radius:999px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}
+.ui-lang button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.set-block .ui-lang{justify-content:flex-start}

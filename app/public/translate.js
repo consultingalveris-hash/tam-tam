@@ -3,11 +3,12 @@
 'use strict';
 /* ---------- traduction à la demande ---------- */
 const LANG_FR = {bas: 'bassa (essai)', dua: 'duala (essai)', ewo: 'ewondo (essai)', srr: 'sérère (essai)', mnk: 'mandinka (essai)', snk: 'soninké (essai)', dyo: 'diola (essai)', fan: 'fang (essai)', bum: 'boulou (essai)', mos: 'mooré (essai)', fon: 'fon (essai)', dyu: 'dioula (essai)', kab: 'kabyle (essai)', tzm: 'tamazight (essai)', ber: 'berbère (essai)', kri: 'krio (essai)', fr: 'français', en: 'anglais', wo: 'wolof', ff: 'peul (pulaar)', bm: 'bambara', ln: 'lingala', sw: 'swahili', ha: 'haoussa', yo: 'yoruba', ig: 'igbo', ee: 'ewe', ak: 'twi', rw: 'kinyarwanda', sg: 'sango', ar: 'arabe', pt: 'portugais', es: 'espagnol', de: 'allemand', it: 'italien', zh: 'chinois', ru: 'russe', tr: 'turc', nl: 'néerlandais', hi: 'hindi', am: 'amharique', so: 'somali', zu: 'zoulou', xh: 'xhosa', mg: 'malgache', rn: 'kirundi', kg: 'kikongo', ts: 'tsonga', tn: 'tswana', st: 'sotho', sn: 'shona', ny: 'chichewa', om: 'oromo', ti: 'tigrigna', lg: 'luganda', ki: 'kikuyu'};
+if (typeof I18N !== 'undefined' && I18N.lang === 'en') Object.assign(LANG_FR, {bas: 'Bassa', dua: 'Duala', ewo: 'Ewondo', srr: 'Serer', mnk: 'Mandinka', snk: 'Soninke', dyo: 'Jola', fan: 'Fang', bum: 'Bulu', mos: 'Mooré', fon: 'Fon', dyu: 'Dyula', kab: 'Kabyle', tzm: 'Tamazight', ber: 'Berber', kri: 'Krio', fr: 'French', en: 'English', wo: 'Wolof', ff: 'Fula (Pulaar)', bm: 'Bambara', ln: 'Lingala', sw: 'Swahili', ha: 'Hausa', yo: 'Yoruba', ig: 'Igbo', ee: 'Ewe', ak: 'Twi', rw: 'Kinyarwanda', sg: 'Sango', ar: 'Arabic', pt: 'Portuguese', es: 'Spanish', de: 'German', it: 'Italian', zh: 'Chinese', ru: 'Russian', tr: 'Turkish', nl: 'Dutch', hi: 'Hindi', am: 'Amharic', so: 'Somali', zu: 'Zulu', xh: 'Xhosa', mg: 'Malagasy', rn: 'Kirundi', kg: 'Kikongo', ts: 'Tsonga', tn: 'Tswana', st: 'Sotho', sn: 'Shona', ny: 'Chichewa', om: 'Oromo', ti: 'Tigrinya', lg: 'Luganda', ki: 'Kikuyu'});
 const Tr = {
   st: null,
   ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { return null; } },
   // Langue par défaut pour « Traduire » sur un message (menu du message).
-  lang() { return this.ls('tt-trlang') || 'fr'; },
+  lang() { return this.ls('tt-trlang') || (I18N.lang === 'en' ? 'en' : 'fr'); },
   setLang(l) { this.ls('tt-trlang', l); },
   // Par discussion : la langue dans laquelle JE reçois, et celle dans laquelle MON CONTACT reçoit.
   // Discussion à deux : les langues sont partagées. Chacun choisit ce qu'il reçoit ; on peut proposer une langue à son contact.

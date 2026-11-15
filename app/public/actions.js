@@ -27,7 +27,8 @@ const ACT = {
   async mailLoad() { try { const m = await api('/api/admin/mail'); S.mail = m; const el = $('#mailBox'); if (el) el.outerHTML = mailBox(); } catch (e) { toast(e.message); } },
   authMode(d) { A.mode = d.m; renderAuth(); },
   bkLater() { try { localStorage.setItem('tt:bkLater', String(Date.now())); } catch {} renderBody(); },
-  async codeResend() { try { const c = await api('/api/code/send', {email: A.cmail}); A.demo = c.demo || ''; renderAuth(); toast('Nouveau code envoyé'); } catch (e) { renderAuth(e.message); } },
+  async codeResend() { try { const c = await api('/api/code/send', {email: A.cmail, lang: I18N.lang}); A.demo = c.demo || ''; renderAuth(); toast('Nouveau code envoyé'); } catch (e) { renderAuth(e.message); } },
+  uiLang(d) { if (d.v !== I18N.lang) I18N.set(d.v); },
   pwShow(d, el) { const i = el.parentNode.querySelector('input'); i.type = i.type === 'password' ? 'text' : 'password'; el.textContent = i.type === 'password' ? 'Voir' : 'Masquer'; },
   avPick(d) {
     const a = {v: 3, p: d.p};
