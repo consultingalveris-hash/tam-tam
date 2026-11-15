@@ -26,6 +26,7 @@ const ACT = {
   async gOff() { try { await api('/api/admin/google', {off: true}); S.gset = await api('/api/admin/google'); $('#gBox').outerHTML = googleBox(); toast('Connexion Google désactivée'); } catch (e) { toast(e.message); } },
   async mailLoad() { try { const m = await api('/api/admin/mail'); S.mail = m; const el = $('#mailBox'); if (el) el.outerHTML = mailBox(); } catch (e) { toast(e.message); } },
   authMode(d) { A.mode = d.m; renderAuth(); },
+  lkLater() { try { localStorage.setItem('tt:lkLater', String(Date.now())); } catch {} renderBody(); },
   bkLater() { try { localStorage.setItem('tt:bkLater', String(Date.now())); } catch {} renderBody(); },
   async codeResend() { try { const c = await api('/api/code/send', {email: A.cmail, lang: I18N.lang}); A.demo = c.demo || ''; renderAuth(); toast('Nouveau code envoyé'); } catch (e) { renderAuth(e.message); } },
   uiLang(d) { if (d.v !== I18N.lang) I18N.set(d.v); },

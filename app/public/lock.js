@@ -158,7 +158,7 @@ function lockSetupSheet(step, first, msg) {
     if (seq.join() !== first.join()) return lockSetupSheet(1, null, 'Les deux schémas sont différents. Recommencez.');
     const salt = b64(crypto.getRandomValues(new Uint8Array(16)));
     S.lock = Object.assign({delay: 0}, S.lock || {}, {type: 'pattern', salt, hash: await Lock.hashPattern(seq, salt)});
-    await Lock.set(S.me.id, S.lock); closeLayer(); renderBody(); toast('Schéma enregistré : tam-tam se verrouillera automatiquement');
+    await Lock.set(S.me.id, S.lock); closeLayer(); renderBody(); toast('Schéma enregistré : tam-tam se verrouillera automatiquement'); setTimeout(() => { if (typeof offerBio === 'function') offerBio(); }, 1200);
   });
 }
 

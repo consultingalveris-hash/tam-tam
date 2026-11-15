@@ -177,8 +177,7 @@ async function startApp() {
   Tr.loadSt();
   renderAll(); if (!fast) Perf.add('open', performance.now()); connect();  if (typeof Secours !== "undefined") Secours.load(); Outbox.flush(); Prefetch.run(); if (S.locked) showLock(); if (!S.me.handleSet) HPick.open();
   GCall.loadActive(); Call.checkPending(); Device.badge(); LocShare.sync();
-  if (S.lock.type === 'off') return requireLock();
-  if (!S.locked) setTimeout(offerBio, 1500);
+  if (!S.locked && S.lock.type !== 'off') setTimeout(offerBio, 1500);
   if (S.pendingChat && S.chats.has(S.pendingChat)) openChat(S.pendingChat); S.pendingChat = 0;
   if (S.pendingTab) { S.tab = S.pendingTab; S.pendingTab = null; history.replaceState(null, '', '/'); renderAll(); }
   if (typeof Mem !== 'undefined') Mem.loadRecv(true);
@@ -311,9 +310,16 @@ function bkBanner() {
   if (Date.now() - t < 3 * 864e5) return '';
   return `<div class="inst bk"><span class="bk-ic">${I.lock}</span><div><b>Protégez vos messages</b><span>Choisissez un code de secours pour les retrouver si vous changez de téléphone.</span></div><button class="btn sm" type="button" data-act="keyCode">Choisir</button><button class="ib" type="button" data-act="bkLater" aria-label="Plus tard">${I.close}</button></div>`;
 }
+// Pas encore de schéma : on le propose une fois connecté, par un message dans la liste (« Plus tard » le cache 3 jours).
+function lkBanner() {
+  if (!S.me || !S.lock || S.lock.type !== 'off') return '';
+  let t = 0; try { t = +localStorage.getItem('tt:lkLater') || 0; } catch {}
+  if (Date.now() - t < 3 * 864e5) return '';
+  return `<div class="inst bk"><span class="bk-ic">${I.lock}</span><div><b>Protégez Tam-Tam</b><span>Choisissez un schéma : Tam-Tam le demandera à chaque ouverture, pour que personne ne lise vos messages si on prend votre téléphone.</span></div><button class="btn sm" type="button" data-act="lockSetup">Choisir</button><button class="ib" type="button" data-act="lkLater" aria-label="Plus tard">${I.close}</button></div>`;
+}
 function renderBody() {
   const b = $('#body'); if (!b) return;
-  if (S.tab === 'chats') b.innerHTML = bkBanner() + Device.banner() + gcallBanner() + chatRows();
+  if (S.tab === 'chats') b.innerHTML = (lkBanner() || bkBanner()) + Device.banner() + gcallBanner() + chatRows();
   else if (S.tab === 'contacts') { b.innerHTML = Book.body(); Book.after(); }
   else if (S.tab === 'calls') { b.innerHTML = Calls.body(); Calls.after(); }
   else if (S.tab === 'souvenirs') { b.innerHTML = Mem.body(); Mem.hydrate(b); }
