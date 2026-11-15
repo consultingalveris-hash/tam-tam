@@ -106,7 +106,7 @@ function showLock(msg) {
     : `<form class="lk-pass" data-form="lockPass"><p class="lk-hint">Schéma oublié ? Entrez votre mot de passe Tam-Tam.</p><input id="lkPass" type="password" autocomplete="current-password" placeholder="Mot de passe" aria-label="Mot de passe"><button class="btn" type="submit">Déverrouiller</button></form>`}
     <p class="err" id="lkErr" role="alert"${msg ? '' : ' hidden'}>${esc(msg || '')}</p>
     <div class="lk-links">${st !== 'bio' && L.bio ? `<button class="linkb" type="button" data-act="lockBio">Utiliser l’empreinte ou le visage</button>` : ''}
-    ${st === 'pattern' ? '<button class="linkb" type="button" data-act="lockPassStep">Utiliser mon mot de passe</button>' : ''}${st === 'pass' ? '<button class="linkb" type="button" data-act="lockPatStep">Revenir au schéma</button><button class="linkb" type="button" data-act="lockForgot">Mot de passe oublié ? Me reconnecter</button>' : ''}</div></div>`;
+    ${st === 'pattern' ? '<button class="linkb" type="button" data-act="lockPassStep">Utiliser mon mot de passe</button>' : ''}${st === 'pass' ? '<button class="linkb" type="button" data-act="lockPatStep">Revenir au schéma</button><button class="linkb" type="button" data-act="lockForgot">Me reconnecter avec un code par e-mail</button>' : ''}</div></div>`;
   if (st === 'pattern') bindPad('lockPad', async seq => {
     if (await Lock.hashPattern(seq, L.salt) === L.hash) return unlock();
     S.lockTries++;
@@ -116,7 +116,15 @@ function showLock(msg) {
   if (st === 'pass') setTimeout(() => { const i = $('#lkPass'); if (i) i.focus(); }, 50);
   if (st === 'bio' && !S.bioTried) { S.bioTried = true; setTimeout(() => ACT.lockBio(), 250); }
 }
-function unlock() { S.locked = false; S.lockTries = 0; S.bioTried = false; S.lockStep = null; const el = $('#lockScreen'); if (el) el.remove(); if (S.chatId) markRead(); }
+function unlock() { S.locked = false; S.lockTries = 0; S.bioTried = false; S.lockStep = null; const el = $('#lockScreen'); if (el) el.remove(); if (S.chatId) markRead(); offerBio(); }
+// Application Android mise à jour (empreinte disponible) : on propose une fois l'empreinte à ceux qui ont déjà un schéma.
+async function offerBio() {
+  if (!S.lock || S.lock.type === 'off' || S.lock.bio || !Lock.nativeBio()) return;
+  let asked = false; try { asked = localStorage.getItem('tt:bioAsk:' + S.me.id) === '1'; } catch {}
+  if (asked || !(await Lock.bioCheck())) return;
+  try { localStorage.setItem('tt:bioAsk:' + S.me.id, '1'); } catch {}
+  sheet(`${head('Empreinte ou visage')}<div class="sheet-body"><p class="hint">Nouveau : ouvrez Tam-Tam avec votre empreinte ou votre visage, c’est plus rapide que le schéma. Le schéma reste là en secours.</p><div class="actions"><button class="btn ghost" type="button" data-act="close">Plus tard</button><button class="btn" type="button" data-act="bioOn">Oui, utiliser mon empreinte</button></div></div>`, 'Empreinte');
+}
 function lockSettingsHtml() {
   const L = S.lock || {type: 'off', delay: 60};
   return `<div class="set-block"><h2>${I.lock} Verrouillage de l’application</h2><p class="hint">Vous restez connecté, mais tam-tam demande votre schéma${L.bio ? ' ou votre empreinte' : ''} à chaque ouverture. Personne ne peut lire vos messages si on prend votre téléphone.</p>

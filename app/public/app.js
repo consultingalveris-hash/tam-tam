@@ -177,6 +177,7 @@ async function startApp() {
   renderAll(); if (!fast) Perf.add('open', performance.now()); connect();  if (typeof Secours !== "undefined") Secours.load(); Outbox.flush(); Prefetch.run(); if (S.locked) showLock(); if (!S.me.handleSet) HPick.open();
   GCall.loadActive(); Call.checkPending(); Device.badge(); LocShare.sync();
   if (S.lock.type === 'off') return requireLock();
+  if (!S.locked) setTimeout(offerBio, 1500);
   if (S.pendingChat && S.chats.has(S.pendingChat)) openChat(S.pendingChat); S.pendingChat = 0;
   if (S.pendingTab) { S.tab = S.pendingTab; S.pendingTab = null; history.replaceState(null, '', '/'); renderAll(); }
   if (typeof Mem !== 'undefined') Mem.loadRecv(true);

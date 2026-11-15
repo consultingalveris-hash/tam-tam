@@ -160,9 +160,19 @@ const Lock = {
     const base = await subtle.importKey('raw', te.encode(seq.join('-')), 'PBKDF2', false, ['deriveBits']);
     return b64(await subtle.deriveBits({name: 'PBKDF2', hash: 'SHA-256', salt: unb64(salt), iterations: 200000}, base, 256));
   },
-  bioAvailable() { return !!(window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable); },
-  async bioCheck() { try { return this.bioAvailable() && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); } catch { return false; } },
+  // Application Android (version 7 et plus) : empreinte ou visage par la fenêtre biométrique du téléphone.
+  nativeBio() { try { return !!(window.TamTamAndroid && window.TamTamAndroid.version && window.TamTamAndroid.version() >= 2); } catch { return false; } },
+  nativeAuth(reason) {
+    return new Promise(res => {
+      const h = e => { window.removeEventListener('tt-bio', h); res(!!(e.detail && e.detail.ok)); };
+      window.addEventListener('tt-bio', h);
+      try { window.TamTamAndroid.bioAuth(reason || ''); } catch { window.removeEventListener('tt-bio', h); res(false); }
+    });
+  },
+  bioAvailable() { return this.nativeBio() || !!(window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable); },
+  async bioCheck() { if (this.nativeBio()) { try { return !!window.TamTamAndroid.bioAvailable(); } catch { return false; } } try { return this.bioAvailable() && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); } catch { return false; } },
   async bioRegister(user) {
+    if (this.nativeBio()) { if (await this.nativeAuth('Activer l’empreinte pour Tam-Tam')) return 'android'; throw new Error('annulé'); }
     const cred = await navigator.credentials.create({publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)), rp: {name: 'tam-tam', id: location.hostname},
       user: {id: crypto.getRandomValues(new Uint8Array(16)), name: user.email || user.handle, displayName: user.name},
@@ -171,6 +181,7 @@ const Lock = {
     return b64(cred.rawId);
   },
   async bioVerify(credId) {
+    if (credId === 'android') return this.nativeBio() ? this.nativeAuth('Ouvrir Tam-Tam') : false;
     const a = await navigator.credentials.get({publicKey: {challenge: crypto.getRandomValues(new Uint8Array(32)), allowCredentials: [{type: 'public-key', id: unb64(credId)}], userVerification: 'required', timeout: 60000}});
     return !!a;
   },
