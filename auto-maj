@@ -8,7 +8,7 @@
 {
 if [ "$1" = activer ]; then
   D=$(dirname "$(readlink -f "$0")")
-  printf '[Unit]\nDescription=Tam-Tam : mise a jour automatique\n[Service]\nType=oneshot\nExecStart=/bin/bash %s/auto-maj\n' "$D" > /etc/systemd/system/tam-tam-auto-maj.service
+  printf '[Unit]\nDescription=Tam-Tam : mise a jour automatique\n[Service]\nType=oneshot\nEnvironment=HOME=/root\nExecStart=/bin/bash %s/auto-maj\n' "$D" > /etc/systemd/system/tam-tam-auto-maj.service
   printf '[Unit]\nDescription=Tam-Tam : mise a jour automatique toutes les 5 minutes\n[Timer]\nOnBootSec=2min\nOnUnitActiveSec=5min\nPersistent=true\n[Install]\nWantedBy=timers.target\n' > /etc/systemd/system/tam-tam-auto-maj.timer
   systemctl daemon-reload && systemctl enable --now tam-tam-auto-maj.timer && echo "MISE A JOUR AUTOMATIQUE ACTIVEE (toutes les 5 minutes)."
   exit 0
