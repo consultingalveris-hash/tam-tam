@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import nodemailer from 'nodemailer';
 import path from 'node:path';
-import { BASE_URL, DAY, E, J, MEDIA, Rfor, backup, blockedEither, blockedNow, bodyToFile, canSeePriv, chatOut, checkPass, clean, contactIds, dropMedia, firstFor, getUser, gsetOf, hashPass, ipOf, isEmail, isMember, locTargets, meOut, mediaUrl, memberIds, msgFor, msgOut, nameFor, nameInChat, now, passGuard, passOk, push, pushMany, pushMsg, q1, qa, relation, rnd, run, secure, sentCids, setSession, sha, statusVisible, tooMany, ups, userCard } from './core.mjs';
+import { OWNER, BASE_URL, DAY, E, J, MEDIA, Rfor, backup, blockedEither, blockedNow, bodyToFile, canSeePriv, chatOut, checkPass, clean, contactIds, dropMedia, firstFor, getUser, gsetOf, hashPass, ipOf, isEmail, isMember, locTargets, meOut, mediaUrl, memberIds, msgFor, msgOut, nameFor, nameInChat, now, passGuard, passOk, push, pushMany, pushMsg, q1, qa, relation, rnd, run, secure, sentCids, setSession, sha, statusVisible, tooMany, ups, userCard } from './core.mjs';
 const R = Rfor(4);
 import { envOk, envPick, sysMsg } from './comptes.mjs';
 import { webPush } from './appels.mjs';
@@ -573,7 +573,9 @@ R('POST', /^\/api\/code\/send$/, async ({ req, body }) => {
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
   run(`INSERT OR REPLACE INTO codes(email,code,tries,expires) VALUES(?,?,0,?)`, email, sha(code), now() + 15 * 60_000);
   if (!getTransport()) {
-    if (DEMO_CODES) return { ok: true, demo: code };
+    // Audit du 16/11/2026 : le code affiché à l'écran ne sert qu'aux NOUVELLES adresses (inscription d'essai).
+    // Pour un compte existant (dont le propriétaire, administrateur), l'afficher permettrait à n'importe qui d'y entrer avec la seule adresse e-mail.
+    if (DEMO_CODES && email !== OWNER && !q1(`SELECT 1 FROM users WHERE email=?`, email)) return { ok: true, demo: code };
     E(503, 'L’envoi des codes par e-mail est momentanément indisponible. Utilisez « Continuer avec Google » ou votre mot de passe.');
   }
   const big = `<p style="font-size:32px;font-weight:800;letter-spacing:8px;margin:16px 0">${code}</p>`;

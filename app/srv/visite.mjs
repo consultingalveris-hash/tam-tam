@@ -86,9 +86,11 @@ R('POST', /^\/api\/visite\/message$/, async ({ req, body }) => {
 // Traduction pour le visiteur : il lit les réponses de l'équipe dans sa langue (le texte ne fait que passer, rien n'est gardé).
 R('POST', /^\/api\/visite\/traduire$/, async ({ req, body }) => {
   const g = needGuest(req); if (!trKey()) return { text: '' };
-  const text = String(body.text || '').slice(0, 2000).trim(), to = String(body.to || '');
+  const text = String(body.text || '').slice(0, 1000).trim(), to = String(body.to || '');
   if (!text || !trLangs(trConf()).includes(to)) return { text: '' };
-  if (tooMany('vtr:' + g.id, 80, 60 * 60_000)) return { text: '' };
+  // Audit du 16/11/2026 : limites aussi par connexion et pour l'ensemble des visiteurs, sinon des sessions de visiteur
+  // créées en série pourraient vider en quelques minutes le budget mensuel de traduction des membres.
+  if (tooMany('vtr:' + g.id, 80, 60 * 60_000) || tooMany('vtr-ip:' + ipOf(req), 100, 60 * 60_000) || tooMany('vtr-all', 600, 60 * 60_000)) return { text: '' };
   try { const t = await translateText(text, to); return { text: t.text || '', from: t.from || null }; } catch { return { text: '' }; }
 }, false);
 R('POST', /^\/api\/visite\/formulaire$/, async ({ req, body }) => {
