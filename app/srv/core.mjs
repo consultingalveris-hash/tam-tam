@@ -385,11 +385,21 @@ export const ipOf = req => {
   const peer = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   if (!fromCF(peer)) return peer;
   // Relais Tam-Tam (Cloudflare Workers) : il transmet l'adresse réelle de la personne, sinon tous ses utilisateurs auraient la même.
-  const rl = String(req.headers['x-tt-client'] || '').trim(), ro = String(req.headers['x-tt-origin'] || '').toLowerCase();
-  if (rl && net.isIP(rl) && ALT_ORIGINS.some(o => new URL(o).host === ro)) return rl;
+  // Audit du 18/11/2026 : ces en-têtes peuvent être inventés par n'importe qui (un « Worker » Cloudflare gratuit suffit).
+  // L'adresse donnée par le relais n'est crue que s'il présente le mot de passe partagé RELAY_SECRET ;
+  // cf-connecting-ip n'est cru que sur les adresses qui passent vraiment par Cloudflare (pas l'adresse de secours).
+  const rl = String(req.headers['x-tt-client'] || '').trim();
+  if (rl && net.isIP(rl) && relayOk(req)) return rl;
+  const host = String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '');
+  if (DIRECT_HOSTS.includes(host)) return peer;
   const cf = String(req.headers['cf-connecting-ip'] || '').trim();
   return cf && net.isIP(cf) ? cf : peer;
 };
+const RELAY_SECRET = Buffer.from(String(process.env.RELAY_SECRET || ''));
+const relayOk = req => { const v = Buffer.from(String(req.headers['x-tt-relay'] || '')); return RELAY_SECRET.length >= 16 && v.length === RELAY_SECRET.length && crypto.timingSafeEqual(v, RELAY_SECRET); };
+// Adresses servies sans Cloudflare (adresse de secours) : on y garde l'adresse réelle de la connexion.
+const DIRECT_HOSTS = String(process.env.DIRECT_HOSTS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean)
+  .concat(ALT_ORIGINS.map(o => new URL(o).host).filter(h => h.startsWith('secours.')));
 export function meOut(u) {
   return { ...userCard(u, u.id), locTo: locTargets(u), rawName: u.name || '', handleSet: !!u.handle_set, handleAt: u.handle_at || null, email: u.email, priv: u.priv_env ? {} : J(u.priv, {}), privPics: u.priv_env ? [null, null, null] : picsOf(u, 'priv'), privEnv: u.priv_env ? J(u.priv_env, null) : null, telEnv: u.tel_env ? J(u.tel_env, null) : null, legacyPriv: !u.priv_env, listed: !!u.listed, avail: u.avail || 'on', trConsent: u.tr_consent == null ? null : !!u.tr_consent, privTo: u.priv_to, admin: !!u.admin, hasBackup: !!u.keybackup, hasHideCode: !!u.hide_code, hasMemCode: !!u.mem_code,
     close: qa(`SELECT member FROM close_group WHERE owner=?`, u.id).map(r => r.member),

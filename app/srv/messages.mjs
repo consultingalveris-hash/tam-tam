@@ -537,6 +537,9 @@ export function getTransport() {
 }
 export const mailHtml = (title, inner, en) => `<div style="font-family:Arial,Helvetica,sans-serif;background:#eef6f7;padding:24px"><div style="max-width:520px;margin:auto;background:#fff;border-radius:14px;padding:26px;color:#0f2430;font-size:15px;line-height:1.5"><div style="font-weight:800;font-size:20px;color:#0b7a89;margin-bottom:14px">tam-tam</div><h1 style="font-size:19px;margin:0 0 10px">${title}</h1>${inner}<p style="color:#5d7380;font-size:12px;margin-top:26px">${en ? 'Message sent automatically by Tam-Tam. If you did not make this request, ignore this message: your account remains protected.' : 'Message envoyé automatiquement par tam-tam. Si vous n’êtes pas à l’origine de cette demande, ignorez ce message : votre compte reste protégé.'}</p></div></div>`;
 export async function sendMail(to, subject, html) { const tr = getTransport(); if (!tr) return false; await tr.t.sendMail({ from: tr.from, to, subject, html }); return true; }
+// Audit du 18/11/2026 : chaque nouveau code remettait le compteur d'essais à zéro (≈ 1 000 essais par jour sur une adresse).
+// Désormais, au-delà de 12 codes faux en 24 h pour une même adresse, la connexion par code est suspendue pour elle.
+const CFAIL_MAX = 12, CFAIL_WIN = 24 * 60 * 60_000;
 R('POST', /^\/api\/forgot$/, async ({ req, body }) => {
   const email = clean(body.email, 120).toLowerCase(); if (!isEmail(email)) E(400, 'Adresse e-mail invalide.');
   if (tooMany('forgot:' + ipOf(req), 6, 60 * 60_000) || tooMany('forgot:' + email, 3, 60 * 60_000)) E(429, 'Trop de demandes. Réessayez dans une heure.');
@@ -553,9 +556,10 @@ R('POST', /^\/api\/forgot$/, async ({ req, body }) => {
 R('POST', /^\/api\/forgot\/verify$/, async ({ req, res, body }) => {
   const email = clean(body.email, 120).toLowerCase(), r = q1(`SELECT * FROM codes WHERE email=?`, email);
   if (tooMany('fv:' + ipOf(req), 15, 60 * 60_000)) E(429, 'Trop de tentatives.');
+  if (blockedNow('cfail:' + email, CFAIL_MAX, CFAIL_WIN)) E(429, 'Trop de codes incorrects pour cette adresse aujourd’hui. Réessayez demain.');
   if (!r || r.expires < now()) E(400, 'Ce code a expiré. Demandez-en un nouveau.');
   if (r.tries >= 5) { run(`DELETE FROM codes WHERE email=?`, email); E(400, 'Trop d’essais. Demandez un nouveau code.'); }
-  if (sha(String(body.code || '').trim()) !== r.code) { run(`UPDATE codes SET tries=tries+1 WHERE email=?`, email); E(400, 'Code incorrect.'); }
+  if (sha(String(body.code || '').trim()) !== r.code) { tooMany('cfail:' + email, CFAIL_MAX, CFAIL_WIN); run(`UPDATE codes SET tries=tries+1 WHERE email=?`, email); E(400, 'Code incorrect.'); }
   passOk(body.pass, email);
   const u = q1(`SELECT * FROM users WHERE email=?`, email); if (!u) E(400, 'Code incorrect.');
   run(`UPDATE users SET pass=? WHERE id=?`, hashPass(String(body.pass)), u.id); run(`DELETE FROM codes WHERE email=?`, email); run(`DELETE FROM sessions WHERE user_id=?`, u.id);
@@ -589,9 +593,10 @@ R('POST', /^\/api\/code\/send$/, async ({ req, body }) => {
 R('POST', /^\/api\/code\/verify$/, async ({ req, res, body }) => {
   const email = clean(body.email, 120).toLowerCase(), r = q1(`SELECT * FROM codes WHERE email=?`, email);
   if (tooMany('cver:' + ipOf(req), 20, 60 * 60_000)) E(429, 'Trop de tentatives. Réessayez plus tard.');
+  if (blockedNow('cfail:' + email, CFAIL_MAX, CFAIL_WIN)) E(429, 'Trop de codes incorrects pour cette adresse aujourd’hui. Utilisez « Continuer avec Google » ou réessayez demain.');
   if (!r || r.expires < now()) E(400, 'Ce code a expiré. Demandez-en un nouveau.');
   if (r.tries >= 5) { run(`DELETE FROM codes WHERE email=?`, email); E(400, 'Trop d’essais. Demandez un nouveau code.'); }
-  if (sha(String(body.code || '').replace(/\s/g, '')) !== r.code) { run(`UPDATE codes SET tries=tries+1 WHERE email=?`, email); E(400, 'Code incorrect. Vérifiez le dernier e-mail reçu.'); }
+  if (sha(String(body.code || '').replace(/\s/g, '')) !== r.code) { tooMany('cfail:' + email, CFAIL_MAX, CFAIL_WIN); run(`UPDATE codes SET tries=tries+1 WHERE email=?`, email); E(400, 'Code incorrect. Vérifiez le dernier e-mail reçu.'); }
   run(`DELETE FROM codes WHERE email=?`, email);
   const u = q1(`SELECT * FROM users WHERE email=? AND guest IS NULL`, email);
   if (u) { setSession(res, u.id); return { me: meOut(u) }; }
