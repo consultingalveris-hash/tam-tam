@@ -5,7 +5,7 @@ name: Application Android
 # pour que la clé de l'application ne soit jamais stockée ici.
 on:
   push:
-    branches: [main]
+    branches: [main, essai]
     paths: ['mobile/**', '.github/workflows/android.yml']
   workflow_dispatch:
 

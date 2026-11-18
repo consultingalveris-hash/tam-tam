@@ -175,7 +175,7 @@ async function startApp() {
   await PP.init().catch(() => {});
   try { Object.keys(localStorage).filter(k => k.startsWith('tt-trlearn:')).forEach(k => localStorage.removeItem(k)); } catch {}
   Tr.loadSt();
-  renderAll(); if (!fast) Perf.add('open', performance.now()); connect();  if (typeof Secours !== "undefined") Secours.load(); Outbox.flush(); Prefetch.run(); if (S.locked) showLock(); if (!S.me.handleSet) HPick.open();
+  renderAll(); if (!fast) Perf.add('open', performance.now()); connect();  if (typeof Secours !== "undefined") Secours.load(); if (typeof Px !== "undefined") Px.init(); Outbox.flush(); Prefetch.run(); if (S.locked) showLock(); if (!S.me.handleSet) HPick.open();
   GCall.loadActive(); Call.checkPending(); Device.badge(); LocShare.sync();
   if (!S.locked && S.lock.type !== 'off') setTimeout(offerBio, 1500);
   if (S.pendingChat && S.chats.has(S.pendingChat)) openChat(S.pendingChat); S.pendingChat = 0;
@@ -212,8 +212,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && typ
 function connect() {
   if (es) es.close();
   es = new EventSource('/api/stream');
+  es.onopen = () => { S.esDown = 0; if (typeof Px !== 'undefined') Px.tick(); };
   es.onmessage = e => { let ev; try { ev = JSON.parse(e.data); } catch { return; } onEvent(ev); };
-  es.onerror = () => { /* le navigateur se reconnecte tout seul */ if (typeof Secours !== 'undefined') Secours.fail(); };
+  es.onerror = () => { if (!S.esDown) S.esDown = Date.now(); /* le navigateur se reconnecte tout seul */ if (typeof Secours !== 'undefined') Secours.fail(); };
 }
 let resync = null;
 function onEvent(ev) {
@@ -247,7 +248,7 @@ async function reveal(m) {
   const r = await E2E.open(m.enc, S.me.id);
   if (r.err === 'absent') { m.text = '🔒 Message chiffré avant votre arrivée, ou pour une ancienne clé'; m.locked = true; }
   else if (r.err) { m.text = '🔒 Message illisible sur cet appareil'; m.locked = true; }
-  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.w > 0 && r.payload.h > 0) { m.w = +r.payload.w; m.h = +r.payload.h; } if (Thumb.ok(r.payload.th)) m.th = r.payload.th; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; if (r.payload.loc) m.loc = r.payload.loc; if (r.payload.sr) m.sr = r.payload.sr; if (r.payload.pc) m.pc = true; if (r.payload.fl) m.fl = true; if (r.payload.name) { m.fname = r.payload.name; m.fsize = r.payload.size || 0; m.fmime = r.payload.mime || 'application/octet-stream'; } }
+  else { m.text = r.payload.t || ''; m.miv = r.payload.miv || null; m._key = r.key; if (r.payload.w > 0 && r.payload.h > 0) { m.w = +r.payload.w; m.h = +r.payload.h; } if (Thumb.ok(r.payload.th)) m.th = r.payload.th; if (r.payload.o != null) { m.orig = r.payload.o; m.olang = r.payload.ol || ''; m.tlang = r.payload.tl || ''; m.fx = !!r.payload.fx; } if (r.payload.mime) m.amime = r.payload.mime; if (r.payload.dur) m.dur = r.payload.dur; if (r.payload.loc) m.loc = r.payload.loc; if (r.payload.sr) m.sr = r.payload.sr; if (r.payload.pc) m.pc = true; if (r.payload.fl) m.fl = true; if (typeof r.payload.px === 'string') m.pxid = r.payload.px; if (r.payload.name) { m.fname = r.payload.name; m.fsize = r.payload.size || 0; m.fmime = r.payload.mime || 'application/octet-stream'; } }
   return m;
 }
 async function loadChats(pre) { const r = pre || await api('/api/chats'); if (!pre) Local.put('chats', r); const map = new Map(); for (const c of r.chats) { keepUsers(Object.values(c.users)); await reveal(c.last); if (c.pinMsg) await reveal(c.pinMsg); map.set(c.id, c); } S.chats = map; }
@@ -319,7 +320,7 @@ function lkBanner() {
 }
 function renderBody() {
   const b = $('#body'); if (!b) return;
-  if (S.tab === 'chats') b.innerHTML = (lkBanner() || bkBanner()) + Device.banner() + gcallBanner() + chatRows();
+  if (S.tab === 'chats') b.innerHTML = (typeof Px !== 'undefined' ? Px.banner() : '') + (lkBanner() || bkBanner()) + Device.banner() + gcallBanner() + chatRows();
   else if (S.tab === 'contacts') { b.innerHTML = Book.body(); Book.after(); }
   else if (S.tab === 'calls') { b.innerHTML = Calls.body(); Calls.after(); }
   else if (S.tab === 'souvenirs') { b.innerHTML = Mem.body(); Mem.hydrate(b); }
@@ -498,7 +499,7 @@ function renderMain() {
   const main = $('#main'); if (!main) return;
   const c = S.chats.get(S.chatId);
   if (!c) { main.innerHTML = `<div class="chat-empty">${BRAND('empty')}<span>Choisissez une discussion, ou invitez vos proches depuis l’onglet Contacts.</span></div>`; return; }
-  main.innerHTML = `<header class="chat-head" id="chatHead"></header><div id="pinBar"></div><div class="msgs${c.hidden ? ' nocopy' : ''}" id="msgs" tabindex="0" aria-label="Messages"></div><div id="replyBar"></div><div id="compose"></div>`;
+  main.innerHTML = `<header class="chat-head" id="chatHead"></header><div id="pinBar"></div><div id="pxBar">${typeof Px !== 'undefined' ? Px.banner() : ''}</div><div class="msgs${c.hidden ? ' nocopy' : ''}" id="msgs" tabindex="0" aria-label="Messages"></div><div id="replyBar"></div><div id="compose"></div>`;
   renderChatHead(); renderPin(); renderComposer(); renderMessages();
   stickBottom($('#msgs'));
   $('#msgs').addEventListener('scroll', e => { if (e.target.scrollTop < 40 && S.more.get(S.chatId) && !S.loadingOld) { S.loadingOld = true; loadOlder().finally(() => { S.loadingOld = false; }); } });
@@ -530,7 +531,7 @@ function renderChatHead() {
   h.classList.remove('msel-head');
   const tu = typingIn(c.id); let sub;
   if (c.type === 'group') sub = tu ? `<small class="on">${esc(first(uOf(tu).name))} écrit…</small>` : `<small>${c.members.map(m => m.id === S.me.id ? 'Vous' : esc(first(uOf(m.id).name))).join(', ')}</small>`;
-  else { const u = uOf(c.peer); sub = tu ? '<small class="on">écrit…</small>' : `<small class="${u.busy ? 'busy' : u.online ? 'on' : ''}">${presLabel(u)}</small>`; }
+  else { const u = uOf(c.peer); sub = tu ? '<small class="on">écrit…</small>' : typeof Px !== 'undefined' && Px.isNear(c.peer) ? `<small class="on" title="À proximité : vos messages passent sans internet">${PX_IC} à proximité</small>` : `<small class="${u.busy ? 'busy' : u.online ? 'on' : ''}">${presLabel(u)}</small>`; }
   h.innerHTML = `<button class="ib back" type="button" data-act="back" aria-label="Retour">${I.back}</button>
     <button class="chat-id" type="button" data-act="chatInfo">${c.type === 'group' ? grpAv(c, 'sm') : stRing(uOf(c.peer), avatar(uOf(c.peer), 'sm'))}<span style="min-width:0"><b>${numSm(chatTitle(c))}</b>${sub}</span></button>
     ${c.type === 'direct' && !c.blocked ? `<button class="ib" type="button" data-act="callVideo" aria-label="Appel vidéo">${I.video}</button><button class="ib" type="button" data-act="callAudio" aria-label="Appel vocal">${I.phone}</button>` : ''}
@@ -615,7 +616,7 @@ async function sendText() {
   // Le message s'affiche tout de suite avec une horloge, puis part ; sans réseau, il attend et repart tout seul.
   Outbox.add(c.id, t, reply); Outbox.flush();
 }
-async function sendCore(c, t, reply, once, cid) {
+async function sendCore(c, t, reply, once, cid, px) {
   const t0 = performance.now();
   {
     let payload = {t}; const out = Tr.outL(c.id);
@@ -628,6 +629,7 @@ async function sendCore(c, t, reply, once, cid) {
       }
       catch (e) { toast('Message envoyé sans traduction : ' + e.message); }
     }
+    if (px) payload.px = px;
     const {env} = await E2E.seal(payload, recipients(c));
     const body = {enc: env}; if (reply) body.replyTo = reply; if (cid) body.cid = String(cid); if (once) { body.once = true; S.once = false; renderComposer(); }
     const r = await api(`/api/chats/${c.id}/messages`, body); Perf.add('send', performance.now() - t0); return r.msg;
@@ -739,7 +741,7 @@ let pressT, pressXY = [0, 0], pressFired = 0, pressDone = true, swipe = null, la
 function reactRail() {
   let el = document.getElementById('rrail'); const one = S.msel && S.msel.size === 1 ? [...S.msel][0] : null;
   const m = one && (S.msgs.get(S.chatId) || []).find(x => x.id === one);
-  if (!m || m.deleted || m.pending || m.kind === 'sys') { if (el) el.remove(); return; }
+  if (!m || m.deleted || m.pending || m.local || m.kind === 'sys') { if (el) el.remove(); return; }
   const list = [...new Set(QUICK.concat(typeof EMO !== 'undefined' ? EMO[1][2].slice(0, 30) : []))];
   if (!el) { el = document.createElement('div'); el.id = 'rrail'; el.className = 'rrail'; el.setAttribute('role', 'group'); el.setAttribute('aria-label', 'Réagir'); document.body.appendChild(el); }
   el.innerHTML = list.map(e => `<button type="button" data-act="railReact" data-id="${m.id}" data-e="${e}">${e}</button>`).join('');
@@ -753,7 +755,7 @@ function mselToggle(id) {
 // À la souris, cliquer dans la zone vide à côté d'un message ouvre son menu, comme le petit crochet.
 document.addEventListener('click', e => {
   if (S.msel || e.pointerType === 'touch' || !matchMedia('(pointer:fine)').matches) return; const row = e.target.closest('#msgs .msg[data-mid]:not(.typing-b)'); if (!row || e.target !== row) return;
-  const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +row.dataset.mid); if (!m || m.deleted || m.pending || m.kind === 'sys') return; msgMenu(m.id);
+  const m = (S.msgs.get(S.chatId) || []).find(x => x.id === +row.dataset.mid); if (!m || m.deleted || m.pending || m.local || m.kind === 'sys') return; msgMenu(m.id);
 });
 document.addEventListener('click', e => {
   if (!S.msel) return; const el = e.target.closest('#msgs .msg[data-mid]'); if (!el) return;

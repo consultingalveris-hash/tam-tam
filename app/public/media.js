@@ -71,9 +71,9 @@ function renderMessages(keep) {
     else if (m.kind === 'doc') body = docHtml(m) + (m.text ? Tr.txt(m) : '');
     else if (m.kind === 'audio') body = stQuote(m, out, c) + `<div class="voice">${I.mic}<audio controls preload="metadata" data-aud="${m.id}"></audio>${m.dur ? `<small>${Math.floor(m.dur / 60)}:${String(m.dur % 60).padStart(2, '0')}</small>` : ''}</div>`;
     else body = stQuote(m, out, c) + (m.replyTo ? quoteHtml(c, m.replyTo) : '') + (m.media ? (m.enc ? `<img class="photo" data-enc="${m.id}" ${Dim.style(m)} alt="Photo chiffrée"${E2E.imgs.has(m.id) ? ` src="${E2E.imgs.get(m.id)}"` : ''} data-act="zoom">` : `<img class="photo" src="${esc(m.media)}" ${Dim.style(m)} alt="Photo" loading="lazy" data-act="zoom">`) : '') + (m.text ? Tr.txt(m) : '');
-    h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble${!m.deleted && !m.once && (m.kind === 'video' || (m.media && m.kind !== 'audio' && m.kind !== 'doc' && m.kind !== 'loc')) ? ' mb' : ''}${m.pending ? ' pending' + (m.text ? ' cap' : '') : ''}">${m.pending ? '<span class="pend-spin" role="status" aria-label="Envoi en cours"></span>' : ''}
-      ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${m.fwd ? `<span class="fwd">${FWD_IC}Transféré</span>` : ''}${body}<span class="meta">${!out && m.pc ? PC_IC : ''}${m.edited ? '<i class="edited">modifié</i> ' : ''}${hm(m.at)}${m.pending ? ' 🕓' : out && !m.deleted ? tick(readState(c, m)) : ''}</span>
-      ${m.deleted || m.pending ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message" title="Options : réagir, répondre, transférer, épingler…">${I.chev}</button>`}</div>${reactsHtml(m)}</div>`;
+    h += `<div class="msg ${out ? 'out' : 'in'}${isFirst ? ' first' : ''}" data-mid="${m.id}"><div class="bubble${!m.deleted && !m.once && (m.kind === 'video' || (m.media && m.kind !== 'audio' && m.kind !== 'doc' && m.kind !== 'loc')) ? ' mb' : ''}${m.pending ? ' pending' + (m.text ? ' cap' : '') : ''}">${m.pending && !m.pxOk ? '<span class="pend-spin" role="status" aria-label="Envoi en cours"></span>' : ''}
+      ${!out && c.type === 'group' && isFirst ? `<span class="who" style="--h:${(m.from * 67) % 360}">${esc(u.name)}</span>` : ''}${m.fwd ? `<span class="fwd">${FWD_IC}Transféré</span>` : ''}${body}<span class="meta">${!out && m.pc ? PC_IC : ''}${m.edited ? '<i class="edited">modifié</i> ' : ''}${m.viaPx ? `<span class="px-m" title="Reçu sans internet, par un téléphone proche">${PX_IC}</span>` : ''}${hm(m.at)}${m.pending ? (m.pxOk ? ` <span class="px-m" title="Remis sans internet ; partira aussi par internet à son retour">${PX_IC}</span>` : ' 🕓') : out && !m.deleted ? tick(readState(c, m)) : ''}</span>
+      ${m.deleted || m.pending || m.local ? '' : `<button class="msg-more" type="button" data-act="msgMenu" data-id="${m.id}" aria-label="Options du message" title="Options : réagir, répondre, transférer, épingler…">${I.chev}</button>`}</div>${reactsHtml(m)}</div>`;
   }
   const tu = typingIn(c.id); if (tu) h += `<div class="msg in first typing-b"><div class="bubble" aria-label="En train d’écrire"><span class="dots"><i></i><i></i><i></i></span></div></div>`;
   morph(box, h);
@@ -146,6 +146,7 @@ async function hydrateImgs(chatId) {
   }
 }
 function onMsgIn(m, update) {
+  if (m && m.pxid && typeof Px !== 'undefined') Px.settle(m);
   let c = S.chats.get(m.chatId);
   if (!c) { S.typing.delete(m.chatId); if (m.from) S.lastFrom.set(m.chatId + ':' + m.from, Date.now()); loadChats().then(() => { renderAll(); const cc = S.chats.get(m.chatId); if (cc && m.from !== S.me.id && !update) notify(cc, m); }); return; }
   const list = S.msgs.get(m.chatId);
@@ -163,8 +164,8 @@ function onMsgIn(m, update) {
 let readT;
 function markRead() {
   const c = S.chats.get(S.chatId), list = S.msgs.get(S.chatId); if (!c || !list || !list.length) return;
-  const last = list[list.length - 1].id; c.unread = 0; c.marked = false; const me = c.members.find(x => x.id === S.me.id); if (me) me.lastRead = Math.max(me.lastRead, last);
-  clearTimeout(readT); readT = setTimeout(() => api(`/api/chats/${c.id}/read`, {upTo: last}).catch(() => {}), 300);
+  const lm = [...list].reverse().find(x => x.id > 0), last = lm ? lm.id : 0; c.unread = 0; c.marked = false; const me = c.members.find(x => x.id === S.me.id); if (me) me.lastRead = Math.max(me.lastRead, last);
+  clearTimeout(readT); if (last) readT = setTimeout(() => api(`/api/chats/${c.id}/read`, {upTo: last}).catch(() => {}), 300);
   renderTabs(); if (S.tab === 'chats') renderBody();
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.chatId) markRead(); });

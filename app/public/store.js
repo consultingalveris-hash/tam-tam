@@ -69,9 +69,9 @@ const Outbox = {
   key: () => 'tt-outbox:' + (S.me ? S.me.id : 0),
   list() { try { return JSON.parse(localStorage.getItem(this.key()) || '[]'); } catch { return []; } },
   save(l) { try { localStorage.setItem(this.key(), JSON.stringify(l)); } catch {} },
-  add(chatId, t, reply) { const it = {tmp: -(Date.now() * 100 + Math.floor(Math.random() * 100)), chatId, t, reply: reply || null, at: Date.now()}; this.save(this.list().concat(it)); this.show(it); return it; },
-  show(it) { const list = S.msgs.get(it.chatId); if (!list || list.some(x => x.id === it.tmp)) return; list.push({id: it.tmp, chatId: it.chatId, from: S.me.id, at: it.at, kind: 'text', text: it.t, pending: true, replyTo: it.reply}); if (S.chatId === it.chatId) renderMessages(true); },
-  restore(chatId) { for (const it of this.list()) if (!chatId || it.chatId === chatId) this.show(it); },
+  add(chatId, t, reply) { const it = {tmp: -(Date.now() * 100 + Math.floor(Math.random() * 100)), chatId, t, reply: reply || null, at: Date.now(), px: typeof Px !== 'undefined' && Px.avail() ? Px.hex(16) : undefined}; this.save(this.list().concat(it)); this.show(it); if (typeof Px !== 'undefined' && Px.on) Px.offer(it); return it; },
+  show(it) { const list = S.msgs.get(it.chatId); if (!list || list.some(x => x.id === it.tmp)) return; list.push({id: it.tmp, chatId: it.chatId, from: S.me.id, at: it.at, kind: 'text', text: it.t, pending: true, replyTo: it.reply, px: it.px, pxOk: !!it.pxOk}); if (S.chatId === it.chatId) renderMessages(true); },
+  restore(chatId) { for (const it of this.list()) if (!chatId || it.chatId === chatId) this.show(it); if (chatId && typeof Px !== 'undefined') Px.restore(chatId); },
   busy: false, t: 0,
   net: e => !navigator.onLine || /connexion|réseau|trop de temps/i.test((e && e.message) || '') || (e && e.status >= 500),
   async flush() {
@@ -79,7 +79,7 @@ const Outbox = {
     try {
       for (const it of this.list()) {
         const c = S.chats.get(it.chatId); if (!c) { this.drop(it.tmp); continue; }
-        try { const m = await sendCore(c, it.t, it.reply, false, it.tmp); this.drop(it.tmp); onMsg(m); }
+        try { const m = await sendCore(c, it.t, it.reply, false, it.tmp, it.px); this.drop(it.tmp); onMsg(m); }
         catch (e) { if (this.net(e)) break; this.drop(it.tmp); toast(e.message); const i = $('#msgIn'); if (i && !i.value && S.chatId === it.chatId) { i.value = it.t; syncSend(); } }
       }
     } finally { this.busy = false; }

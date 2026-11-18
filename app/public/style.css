@@ -1417,3 +1417,11 @@ body:has(#pop) .rrail,body:has(#layer .layer) .rrail{display:none}
 .ui-lang button{border:1px solid var(--line);background:transparent;color:inherit;border-radius:999px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}
 .ui-lang button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
 .set-block .ui-lang{justify-content:flex-start}
+/* Messages sans internet (téléphones proches) */
+.inst.px-ban{align-items:center}
+.inst.px-ban .bk-ic{width:40px;height:40px;border-radius:12px;background:var(--surface);color:var(--accent);display:grid;place-items:center;flex:none}
+.inst.px-ban .bk-ic svg{width:22px;height:22px}
+#pxBar .inst{margin:6px 10px 0}
+.px-m{display:inline-flex;vertical-align:-2px;color:var(--accent);margin-right:3px}
+.chat-head small .px-ic{vertical-align:-2px}
+.msg.out .px-m{color:inherit;opacity:.85}
