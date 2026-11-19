@@ -238,6 +238,7 @@ R('GET', /^\/api\/users\/search$/, async ({ me, url }) => {
   return { users: rows.filter(u => !blockedEither(me.id, u.id) && (u.handle.startsWith(q) || relation(me.id, u.id) === 'contact')).slice(0, 20).map(u => userCard(u, me.id)) };
 });
 R('GET', /^\/api\/users\/(\d+)$/, async ({ me, m }) => {
+  if (tooMany('ucard:' + me.id, 400, 60 * 60_000)) E(429, 'Trop de demandes. Réessayez plus tard.'); // audit du 18/11/2026 : empêche de parcourir tous les comptes un par un
   const u = getUser(+m[1]); if (!u || (blockedEither(me.id, u.id) && !iBlocked(me.id, u.id))) E(404, 'Personne introuvable.');
   return { user: userCard(u, me.id) };
 });
