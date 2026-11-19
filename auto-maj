@@ -28,6 +28,6 @@ if [ -d ../tam-tam-essai ] && [ "$(git -C ../tam-tam-essai rev-parse HEAD)" != "
   bash essai >> "$LOG" 2>&1; echo "$(date '+%F %T') site d'essai : terminé" >> "$LOG"
 fi
 # Résumé de l'état du serveur pour la page « état du serveur » (audit de sécurité quotidien).
-[ -f etat-hote ] && bash etat-hote >/dev/null 2>>"$LOG"
+[ -f etat-hote ] && { bash etat-hote >/dev/null 2>>"$LOG" || echo "$(date "+%F %T") etat-hote : échec" >> "$LOG"; }
 exit 0
 }
