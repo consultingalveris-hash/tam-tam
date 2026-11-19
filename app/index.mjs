@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { ALT_ORIGINS, BASE_URL, E, HttpError, PORT, PUB, currentUser, fail, readJson, routes, secure, send, serveFile } from './srv/core.mjs';
+import { ALT_ORIGINS, BASE_URL, E, HttpError, PORT, PUB, currentUser, fail, ipOf, readJson, routes, secure, send, serveFile } from './srv/core.mjs';
 import './srv/comptes.mjs';
 import './srv/appels.mjs';
 import { LK_URL } from './srv/groupes.mjs';
@@ -11,6 +11,7 @@ import './srv/messages.mjs';
 import './srv/google.mjs';
 import './srv/traduction.mjs';
 import { VITRINE_ORIGIN } from './srv/visite.mjs';
+import { noter } from './srv/etat.mjs';
 
 // Ordre des routes : celui des fichiers (rang), puis celui de déclaration dans chaque fichier (tri stable).
 routes.sort((a, b) => a.rank - b.rank);
@@ -44,11 +45,12 @@ const server = http.createServer(async (req, res) => {
     if (fs.existsSync(f) && fs.statSync(f).isFile()) return serveFile(res, f, SEC);
     send(res, 404, 'Page introuvable');
   } catch (e) {
-    if (e instanceof HttpError) return fail(res, e.code, e.message);
-    console.error(e); if (!res.headersSent) fail(res, 500, 'Erreur du serveur. Réessayez.');
+    // Page « état du serveur » (audit) : refus d'accès et erreurs sont notés (sans contenu des messages).
+    if (e instanceof HttpError) { if ([401, 403, 429].includes(e.code)) noter('refus' + e.code, p, ipOf(req)); return fail(res, e.code, e.message); }
+    noter('erreur', p, null); console.error(e); if (!res.headersSent) fail(res, 500, 'Erreur du serveur. Réessayez.');
   }
 });
 // Filet de sécurité : une erreur imprévue est notée dans le journal au lieu d'arrêter Tam-Tam pour tout le monde.
 process.on('unhandledRejection', e => console.error('erreur non gérée', e));
-process.on('uncaughtException', e => console.error('erreur non gérée', e));
+process.on('uncaughtException', e => { noter('plantage', null, null); console.error('erreur non gérée', e); });
 server.listen(PORT, () => console.log(`tam-tam en écoute sur ${PORT} — ${BASE_URL}`));

@@ -103,6 +103,11 @@ SECRET_BK=$(cat "$SECRET_BK_F")
 SECRET_RL_F=/root/.tam-tam-relais-secret
 [ -s "$SECRET_RL_F" ] || { head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$SECRET_RL_F"; chmod 600 "$SECRET_RL_F"; }
 SECRET_RL=$(cat "$SECRET_RL_F")
+# Clé de la page « état du serveur » (audit du 19/11/2026) : envoyée une fois par e-mail au propriétaire par Tam-Tam.
+SECRET_ET_F=/root/.tam-tam-etat-secret
+[ -s "$SECRET_ET_F" ] || { head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$SECRET_ET_F"; chmod 600 "$SECRET_ET_F"; }
+SECRET_ET=$(cat "$SECRET_ET_F")
+mkdir -p /var/lib/tam-tam-etat; bash "$DOSSIER/etat-hote" >/dev/null 2>&1 || true
 
 # Adresse de secours (même serveur, autre nom de domaine, sans Cloudflare) et relais déclarés :
 # l'adresse de secours n'est branchée que lorsque son nom pointe bien vers ce serveur.
@@ -117,9 +122,9 @@ docker build -q -t "$APP:latest" "$DOSSIER/app" >/dev/null
 docker volume create "$VOLUME" >/dev/null
 docker rm -f "$APP" >/dev/null 2>&1 || true
 docker run -d --name "$APP" --restart unless-stopped --network "$NET" --memory "$( [ -n "$ESSAI" ] && echo 256m || echo 512m )" \
-  -v "$VOLUME:/data" \
+  -v "$VOLUME:/data" -v /var/lib/tam-tam-etat:/hote:ro \
   -e BASE_URL="https://$DOMAINE" -e OWNER_EMAIL="$PROPRIETAIRE" \
-  -e TURN_SECRET="$SECRET_TURN" -e TURN_HOST="${IP_PUB:-$DOMAINE}" -e BACKUP_KEY="$SECRET_BK" -e ALT_ORIGINS="$ALT" -e RELAY_SECRET="$SECRET_RL" -e DIRECT_HOSTS="$SECOURS" \
+  -e TURN_SECRET="$SECRET_TURN" -e TURN_HOST="${IP_PUB:-$DOMAINE}" -e BACKUP_KEY="$SECRET_BK" -e ALT_ORIGINS="$ALT" -e RELAY_SECRET="$SECRET_RL" -e DIRECT_HOSTS="$SECOURS" -e ETAT_SECRET="$SECRET_ET" \
   -e LK_URL="${LK_KEY:+wss://$DOMAINE/lk}" -e LK_API="${LK_KEY:+http://tam-tam-lk:7880}" -e LK_KEY="$LK_KEY" -e LK_SECRET="$LK_SECRET" \
   "$APP:latest" >/dev/null
 sleep 3

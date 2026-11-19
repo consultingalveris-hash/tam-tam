@@ -1,0 +1,44 @@
+#!/bin/bash
+# Résumé de l'état du serveur LWS pour la page « état du serveur » de Tam-Tam (audit du 19/11/2026).
+# Lancé par auto-maj toutes les 5 minutes (en tant que root, sur le serveur). Écrit /var/lib/tam-tam-etat/etat.json,
+# que le conteneur Tam-Tam lit en lecture seule. Contenu : connexions à distance (SSH) acceptées et refusées,
+# empreintes des clés d'accès, comptes du système qui peuvent se connecter, programmes (conteneurs) lancés,
+# place sur le disque, fin du journal des mises à jour. Aucun mot de passe ni aucune donnée des membres.
+OUT=/var/lib/tam-tam-etat; mkdir -p "$OUT"; chmod 755 "$OUT"
+command -v python3 >/dev/null || { echo '{"erreur":"python3 absent sur le serveur"}' > "$OUT/etat.json"; exit 0; }
+SSHLOG=$( { journalctl -u ssh -u sshd --since "7 days ago" --no-pager -o short-iso 2>/dev/null; grep -h sshd /var/log/auth.log /var/log/auth.log.1 2>/dev/null; } | grep -E "Accepted|Failed password|Invalid user" | tail -n 5000)
+KEYS=$(for f in /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys; do [ -f "$f" ] && ssh-keygen -lf "$f" 2>/dev/null | sed "s|^|$f |"; done)
+USERS=$(getent passwd | awk -F: '$7 !~ /(nologin|false|sync|halt|shutdown)$/ {print $1":"$3":"$7}')
+SUDO=$(getent group sudo wheel 2>/dev/null | cut -d: -f4 | tr ',' '\n' | sort -u | tr '\n' ' ')
+DOCK=$(docker ps --format '{{.Names}} {{.Image}} {{.Status}}' 2>/dev/null)
+DISK=$(df -P / | awk 'NR==2 {print $5}')
+MAJ=$(tail -n 15 /var/log/tam-tam-auto-maj.log 2>/dev/null)
+SSHLOG="$SSHLOG" KEYS="$KEYS" USERS="$USERS" SUDO="$SUDO" DOCK="$DOCK" DISK="$DISK" MAJ="$MAJ" python3 - "$OUT/etat.json" <<'PY'
+import json, os, re, sys, time
+e = os.environ.get
+log = [l for l in e('SSHLOG', '').splitlines() if l.strip()]
+acc = []
+for l in log:
+    m = re.search(r'Accepted (\S+) for (\S+) from (\S+)', l)
+    if m: acc.append({'ligne': l[:32], 'methode': m.group(1), 'compte': m.group(2), 'depuis': m.group(3)})
+fail = [l for l in log if 'Failed password' in l or 'Invalid user' in l]
+ips = {}
+for l in fail:
+    m = re.search(r'from (\S+)', l)
+    if m: ips[m.group(1)] = ips.get(m.group(1), 0) + 1
+out = {
+  'ecrit': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+  'ssh': {'connexionsAcceptees7j': acc[-30:], 'nombreAcceptees7j': len(acc), 'essaisRefuses7j': len(fail),
+          'adressesLesPlusInsistantes': sorted(ips.items(), key=lambda x: -x[1])[:8]},
+  'clesAcces': [k for k in e('KEYS', '').splitlines() if k.strip()],
+  'comptesQuiPeuventSeConnecter': [u for u in e('USERS', '').splitlines() if u.strip()],
+  'administrateursSysteme': e('SUDO', '').split(),
+  'conteneurs': [d for d in e('DOCK', '').splitlines() if d.strip()],
+  'disqueUtilise': e('DISK', ''),
+  'misesAJour': [m for m in e('MAJ', '').splitlines() if m.strip()],
+}
+tmp = sys.argv[1] + '.tmp'
+with open(tmp, 'w') as f: json.dump(out, f, ensure_ascii=False, indent=1)
+os.chmod(tmp, 0o644); os.replace(tmp, sys.argv[1])
+PY
+exit 0

@@ -17,7 +17,7 @@ if [ "$1" = desactiver ]; then systemctl disable --now tam-tam-auto-maj.timer; e
 cd "$(dirname "$(readlink -f "$0")")" || exit 1
 exec 9>/tmp/tam-tam-auto-maj.lock; flock -n 9 || exit 0
 LOG=/var/log/tam-tam-auto-maj.log
-git fetch -q origin 2>>"$LOG" || exit 0
+git fetch -q origin 2>>"$LOG" || { [ -f etat-hote ] && bash etat-hote >/dev/null 2>&1; exit 0; }
 if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
   echo "$(date '+%F %T') vrai site : mise à jour vers $(git log -1 --format='%h %s' origin/main)" >> "$LOG"
   if git pull -q --ff-only origin main >> "$LOG" 2>&1; then bash installer >> "$LOG" 2>&1; echo "$(date '+%F %T') vrai site : terminé" >> "$LOG"
@@ -27,5 +27,7 @@ if [ -d ../tam-tam-essai ] && [ "$(git -C ../tam-tam-essai rev-parse HEAD)" != "
   echo "$(date '+%F %T') site d'essai : mise à jour vers $(git log -1 --format='%h %s' origin/essai)" >> "$LOG"
   bash essai >> "$LOG" 2>&1; echo "$(date '+%F %T') site d'essai : terminé" >> "$LOG"
 fi
+# Résumé de l'état du serveur pour la page « état du serveur » (audit de sécurité quotidien).
+[ -f etat-hote ] && bash etat-hote >/dev/null 2>>"$LOG"
 exit 0
 }
