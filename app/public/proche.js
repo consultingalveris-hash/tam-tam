@@ -4,24 +4,28 @@
    - Chaque message reste chiffré de bout en bout (même enveloppe que sur le serveur) : un téléphone qui relaie ne peut pas le lire.
    - Le message part aussi par internet dès son retour (file d'envoi) ; le destinataire ne le voit qu'une fois (numéro « px » commun).
    - Seuls les contacts acceptés peuvent s'écrire ; un message dont l'expéditeur ne correspond pas à sa clé connue est ignoré.
+   - Audit du 19/11/2026 : l'heure et la réponse citée sont scellées dans le message chiffré (un relais ne peut plus les changer),
+     un message déjà reçu ne peut pas être rejoué, l'accusé de réception porte un secret que seul le vrai destinataire connaît
+     (un téléphone proche ne peut plus faire croire qu'un message est arrivé), et un téléphone qui inonde est freiné.
    Le pont avec le téléphone : TamTamAndroid.pxStart / pxStop / pxSend (version 3 de l'application) ; les nouvelles
    arrivent par l'événement « tt-px » (detail.k : up, perm, radio, peer, gone, data, err). */
 'use strict';
 const Px = {
-  HOPS: 8, LIFE: 48 * 3600e3, MAX: 400, SIZE: 30000,
-  on: false, want: false, state: '', peers: new Map(), near: new Map(), seen: new Map(), box: null, msgs: null, radioAsked: 0,
+  HOPS: 8, LIFE: 48 * 3600e3, MAX: 400, SIZE: 30000, RATE: 120, PER: 60,
+  on: false, want: false, state: '', peers: new Map(), near: new Map(), seen: new Map(), done: new Map(), rate: new Map(), box: null, msgs: null, radioAsked: 0,
   avail() { try { return !!(window.TamTamAndroid && window.TamTamAndroid.version && window.TamTamAndroid.version() >= 3); } catch { return false; } },
   pref() { try { return localStorage.getItem('tt:pxOff') !== '1'; } catch { return true; } },
   setPref(on) { try { if (on) localStorage.removeItem('tt:pxOff'); else localStorage.setItem('tt:pxOff', '1'); } catch {} this.tick(); },
   // « Sans internet » : le téléphone le dit, ou le serveur ne répond plus depuis 15 secondes.
   offline() { return !navigator.onLine || !!S.offline || (S.esDown > 0 && Date.now() - S.esDown > 15000); },
   hex(n) { return [...crypto.getRandomValues(new Uint8Array(n))].map(b => b.toString(16).padStart(2, '0')).join(''); },
+  async sha(t) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(t))))].map(b => b.toString(16).padStart(2, '0')).join(''); },
   key: k => 'px' + k + ':' + (S.me ? S.me.id : 0),
   load(k, d) { try { return JSON.parse(localStorage.getItem(this.key(k)) || 'null') || d; } catch { return d; } },
   save(k, v) { try { localStorage.setItem(this.key(k), JSON.stringify(v)); } catch {} },
   init() {
     if (this.ready || !this.avail()) return; this.ready = true;
-    this.box = this.load('box', []); this.seen = new Map(this.load('seen', [])); this.clean();
+    this.box = this.load('box', []); this.seen = new Map(this.load('seen', [])); this.done = new Map(this.load('done', [])); this.clean();
     window.addEventListener('tt-px', e => this.ev(e.detail || {}).catch(() => {}));
     window.addEventListener('online', () => this.tick()); window.addEventListener('offline', () => this.tick());
     // Une seule fois, au premier lancement de la version qui sait le faire : l'autorisation « Appareils à proximité »,
@@ -52,11 +56,24 @@ const Px = {
     const now = Date.now(); this.box = this.box.filter(p => now - p.at < this.LIFE).slice(-this.MAX);
     for (const [id, at] of this.seen) if (now - at > this.LIFE) this.seen.delete(id);
     if (this.seen.size > 3000) this.seen = new Map([...this.seen].slice(-2000));
-    this.save('box', this.box); this.save('seen', [...this.seen]);
+    // Messages déjà remis : gardés 30 jours pour refuser une copie rejouée plus tard par un téléphone malveillant.
+    for (const [id, at] of this.done) if (now - at > 30 * 864e5) this.done.delete(id);
+    if (this.done.size > 5000) this.done = new Map([...this.done].slice(-4000));
+    this.save('box', this.box); this.save('seen', [...this.seen]); this.save('done', [...this.done]);
   },
   send(ep, p) { const s = JSON.stringify(p); if (s.length > this.SIZE) return; try { window.TamTamAndroid.pxSend(ep || '', btoa(unescape(encodeURIComponent(s)))); } catch {} },
   spread(p, except) { for (const ep of this.peers.keys()) if (ep !== except) this.send(ep, p); },
-  keep(p) { if (this.box.some(x => x.id === p.id)) return; this.box.push(p); this.clean(); },
+  keep(p) {
+    if (this.box.some(x => x.id === p.id)) return;
+    // Un même expéditeur ne peut pas occuper toute la place (sinon un téléphone malveillant chasserait les vrais messages).
+    if (p.f !== S.me.id && this.box.filter(x => x.f === p.f).length >= this.PER) return;
+    this.box.push(p); this.clean();
+  },
+  // Frein : au-delà de 120 paquets par minute venant d'un même téléphone proche, le surplus est ignoré.
+  flood(ep) {
+    const now = Date.now(), r = this.rate.get(ep) || {t: now, n: 0}; if (now - r.t > 60e3) { r.t = now; r.n = 0; }
+    r.n++; this.rate.set(ep, r); return r.n > this.RATE;
+  },
   async ev(d) {
     if (d.k === 'up') { this.state = 'on'; this.paint(); }
     else if (d.k === 'perm') { this.state = d.ok ? 'on' : 'perm'; this.paint(); }
@@ -67,17 +84,18 @@ const Px = {
       // Présentation (numéro de membre seulement), puis tout ce qu'on transporte : ses messages et ceux qu'on relaie.
       this.send(d.ep, {k: 'hi', u: S.me.id}); for (const p of this.box) this.send(d.ep, p); this.paint();
     } else if (d.k === 'gone') { const pr = this.peers.get(d.ep); this.peers.delete(d.ep); if (pr && pr.uid) this.near.delete(pr.uid); this.paint(); }
-    else if (d.k === 'data') { let p; try { p = JSON.parse(decodeURIComponent(escape(atob(d.d)))); } catch { return; } await this.got(p, d.ep); }
+    else if (d.k === 'data') { if (this.flood(d.ep)) return; let p; try { p = JSON.parse(decodeURIComponent(escape(atob(d.d)))); } catch { return; } await this.got(p, d.ep); }
   },
   async got(p, ep) {
     if (!p || typeof p !== 'object') return;
-    if (p.k === 'hi') { const u = +p.u; if (!u) return; const pr = this.peers.get(ep); if (pr) pr.uid = u; this.near.set(u, Date.now()); this.paint(); return; }
-    if ((p.k !== 'm' && p.k !== 'a') || typeof p.id !== 'string' || !/^[0-9a-f]{16,40}$/.test(p.id) || !Array.isArray(p.to)) return;
+    if (p.k === 'hi') { const u = +p.u; if (!u || u === S.me.id) return; const pr = this.peers.get(ep); if (pr) pr.uid = u; this.near.set(u, Date.now()); this.paint(); return; }
+    if ((p.k !== 'm' && p.k !== 'a') || typeof p.id !== 'string' || !/^[0-9a-f]{16,40}$/.test(p.id) || !Array.isArray(p.to) || !p.to.length || p.to.length > 300) return;
+    p.f = +p.f || 0;
     if (this.seen.has(p.id)) return; this.seen.set(p.id, Date.now());
     const age = Date.now() - (+p.at || 0); if (!(age < this.LIFE) || age < -6e5) return;
     const forMe = p.to.map(Number).includes(S.me.id);
     if (forMe && p.k === 'm') await this.deliver(p);
-    if (forMe && p.k === 'a') this.acked(p);
+    if (forMe && p.k === 'a') await this.acked(p);
     // Relais de proche en proche : pour les autres destinataires, tant qu'il reste des sauts.
     if ((+p.h || 0) < this.HOPS && p.to.some(u => +u !== S.me.id)) { const q = {...p, h: (+p.h || 0) + 1}; this.keep(q); this.spread(q, ep); }
     else this.clean();
@@ -87,26 +105,38 @@ const Px = {
     if (c.type === 'direct' && (c.blocked || !(S.contacts.contacts || []).some(u => u.id === from))) return;
     const u = uOf(from); if (!u.pubkey || !p.env || !p.env.from || p.env.from.x !== u.pubkey.x || p.env.from.y !== u.pubkey.y) return;
     const o = await E2E.open(p.env, S.me.id); if (o.err || !o.payload || o.payload.px !== p.id) return;
-    const list = this.mine(); if (list.some(m => m.px === p.id)) return;
-    const m = {id: -(9e14 + Math.floor(Math.random() * 9e13)), chatId: c.id, from, at: +p.at, kind: 'text', text: String(o.payload.t || '').slice(0, 20000), px: p.id, viaPx: true, local: true, replyTo: +p.rp || null};
-    list.push(m); this.saveMine(list);
-    // Accusé de réception, qui revient de proche en proche jusqu'à l'expéditeur.
-    const a = {k: 'a', id: this.hex(16), px: p.id, f: S.me.id, to: [from], at: Date.now(), h: 0}; this.seen.set(a.id, Date.now()); this.keep(a); this.spread(a);
+    // L'heure doit être celle scellée par l'expéditeur (un relais ne peut ni la changer, ni rajeunir un vieux message).
+    if (o.payload.at !== +p.at) return;
+    const list = this.mine(); if (this.done.has(p.id) || list.some(m => m.px === p.id)) return;
+    this.done.set(p.id, Date.now());
+    const m = {id: -(9e14 + Math.floor(Math.random() * 9e13)), chatId: c.id, from, at: +o.payload.at, kind: 'text', text: String(o.payload.t || '').slice(0, 20000), px: p.id, viaPx: true, local: true, replyTo: +o.payload.rp || null};
+    list.push(m); this.saveMine(list); this.clean();
+    // Accusé de réception, qui revient de proche en proche jusqu'à l'expéditeur, avec le secret lu dans le message chiffré.
+    if (typeof o.payload.ak === 'string' && /^[0-9a-f]{32}$/.test(o.payload.ak)) { const a = {k: 'a', id: this.hex(16), px: p.id, ak: o.payload.ak, f: S.me.id, to: [from], at: Date.now(), h: 0}; this.seen.set(a.id, Date.now()); this.keep(a); this.spread(a); }
     const l = S.msgs.get(c.id); if (l && !l.some(x => x.px === p.id)) { l.push(m); l.sort((x, y) => (x.at || 0) - (y.at || 0)); }
     c.last = m; onMsgIn(m, true);
     const visible = S.chatId === c.id && !document.hidden; if (!visible) { c.unread = (c.unread || 0) + 1; notify(c, m); renderTabs(); if (S.tab === 'chats') renderBody(); }
   },
-  acked(a) {
-    const l = Outbox.list(); let hit = false; for (const it of l) if (it.px === a.px && !it.pxOk) { it.pxOk = true; hit = true; }
+  // Un accusé n'est cru que s'il porte le secret scellé dans le message : seul le vrai destinataire a pu le lire.
+  async acked(a) {
+    if (typeof a.ak !== 'string' || !/^[0-9a-f]{32}$/.test(a.ak)) return;
+    const l = Outbox.list(); let hit = false; for (const it of l) if (it.px === a.px && it.pak === a.ak && !it.pxOk) { it.pxOk = true; hit = true; }
     if (hit) { Outbox.save(l); for (const ms of S.msgs.values()) for (const m of ms) if (m.px === a.px && m.pending) m.pxOk = true; if (S.chatId) renderMessages(true); }
-    this.box = this.box.filter(p => !(p.k === 'm' && p.id === a.px && p.to.length === 1)); this.clean();
+    await this.drop(a);
+  },
+  // Chez un relais aussi : le message n'est retiré que si l'accusé est authentique (empreinte du secret).
+  async drop(a) {
+    if (typeof a.ak !== 'string') return; const h = await this.sha(a.ak);
+    this.box = this.box.filter(p => !(p.k === 'm' && p.id === a.px && p.to.length === 1 && p.ah === h)); this.clean();
   },
   // Un message écrit sans internet : il part aussi vers les téléphones proches (et attend internet dans la file d'envoi).
   async offer(it) {
     if (!this.avail() || !it.px) return;
     const c = S.chats.get(it.chatId); if (!c || (c.type === 'direct' && c.blocked)) return;
-    let env; try { env = (await E2E.seal({t: it.t, px: it.px}, recipients(c))).env; } catch { return; }
-    const p = {k: 'm', id: it.px, c: c.id, f: S.me.id, to: c.members.map(m => m.id).filter(x => x !== S.me.id), at: it.at, h: 0, env, rp: it.reply || null};
+    // Secret d'accusé, propre à ce message et gardé dans la file d'envoi : seul le destinataire le lira (dans le message chiffré).
+    if (!it.pak) { it.pak = this.hex(16); const l = Outbox.list(), x = l.find(y => y.tmp === it.tmp); if (x) { x.pak = it.pak; Outbox.save(l); } }
+    let env; try { env = (await E2E.seal({t: it.t, px: it.px, at: it.at, rp: it.reply || null, ak: it.pak}, recipients(c))).env; } catch { return; }
+    const p = {k: 'm', id: it.px, c: c.id, f: S.me.id, to: c.members.map(m => m.id).filter(x => x !== S.me.id), at: it.at, h: 0, env, rp: it.reply || null, ah: await this.sha(it.pak)};
     this.seen.set(p.id, Date.now()); this.keep(p); this.spread(p);
   },
   // Messages reçus sans internet, gardés (chiffrés) sur l'appareil jusqu'à l'arrivée de la copie passée par le serveur.
