@@ -66,6 +66,12 @@ await unlink('R', 'A'); await link('D', 'R'); await d.waitForTimeout(1500);
 out('accusé revenu chez Désiré par Rémi :', await d.evaluate(() => { const el = [...document.querySelectorAll('#msgs .msg.out')].pop(); return el.textContent.includes('Message porté par Rémi') && !!el.querySelector('.px-m'); }));
 out('faux expéditeur ignoré :', await a.evaluate(async rid => { const before = Px.mine().length; await Px.got({k: 'm', id: Px.hex(16), c: S.chatId, f: rid, to: [S.me.id], at: Date.now(), h: 0, env: {v: 2, from: {x: 'x', y: 'y'}, keys: {}}}, 'X'); return Px.mine().length === before; }, await r.evaluate(() => S.me.id)));
 
+// --- Audit du 19/11/2026 : attaques d'un téléphone proche malveillant ---
+out('faux accusé sans secret ignoré :', await d.evaluate(async () => { $('#msgIn').value = 'Test accusé'; syncSend(); document.querySelector('form[data-form=send]').requestSubmit(); await new Promise(r => setTimeout(r, 900)); const it = Outbox.list().pop(); await Px.got({k: 'a', id: Px.hex(16), px: it.px, ak: Px.hex(16), f: 1, to: [S.me.id], at: Date.now(), h: 0}, 'X'); return !Outbox.list().find(x => x.px === it.px).pxOk && Px.box.some(p => p.id === it.px); }));
+out('rejeu d’un message déjà reçu (après effacement de la copie locale) ignoré :', await r.evaluate(() => Px.box.find(x => x.k === 'm')).then(p => a.evaluate(async q => { Px.seen.delete(q.id); Px.saveMine(Px.mine().filter(m => m.px !== q.id)); await Px.got({...q, h: 0}, 'X'); return Px.mine().filter(m => m.px === q.id).length === 0; }, p)));
+out('heure modifiée par un relais refusée :', await r.evaluate(() => { const p = Px.box.find(x => x.k === 'm'); return p ? {...p, at: p.at + 3600e3, h: 0} : null; }).then(p => p ? a.evaluate(async q => { q.id = q.id; Px.seen.delete(q.id); Px.done.delete(q.id); const before = Px.mine().filter(m => m.px === q.id).length; const l = Px.mine().filter(m => m.px !== q.id); Px.saveMine(l); await Px.got(q, 'X'); return Px.mine().filter(m => m.px === q.id).length === 0 && before >= 0; }, p) : 'pas de paquet'));
+out('inondation freinée :', await a.evaluate(async () => { let n = 0; for (let i = 0; i < 300; i++) { if (!Px.flood('Y')) n++; } return n; }));
+
 // --- 3) internet revient ---
 for (const p of [d, a, r]) await p.context().setOffline(false);
 await d.waitForTimeout(12000);
