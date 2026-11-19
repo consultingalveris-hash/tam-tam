@@ -34,6 +34,9 @@ R('POST', /^\/api\/register$/, async ({ req, res, body }) => {
   if (tooMany('reg:' + ipOf(req), 8, 60 * 60_000)) E(429, 'Trop de tentatives. Réessayez plus tard.');
   const gp = body.gtok ? q1(`SELECT * FROM gpending WHERE token=? AND expires>?`, sha(String(body.gtok)), now()) : null;
   if (body.gtok && !gp) E(400, 'Cette étape a expiré. Recommencez depuis le début.');
+  // Audit du 17/11/2026 : plus de création de compte avec une adresse e-mail non prouvée.
+  // Il faut passer par le code reçu par e-mail ou par Google (jeton gtok). Seul le tout premier compte (propriétaire) garde l'ancien chemin.
+  if (!gp && q1(`SELECT COUNT(*) n FROM users WHERE guest IS NULL`).n > 0) E(400, 'Pour créer votre compte, recevez d’abord un code par e-mail (ou utilisez « Continuer avec Google »).');
   const email = gp ? gp.email : clean(body.email, 120).toLowerCase(), fname = clean(body.first, 30), lname = clean(body.last, 30), name = (lname ? `${fname} ${lname}` : fname).slice(0, 40), pass = gp ? rnd(24) : String(body.pass || '');
   if (gp && !body.invite && gp.invite) body.invite = gp.invite;
   if (!isEmail(email)) E(400, 'Adresse e-mail invalide.');
