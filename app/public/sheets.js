@@ -277,6 +277,28 @@ async function fwdSend(m, ids) {
     onMsg(r.msg);
   }
 }
+/* Partage d'un message tout prêt venant d'une autre application : on choisit la ou les discussions, comme sur WhatsApp. */
+function shareSheet(text) {
+  text = String(text || '').trim(); if (!text) return;
+  S.shr = {text, sel: new Set()};
+  const list = [...S.chats.values()].filter(c => !c.blocked && !(c.type === 'direct' && !c.peer)).sort((a, b) => (b.last?.at || 0) - (a.last?.at || 0));
+  sheet(`${head('Envoyer à…')}<div class="sheet-body" style="padding-bottom:0"><p class="hint">Choisissez jusqu’à 5 discussions.</p><div class="shr-prev" data-noi18n style="white-space:pre-wrap;background:var(--soft,#f1f5f9);border-radius:12px;padding:10px 12px;margin:6px 0 4px;font-size:.92rem;max-height:30vh;overflow:auto">${esc(text)}</div></div>
+    <div class="sheet-scroll">${list.length ? list.map(c => `<label class="row fwd-row">${c.type === 'group' ? grpAv(c, 'sm') : avOn(uOf(c.peer))}<span class="row-name">${esc(chatTitle(c))}</span><input type="checkbox" data-shr="${c.id}" aria-label="Choisir ${esc(chatTitle(c))}"></label>`).join('') : '<p class="hint" style="padding:0 16px">Aucune discussion pour l’instant. Ajoutez d’abord un contact.</p>'}</div>
+    <div class="sheet-body"><div class="actions"><button class="btn ghost" type="button" data-act="close">Annuler</button><button class="btn" type="button" data-act="shareGo" id="shareGo" disabled>Envoyer</button></div></div>`, 'Envoyer à');
+}
+async function shareSend(text, ids) {
+  let ok = 0;
+  for (const id of ids) {
+    const c = S.chats.get(id); if (!c) continue;
+    try { const sealed = await E2E.seal({t: text}, recipients(c)); const r = await api(`/api/chats/${id}/messages`, {enc: sealed.env}); onMsg(r.msg); ok++; } catch (e) { toast(e.message || 'L’envoi a échoué.'); }
+  }
+  return ok;
+}
+document.addEventListener('change', e => {
+  const b = e.target.closest && e.target.closest('[data-shr]'); if (!b || !S.shr) return;
+  const id = +b.dataset.shr; if (b.checked) { if (S.shr.sel.size >= 5) { b.checked = false; return toast('5 discussions au maximum.'); } S.shr.sel.add(id); } else S.shr.sel.delete(id);
+  const g = $('#shareGo'); if (g) { g.disabled = !S.shr.sel.size; g.textContent = S.shr.sel.size > 1 ? `Envoyer (${S.shr.sel.size})` : 'Envoyer'; }
+});
 function fwdSheet(id) {
   const all = S.msgs.get(S.chatId) || [], ms = (Array.isArray(id) ? id : [id]).map(i => all.find(x => x.id === i)).filter(Boolean).sort((x, y) => x.at - y.at); if (!ms.length) return; const m = ms[0]; S.fwd = {m, ms, sel: new Set()};
   const list = [...S.chats.values()].filter(c => !c.blocked && !(c.type === 'direct' && !c.peer)).sort((a, b) => (b.last?.at || 0) - (a.last?.at || 0));

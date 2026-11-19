@@ -66,6 +66,8 @@ function avGallery(sel, who) {
 /* ---------- connexion et inscription ---------- */
 const A = {mode: 'start', avatar: null};
 async function boot() {
+  /* Message tout prêt venant d'une autre application (ex. invitation ALKEBULAN) : /partage?texte=… */
+  { const t = new URLSearchParams(location.search).get('texte'); if (t && t.trim()) { const v = t.slice(0, 2000); S.pendingShare = v; try { sessionStorage.setItem('tt-share', v); } catch {} } }
   S.pendingChat = +((/[?&]chat=(\d+)/.exec(location.search) || [])[1] || 0);
   const gj = (/[?&]g=([A-Za-z0-9_-]{6,40})/.exec(location.search) || [])[1]; if (gj) S.pendingJoin = gj;
   if (/[?&]tab=souvenirs/.test(location.search)) S.pendingTab = 'souvenirs';
@@ -184,6 +186,8 @@ async function startApp() {
   loadAct();
   if (S.pendingJoin) { const g = S.pendingJoin; S.pendingJoin = null; history.replaceState(null, '', '/'); joinPreview(g); }
   if (S.qrAdd) { const t = S.qrAdd; S.qrAdd = null; Qr.connect(t); }
+  let sh = S.pendingShare; try { sh = sh || sessionStorage.getItem('tt-share'); } catch {}
+  if (sh) { S.pendingShare = null; try { sessionStorage.removeItem('tt-share'); } catch {} let n = 0; const go = () => { n++; if ((S.locked || (!S.chats.size && n < 20)) && n < 600) return setTimeout(go, 500); shareSheet(sh); }; setTimeout(go, 700); }
 }
 /* Comptes créés avant le pseudo obligatoire : on demande d'en choisir un (une seule fois). */
 const HPick = {

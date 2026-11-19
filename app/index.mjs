@@ -39,7 +39,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/telecharger') return serveFile(res, path.join(PUB, 'telecharger.html'), SEC);
     if (p === '/tam-tam.apk') return serveFile(res, path.join(PUB, 'tam-tam.apk'), { ...SEC, 'Content-Disposition': 'attachment; filename="tam-tam.apk"' });
     if (p === '/ambassadeurs') return serveFile(res, path.join(PUB, 'ambassadeurs.html'), SEC);
-    if (p === '/' || /^\/(invite|reset|add)\/[A-Za-z0-9_-]+$/.test(p)) return serveFile(res, path.join(PUB, 'app.html'), SEC);
+    if (p === '/' || p === '/partage' || /^\/(invite|reset|add)\/[A-Za-z0-9_-]+$/.test(p)) return serveFile(res, path.join(PUB, 'app.html'), SEC);
     const f = path.normalize(path.join(PUB, p)); if (!f.startsWith(PUB + path.sep) || f.includes(path.join(PUB, 'demo'))) return send(res, 404, 'Page introuvable');
     if (fs.existsSync(f) && fs.statSync(f).isFile()) return serveFile(res, f, SEC);
     send(res, 404, 'Page introuvable');

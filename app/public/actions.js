@@ -84,6 +84,11 @@ const ACT = {
     sheet(`${head('Réactions')}<div class="sheet-scroll">${m.reacts.map(r => { const u = r.u === S.me.id ? S.me : uOf(r.u); return `<div class="row">${avOn(u)}<span class="row-name">${esc(r.u === S.me.id ? 'Vous' : u.name)}</span><span class="row-end react-e">${esc(r.e)}</span>${r.u === S.me.id ? `<span class="row-prev"><button class="linkless" type="button" data-act="react" data-id="${m.id}" data-e="${esc(r.e)}">Touchez pour retirer</button></span>` : ''}</div>`; }).join('')}</div>`, 'Réactions');
   },
   fwd(d) { fwdSheet(+d.id); },
+  shareGo() {
+    const f = S.shr; if (!f || !f.sel.size) return; const to = [...f.sel], text = f.text; S.shr = null; closeLayer();
+    if (to.length === 1) openChat(to[0]).then(() => shareSend(text, to));
+    else shareSend(text, to).then(n => toast(n ? `Envoyé à ${n} discussion${n > 1 ? 's' : ''}` : 'L’envoi a échoué. Réessayez.'));
+  },
   fwdGo() {
     const f = S.fwd; if (!f || !f.sel.size) return; const to = [...f.sel], ms = f.ms || [f.m]; S.fwd = null; closeLayer();
     if (to.length === 1) { const id = to[0]; openChat(id).then(() => fwdRun(ms, to)); }

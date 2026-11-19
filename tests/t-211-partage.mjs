@@ -1,0 +1,23 @@
+// Partage depuis une autre application : /partage?texte=… ouvre « Envoyer à… », le message part dans la discussion choisie.
+import { B, mk, reg, inv, done, errs } from './lib.mjs';
+const p = await mk('Tel'); await reg(p, B, 'teluser', 'Tel', 'owner@exemple.org');
+const q = await mk('Ami'); await reg(q, await inv(p), 'amiuser', 'Ami', 'ami@exemple.org');
+const qid = await q.evaluate(() => S.me.id);
+await p.evaluate(async id => { await api('/api/chats/direct', {userId: id}); }, qid);
+await p.waitForTimeout(1500);
+console.log('avant :', await p.evaluate(() => [S.chats.size, location.href]), await q.evaluate(() => S.chats.size));
+const txt = "Je te défie sur ALKEBULAN ! Code : D1-12345-0";
+await p.goto(B + '/partage?texte=' + encodeURIComponent(txt) + '&source=alkebulan'); await p.waitForTimeout(3000);
+await p.evaluate(() => { document.getElementById('lockScreen')?.remove(); S.locked = false; });
+await p.waitForTimeout(1500);
+const sheetOk = await p.evaluate(() => !!document.querySelector('[data-shr]') && !!document.querySelector('.shr-prev') && document.querySelector('.shr-prev').textContent);
+console.log('fenêtre Envoyer à :', sheetOk, await p.evaluate(() => [location.href, S.chats.size, !!document.querySelector('.shr-prev'), document.querySelector('.sheet')?.innerText.slice(0,120), sessionStorage.getItem('tt-share')]));
+await p.evaluate(() => { const b = document.querySelector('[data-shr]'); b.checked = true; b.dispatchEvent(new Event('change', {bubbles: true})); document.getElementById('shareGo').click(); });
+await p.waitForTimeout(4000);
+await q.waitForTimeout(2000);
+console.log('envoyé côté Tel :', await p.evaluate(() => [...S.msgs.values()].flat().filter(m => (m.text || '').includes('ALKEBULAN')).length));
+await q.evaluate(async () => { const c = [...S.chats.values()][0]; if (c) await openChat(c.id); }); await q.waitForTimeout(2500);
+const got = await q.evaluate(() => [...S.msgs.values()].flat().some(m => (m.text || '').includes('ALKEBULAN')));
+console.log("l'ami a reçu l'invitation :", got);
+if (!sheetOk || !got) errs.push('partage KO');
+await done();
