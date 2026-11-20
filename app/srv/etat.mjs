@@ -44,7 +44,7 @@ R('GET', /^\/api\/etat$/, ({ req, url, res }) => {
     res.end(); return null;
   }
   const t = now(), j1 = t - DAY, j7 = t - 7 * DAY;
-  let hote = null; try { hote = JSON.parse(fs.readFileSync(HOTE, 'utf8')); } catch { /* pas de résumé du serveur */ }
+  let hote = null, pb = ''; try { hote = JSON.parse(fs.readFileSync(HOTE, 'utf8')); } catch (er) { pb = er.code === 'ENOENT' ? (fs.existsSync('/hote') ? 'fichier absent' : 'dossier non relié') : er.code || 'illisible'; }
   const mailMasque = e => String(e || '').replace(/^(.).*?(.)?@/, (m, a, b) => a + '…' + (b || '') + '@');
   return {
     adresse: BASE_URL, genere: new Date(t).toISOString(), enMarcheDepuis: new Date(T0).toISOString(),
@@ -61,7 +61,7 @@ R('GET', /^\/api\/etat$/, ({ req, url, res }) => {
     erreurs24h: q1(`SELECT COUNT(*) n FROM etat_journal WHERE at>? AND kind IN ('erreur','plantage')`, j1).n,
     dernieresErreurs: qa(`SELECT at, kind, path FROM etat_journal WHERE kind IN ('erreur','plantage') ORDER BY at DESC LIMIT 10`).map(r => ({ quand: new Date(r.at).toISOString(), type: r.kind, page: r.path })),
     redemarrages7j: qa(`SELECT at FROM etat_journal WHERE at>? AND kind='demarrage' ORDER BY at DESC LIMIT 20`, j7).map(r => new Date(r.at).toISOString()),
-    serveur: hote || 'non disponible (le résumé du serveur LWS n’a pas encore été écrit)',
+    serveur: hote || `non disponible (${pb}) : le résumé du serveur LWS n’a pas pu être lu`,
   };
 }, false);
 
