@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { BASE_URL, DAY, E, J, PUB, Rfor, clean, getUser, memberIds, msgOut, now, online, presence, pushMany, q1, qa, relation, rnd, run, send, sha, streams, tooMany } from './core.mjs';
@@ -72,10 +73,22 @@ R('POST', /^\/api\/translate$/, async ({ me, body }) => {
   if (!text) E(400, 'Rien à traduire.'); if (!trLangs(trConf()).includes(to)) E(400, 'Langue non prise en charge.');
   if (tooMany('tr:' + me.id, 120, 60 * 60_000)) E(429, 'Trop de traductions d’un coup. Réessayez dans un moment.');
   const conf = trConf(), ctx = (Array.isArray(body.ctx) ? body.ctx : []).slice(-4).map(x => String(x || '').slice(0, 300)).filter(Boolean);
-  return translateText(text, to, ctx);
+  const r = await translateText(text, to, ctx);
+  // Audit du 20/11/2026 : la traduction commune est rangée par le serveur lui-même (chiffrée avec la clé tirée du texte,
+  // comme le fait l'appareil), au lieu d'être envoyée par les membres : personne ne peut plus y glisser une fausse traduction.
+  if (typeof body.text === 'string' && body.text === text) trStore(text, to, { text: r.text, from: r.from || null });
+  return r;
 });
-// Traductions partagées : chiffrées par l'appareil avec une clé tirée du texte lui-même.
-// Le serveur ne peut pas les lire ; un même message n'est payé qu'une fois pour tout le monde.
+// Mêmes empreinte et clé que l'application (translate.js, Tr.keys) : SHA-256 de « tt-tr-id|langue|texte » et « tt-tr-key|langue|texte ».
+export const trKeys = (text, lang) => ({ id: crypto.createHash('sha256').update('tt-tr-id|' + lang + '|' + text).digest('hex'), key: crypto.createHash('sha256').update('tt-tr-key|' + lang + '|' + text).digest() });
+export const trSeal = (key, v) => { const iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', key, iv), ct = Buffer.concat([c.update(JSON.stringify(v), 'utf8'), c.final(), c.getAuthTag()]); return { iv: iv.toString('base64'), ct: ct.toString('base64') }; };
+export function trStore(text, lang, v, promoted = false) {
+  try { const k = trKeys(text, lang), x = trSeal(k.key, v); run(`INSERT OR ${promoted ? 'REPLACE' : 'IGNORE'} INTO tr_cache(id,iv,ct,at,promoted) VALUES(?,?,?,?,?)`, k.id, x.iv, x.ct, now(), promoted ? 1 : 0); return k.id; } catch { return null; }
+}
+// Même mise en forme que l'application (translate.js, Tr.norm) pour reconnaître une même correction.
+export const trNorm = t => String(t || '').toLowerCase().replace(/\s+/g, ' ').replace(/\s*([?!.,;:])\s*/g, '$1').replace(/[.!?]+$/, '').trim();
+// Traductions partagées : chiffrées avec une clé tirée du texte lui-même (rangées par le serveur au moment de la traduction).
+// Sans le texte, on ne peut pas les lire ; un même message n'est payé qu'une fois pour tout le monde.
 R('GET', /^\/api\/translate\/cache\/([0-9a-f]{64})$/, async ({ m }) => { const r = q1(`SELECT iv, ct FROM tr_cache WHERE id=?`, m[1]); return { hit: r || null }; });
 // Corrections personnelles : chacun retrouve ses propres corrections, les autres gardent la traduction commune.
 R('GET', /^\/api\/translate\/mine\/([0-9a-f]{64})$/, async ({ me, m }) => ({ hit: q1(`SELECT iv, ct FROM tr_mine WHERE user_id=? AND id=?`, me.id, m[1]) || null }));
@@ -93,21 +106,22 @@ R('POST', /^\/api\/translate\/vote$/, async ({ me, body }) => {
   if (!me.tr_consent) return { n: 0, promote: false };
   if (tooMany('trv:' + me.id, 200, 60 * 60_000)) E(429, 'Trop de corrections d’un coup.');
   run(`INSERT OR REPLACE INTO tr_votes(id,user_id,cid,at) VALUES(?,?,?,?)`, id, me.id, cid, now());
-  const n = q1(`SELECT COUNT(*) n FROM tr_votes WHERE id=? AND cid=?`, id, cid).n; return { n, need: TR_VOTES, promote: n >= TR_VOTES };
+  const n = votesFor(id, cid); return { n, need: TR_VOTES, promote: n >= TR_VOTES };
 });
+// Audit du 20/11/2026 : seuls comptent les votes de comptes créés depuis au moins 7 jours (créer trois comptes ne suffit plus),
+// et le serveur vérifie lui-même que la correction promue est bien celle qui a reçu les votes avant de la chiffrer.
+const TR_VOTE_AGE = 7 * DAY;
+const votesFor = (id, cid) => q1(`SELECT COUNT(*) n FROM tr_votes v JOIN users u ON u.id=v.user_id WHERE v.id=? AND v.cid=? AND u.created_at<?`, id, cid, now() - TR_VOTE_AGE).n;
 R('POST', /^\/api\/translate\/promote$/, async ({ me, body }) => {
-  const id = String(body.id || ''), cid = String(body.cid || ''), iv = String(body.iv || ''), ct = String(body.ct || '');
-  if (!/^[0-9a-f]{64}$/.test(id) || !/^[0-9a-f]{64}$/.test(cid) || iv.length > 40 || !ct || ct.length > 12000) E(400, 'Invalide.');
+  const src = String(body.src || ''), tl = String(body.tl || ''), text = String(body.text || '').trim(), from = /^[a-z]{2,3}$/.test(body.from || '') ? body.from : null;
+  if (!src || src.length > 2000 || !text || text.length > 2000 || !/^[a-z]{2,3}$/.test(tl)) E(400, 'Invalide.');
+  const id = trKeys(src, tl).id, cid = crypto.createHash('sha256').update('tt-fix|' + trNorm(text)).digest('hex');
   const mine = q1(`SELECT cid FROM tr_votes WHERE id=? AND user_id=?`, id, me.id);
-  if (!mine || mine.cid !== cid || q1(`SELECT COUNT(*) n FROM tr_votes WHERE id=? AND cid=?`, id, cid).n < TR_VOTES) E(403, 'Pas assez de votes.');
-  run(`INSERT OR REPLACE INTO tr_cache(id,iv,ct,at,promoted) VALUES(?,?,?,?,1)`, id, iv, ct, now()); return { ok: true };
+  if (!mine || mine.cid !== cid || votesFor(id, cid) < TR_VOTES) E(403, 'Pas assez de votes.');
+  trStore(src, tl, { text, from }, true); return { ok: true };
 });
-R('POST', /^\/api\/translate\/cache$/, async ({ me, body }) => {
-  const id = String(body.id || ''), iv = String(body.iv || ''), ct = String(body.ct || '');
-  if (!/^[0-9a-f]{64}$/.test(id) || iv.length > 40 || !ct || ct.length > 12000) E(400, 'Invalide.');
-  if (tooMany('trc:' + me.id, 300, 60 * 60_000)) return { ok: true };
-  run(`INSERT OR IGNORE INTO tr_cache(id,iv,ct,at) VALUES(?,?,?,?)`, id, iv, ct, now()); return { ok: true };
-});
+// Ancienne adresse : les appareils n'envoient plus eux-mêmes la traduction commune (le serveur la range, voir /api/translate).
+R('POST', /^\/api\/translate\/cache$/, async () => ({ ok: true }));
 // Base linguistique de Tam-Tam : seulement avec l'accord des personnes, sans nom ni identifiant, numéros et adresses retirés.
 export const scrub = t => String(t || '').replace(/\S+@\S+\.\S+/g, '[e-mail]').replace(/https?:\/\/\S+|www\.\S+/gi, '[lien]').replace(/\+?\d[\d .-]{5,}\d/g, '[numéro]').slice(0, 2000).trim();
 R('POST', /^\/api\/corpus$/, async ({ me, body }) => {
@@ -135,7 +149,8 @@ R('POST', /^\/api\/messages\/(\d+)\/reseal$/, async ({ me, m, body }) => {
   if (now() - msg.created_at > 7 * DAY) E(400, 'Ce message est trop ancien pour être corrigé.');
   const env = body.enc; if (!env || typeof env.ct !== 'string' || typeof env.iv !== 'string' || typeof env.keys !== 'object') E(400, 'Message chiffré invalide.');
   const text = JSON.stringify(envPick(env)); if (text.length > 60000) E(413, 'Message trop long.');
-  run(`UPDATE messages SET text=? WHERE id=?`, text, msg.id);
+  // Audit du 20/11/2026 : le message rechiffré est marqué « modifié » (personne ne peut plus changer en silence ce qu'il a envoyé).
+  run(`UPDATE messages SET text=?, edited=1 WHERE id=?`, text, msg.id);
   pushMany(memberIds(msg.chat_id), { t: 'msg', msg: msgOut(q1(`SELECT * FROM messages WHERE id=?`, msg.id)), update: true }); return { ok: true };
 });
 // Vitesse mesurée chez les vrais utilisateurs (temps seulement : aucun contenu, aucun nom).

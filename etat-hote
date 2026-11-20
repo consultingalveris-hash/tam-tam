@@ -6,17 +6,23 @@
 # place sur le disque, fin du journal des mises à jour. Aucun mot de passe ni aucune donnée des membres.
 OUT=/var/lib/tam-tam-etat; mkdir -p "$OUT"; chmod 755 "$OUT"
 command -v python3 >/dev/null || { echo '{"erreur":"python3 absent sur le serveur"}' > "$OUT/etat.json"; exit 0; }
-SSHLOG=$( { journalctl -u ssh -u sshd --since "7 days ago" --no-pager -o short-iso 2>/dev/null; grep -h sshd /var/log/auth.log /var/log/auth.log.1 2>/dev/null; } | grep -E "Accepted|Failed password|Invalid user" | tail -n 5000)
-KEYS=$(for f in /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys; do [ -f "$f" ] && ssh-keygen -lf "$f" 2>/dev/null | sed "s|^|$f |"; done)
-USERS=$(getent passwd | awk -F: '$7 !~ /(nologin|false|sync|halt|shutdown)$/ {print $1":"$3":"$7}')
-SUDO=$(getent group sudo wheel 2>/dev/null | cut -d: -f4 | tr ',' '\n' | sort -u | tr '\n' ' ')
-DOCK=$(docker ps --format '{{.Names}} {{.Image}} {{.Status}}' 2>/dev/null)
-DISK=$(df -P / | awk 'NR==2 {print $5}')
-MAJ=$(tail -n 15 /var/log/tam-tam-auto-maj.log 2>/dev/null)
-SSHLOG="$SSHLOG" KEYS="$KEYS" USERS="$USERS" SUDO="$SUDO" DOCK="$DOCK" DISK="$DISK" MAJ="$MAJ" python3 - "$OUT/etat.json" <<'PY'
+# Les relevés passent par des fichiers temporaires (et non par des variables) : sur un serveur exposé,
+# le journal des connexions refusées peut être énorme et dépasser la taille permise pour une variable.
+T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
+{ journalctl -u ssh -u sshd --since "7 days ago" --no-pager -o short-iso 2>/dev/null; grep -h sshd /var/log/auth.log /var/log/auth.log.1 2>/dev/null; } | grep -E "Accepted|Failed password|Invalid user" | tail -n 20000 > "$T/ssh"
+for f in /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys; do [ -f "$f" ] && ssh-keygen -lf "$f" 2>/dev/null | sed "s|^|$f |"; done > "$T/keys"
+getent passwd | awk -F: '$7 !~ /(nologin|false|sync|halt|shutdown)$/ {print $1":"$3":"$7}' > "$T/users"
+getent group sudo wheel 2>/dev/null | cut -d: -f4 | tr ',' '\n' | sort -u > "$T/sudo"
+docker ps --format '{{.Names}} {{.Image}} {{.Status}}' > "$T/dock" 2>/dev/null
+df -P / | awk 'NR==2 {print $5}' > "$T/disk"
+tail -n 15 /var/log/tam-tam-auto-maj.log > "$T/maj" 2>/dev/null
+python3 - "$OUT/etat.json" "$T" <<'PY' || echo '{"erreur":"le resume du serveur n a pas pu etre ecrit"}' > "$OUT/etat.json"
 import json, os, re, sys, time
-e = os.environ.get
-log = [l for l in e('SSHLOG', '').splitlines() if l.strip()]
+def e(name):
+    try:
+        with open(os.path.join(sys.argv[2], name), errors='replace') as f: return f.read()
+    except Exception: return ''
+log = [l for l in e('ssh').splitlines() if l.strip()]
 acc = []
 for l in log:
     m = re.search(r'Accepted (\S+) for (\S+) from (\S+)', l)
@@ -30,12 +36,12 @@ out = {
   'ecrit': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
   'ssh': {'connexionsAcceptees7j': acc[-30:], 'nombreAcceptees7j': len(acc), 'essaisRefuses7j': len(fail),
           'adressesLesPlusInsistantes': sorted(ips.items(), key=lambda x: -x[1])[:8]},
-  'clesAcces': [k for k in e('KEYS', '').splitlines() if k.strip()],
-  'comptesQuiPeuventSeConnecter': [u for u in e('USERS', '').splitlines() if u.strip()],
-  'administrateursSysteme': e('SUDO', '').split(),
-  'conteneurs': [d for d in e('DOCK', '').splitlines() if d.strip()],
-  'disqueUtilise': e('DISK', ''),
-  'misesAJour': [m for m in e('MAJ', '').splitlines() if m.strip()],
+  'clesAcces': [k for k in e('keys').splitlines() if k.strip()],
+  'comptesQuiPeuventSeConnecter': [u for u in e('users').splitlines() if u.strip()],
+  'administrateursSysteme': e('sudo').split(),
+  'conteneurs': [d for d in e('dock').splitlines() if d.strip()],
+  'disqueUtilise': e('disk').strip(),
+  'misesAJour': [m for m in e('maj').splitlines() if m.strip()],
 }
 tmp = sys.argv[1] + '.tmp'
 with open(tmp, 'w') as f: json.dump(out, f, ensure_ascii=False, indent=1)

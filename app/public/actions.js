@@ -451,7 +451,7 @@ const FORMS = {
       if (S.me.trConsent) try {
         const k = await Tr.keys(f.src, f.tl), cid = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('tt-fix|' + Tr.norm(v))))].map(b => b.toString(16).padStart(2, '0')).join('');
         const r = await api('/api/translate/vote', {id: k.id, cid});
-        if (r.promote) { const iv = crypto.getRandomValues(new Uint8Array(12)), ct = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, k.key, new TextEncoder().encode(JSON.stringify({text: v, from: f.sl || null})))); await api('/api/translate/promote', {id: k.id, cid, iv: Tr.b64(iv), ct: Tr.b64(ct)}); promoted = true; }
+        if (r.promote) { await api('/api/translate/promote', {src: f.src, tl: f.tl, text: v, from: f.sl || null}); promoted = true; }
       } catch {}
       Tr.give(f.src, f.sl, v, f.tl, 'fix', f.mine ? S.me.id : ((S.msgs.get(S.chatId) || []).find(x => x.id === f.id) || {}).from);
       closeLayer(); renderMessages(true); toast(promoted ? 'Correction enregistrée. Plusieurs personnes ont proposé la même : elle devient la traduction pour tout le monde !' : 'Correction enregistrée : vous la retrouverez à chaque fois que cette phrase reviendra.');

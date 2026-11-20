@@ -5,7 +5,7 @@
 // (créée par l'installateur, envoyée une fois par e-mail au propriétaire) : sans elle, la page n'existe pas (404).
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { BASE_URL, DAY, E, OWNER, Rfor, db, ipOf, now, q1, qa, run, sha, tooMany } from './core.mjs';
+import { BASE_URL, DAY, E, blockedNow, cookies, OWNER, Rfor, db, ipOf, now, q1, qa, run, sha, tooMany } from './core.mjs';
 import { sendMail, mailHtml } from './messages.mjs';
 
 const R = Rfor(8);
@@ -32,10 +32,19 @@ const groupe = (since, col, extra = '') => qa(`SELECT ${col} k, COUNT(*) n FROM 
 
 R('GET', /^\/api\/etat$/, ({ req, url, res }) => {
   // Sans la bonne clé : la page « n'existe pas », et les essais sont limités.
-  if (tooMany('etat:' + ipOf(req), 20, 60 * 60_000) || !keyOk(url.searchParams.get('cle'))) { if (KEY.length) noter('etat-refus', '/api/etat', ipOf(req)); E(404, 'Adresse inconnue.'); }
-  res.setHeader('X-Robots-Tag', 'noindex'); res.setHeader('Cache-Control', 'no-store');
+  // Audit du 20/11/2026 : seuls les essais avec une mauvaise clé sont comptés (les visites du propriétaire ne le bloquent plus).
+  // Audit du 20/11/2026 : la clé peut venir de l'en-tête X-Etat-Cle (programmes) ou du lien reçu par e-mail ; dans ce cas
+  // elle est aussitôt rangée dans un cookie réservé à cette page et le navigateur est renvoyé vers l'adresse SANS la clé
+  // (elle ne reste ni dans l'historique, ni dans la barre d'adresse, ni dans les liens suivis).
+  const k = 'etat:' + ipOf(req), cq = url.searchParams.get('cle'), cle = req.headers['x-etat-cle'] || cq || cookies(req).tt_etat;
+  if (blockedNow(k, 20, 60 * 60_000) || !keyOk(cle)) { tooMany(k, 20, 60 * 60_000); if (KEY.length) noter('etat-refus', '/api/etat', ipOf(req)); E(404, 'Adresse inconnue.'); }
+  res.setHeader('X-Robots-Tag', 'noindex'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('Referrer-Policy', 'no-referrer');
+  if (cq) {
+    res.writeHead(303, { Location: '/api/etat', 'Set-Cookie': `tt_etat=${encodeURIComponent(String(cle))}; Path=/api/etat; Max-Age=3600; HttpOnly; Secure; SameSite=Strict` });
+    res.end(); return null;
+  }
   const t = now(), j1 = t - DAY, j7 = t - 7 * DAY;
-  let hote = null; try { hote = JSON.parse(fs.readFileSync(HOTE, 'utf8')); } catch { /* pas de résumé du serveur */ }
+  let hote = null, pb = ''; try { hote = JSON.parse(fs.readFileSync(HOTE, 'utf8')); } catch (er) { pb = er.code === 'ENOENT' ? (fs.existsSync('/hote') ? 'fichier absent' : 'dossier non relié') : er.code || 'illisible'; }
   const mailMasque = e => String(e || '').replace(/^(.).*?(.)?@/, (m, a, b) => a + '…' + (b || '') + '@');
   return {
     adresse: BASE_URL, genere: new Date(t).toISOString(), enMarcheDepuis: new Date(T0).toISOString(),
@@ -52,7 +61,7 @@ R('GET', /^\/api\/etat$/, ({ req, url, res }) => {
     erreurs24h: q1(`SELECT COUNT(*) n FROM etat_journal WHERE at>? AND kind IN ('erreur','plantage')`, j1).n,
     dernieresErreurs: qa(`SELECT at, kind, path FROM etat_journal WHERE kind IN ('erreur','plantage') ORDER BY at DESC LIMIT 10`).map(r => ({ quand: new Date(r.at).toISOString(), type: r.kind, page: r.path })),
     redemarrages7j: qa(`SELECT at FROM etat_journal WHERE at>? AND kind='demarrage' ORDER BY at DESC LIMIT 20`, j7).map(r => new Date(r.at).toISOString()),
-    serveur: hote || 'non disponible (le résumé du serveur LWS n’a pas encore été écrit)',
+    serveur: hote || `non disponible (${pb}) : le résumé du serveur LWS n’a pas pu être lu`,
   };
 }, false);
 

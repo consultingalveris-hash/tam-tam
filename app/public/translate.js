@@ -60,9 +60,8 @@ const Tr = {
     const k = await this.keys(text, to), c = await api('/api/translate/cache/' + k.id).catch(() => null);
     if (c && c.hit) { try { return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name: 'AES-GCM', iv: Uint8Array.from(atob(c.hit.iv), x => x.charCodeAt(0))}, k.key, Uint8Array.from(atob(c.hit.ct), x => x.charCodeAt(0))))); } catch {} }
     const r = await api('/api/translate', {text, to, ctx: ctx || []});
-    r.fresh = true; const iv = crypto.getRandomValues(new Uint8Array(12)), ct = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, k.key, new TextEncoder().encode(JSON.stringify(r))));
-    const b64 = u => btoa(String.fromCharCode(...u)); api('/api/translate/cache', {id: k.id, iv: b64(iv), ct: b64(ct)}).catch(() => {});
-    return r;
+    // La traduction commune est rangée par le serveur lui-même (audit du 20/11/2026).
+    r.fresh = true; return r;
   },
   // Statut du service (activé, langues) : chargé au démarrage ; s'il arrive après l'ouverture d'une discussion, on relance la traduction.
   stLoading: null,
