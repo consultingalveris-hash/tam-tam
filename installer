@@ -16,7 +16,12 @@ PROPRIETAIRE="${PROPRIETAIRE:-ngossodesire@gmail.com}"
 # Site d'essai : même installateur, lancé depuis le dossier tam-tam-essai (commande : bash essai).
 # Copie séparée (ses propres comptes et messages), sur sa propre adresse ; les relais d'appels sont partagés.
 ESSAI=""
-if [ "$(basename "$DOSSIER")" = "tam-tam-essai" ]; then
+# Audit du 20/11/2026 : « bash essai » lance désormais l'installateur de la version validée (main) avec
+# ESSAI_DOSSIER = dossier tam-tam-essai. Seule l'application (dossier app) est prise dans la branche essai :
+# aucun script de la branche essai n'est plus exécuté avec les droits d'administrateur du serveur.
+APPDIR="$DOSSIER/app"
+if [ -n "${ESSAI_DOSSIER:-}" ] || [ "$(basename "$DOSSIER")" = "tam-tam-essai" ]; then
+  APPDIR="${ESSAI_DOSSIER:-$DOSSIER}/app"
   ESSAI=1; DOMAINE=essai.tam-tam.africa; ANCIENNES="essai-tam-tam.alveris-consulting.com"; VITRINE=""; APP=tam-tam-essai; VOLUME=tam-tam-essai-data
   echo "=== SITE D'ESSAI : https://$DOMAINE ==="
 fi
@@ -101,10 +106,13 @@ SECRET_BK_F=/root/.tam-tam-backup-key
 SECRET_BK=$(cat "$SECRET_BK_F")
 # Mot de passe partagé avec les relais Cloudflare (audit du 18/11/2026) : à recopier dans la variable RELAY_SECRET du Worker.
 SECRET_RL_F=/root/.tam-tam-relais-secret
+# Site d'essai : ses propres clés de relais et de page « état » (audit du 20/11/2026), jamais celles du vrai site.
+[ -n "$ESSAI" ] && SECRET_RL_F=/root/.tam-tam-essai-relais-secret
 [ -s "$SECRET_RL_F" ] || { head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$SECRET_RL_F"; chmod 600 "$SECRET_RL_F"; }
 SECRET_RL=$(cat "$SECRET_RL_F")
 # Clé de la page « état du serveur » (audit du 19/11/2026) : envoyée une fois par e-mail au propriétaire par Tam-Tam.
 SECRET_ET_F=/root/.tam-tam-etat-secret
+[ -n "$ESSAI" ] && SECRET_ET_F=/root/.tam-tam-essai-etat-secret
 [ -s "$SECRET_ET_F" ] || { head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$SECRET_ET_F"; chmod 600 "$SECRET_ET_F"; }
 SECRET_ET=$(cat "$SECRET_ET_F")
 mkdir -p /var/lib/tam-tam-etat; bash "$DOSSIER/etat-hote" >/dev/null 2>&1 || true
@@ -118,11 +126,11 @@ ALT=$( { for A in $ANCIENNES; do echo "https://$A"; done; [ -n "$ESSAI" ] || { [
 [ -n "$ESSAI" ] || { [ -n "$SECOURS_OK" ] && echo "Adresse de secours : https://$SECOURS" || echo "Adresse de secours $SECOURS : pas encore reliée à ce serveur (on la branchera dès qu'elle le sera)."; }
 
 echo "Construction de tam-tam (une minute la première fois)…"
-docker build -q -t "$APP:latest" "$DOSSIER/app" >/dev/null
+docker build -q -t "$APP:latest" "$APPDIR" >/dev/null
 docker volume create "$VOLUME" >/dev/null
 docker rm -f "$APP" >/dev/null 2>&1 || true
 docker run -d --name "$APP" --restart unless-stopped --network "$NET" --memory "$( [ -n "$ESSAI" ] && echo 256m || echo 512m )" \
-  -v "$VOLUME:/data" -v /var/lib/tam-tam-etat:/hote:ro \
+  -v "$VOLUME:/data" $( [ -n "$ESSAI" ] || echo "-v /var/lib/tam-tam-etat:/hote:ro" ) \
   -e BASE_URL="https://$DOMAINE" -e OWNER_EMAIL="$PROPRIETAIRE" \
   -e TURN_SECRET="$SECRET_TURN" -e TURN_HOST="${IP_PUB:-$DOMAINE}" -e BACKUP_KEY="$SECRET_BK" -e ALT_ORIGINS="$ALT" -e RELAY_SECRET="$SECRET_RL" -e DIRECT_HOSTS="$SECOURS" -e ETAT_SECRET="$SECRET_ET" \
   -e LK_URL="${LK_KEY:+wss://$DOMAINE/lk}" -e LK_API="${LK_KEY:+http://tam-tam-lk:7880}" -e LK_KEY="$LK_KEY" -e LK_SECRET="$LK_SECRET" \

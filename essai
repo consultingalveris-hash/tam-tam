@@ -6,4 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 git fetch -q origin
 [ -d ../tam-tam-essai ] || git worktree add -q --detach ../tam-tam-essai origin/essai
-cd ../tam-tam-essai && git checkout -q --detach origin/essai && bash installer
+git -C ../tam-tam-essai checkout -q --detach origin/essai
+# Audit du 20/11/2026 : l'installateur utilisé est celui de la version validée (ce dossier), pas celui de la branche essai ;
+# seule l'application de la branche essai est construite (dans son conteneur).
+ESSAI_DOSSIER="$(cd ../tam-tam-essai && pwd)" bash installer

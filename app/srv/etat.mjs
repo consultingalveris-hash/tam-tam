@@ -5,7 +5,7 @@
 // (créée par l'installateur, envoyée une fois par e-mail au propriétaire) : sans elle, la page n'existe pas (404).
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { BASE_URL, DAY, E, OWNER, Rfor, db, ipOf, now, q1, qa, run, sha, tooMany } from './core.mjs';
+import { BASE_URL, DAY, E, blockedNow, OWNER, Rfor, db, ipOf, now, q1, qa, run, sha, tooMany } from './core.mjs';
 import { sendMail, mailHtml } from './messages.mjs';
 
 const R = Rfor(8);
@@ -32,7 +32,9 @@ const groupe = (since, col, extra = '') => qa(`SELECT ${col} k, COUNT(*) n FROM 
 
 R('GET', /^\/api\/etat$/, ({ req, url, res }) => {
   // Sans la bonne clé : la page « n'existe pas », et les essais sont limités.
-  if (tooMany('etat:' + ipOf(req), 20, 60 * 60_000) || !keyOk(url.searchParams.get('cle'))) { if (KEY.length) noter('etat-refus', '/api/etat', ipOf(req)); E(404, 'Adresse inconnue.'); }
+  // Audit du 20/11/2026 : seuls les essais avec une mauvaise clé sont comptés (les visites du propriétaire ne le bloquent plus).
+  const k = 'etat:' + ipOf(req);
+  if (blockedNow(k, 20, 60 * 60_000) || !keyOk(url.searchParams.get('cle'))) { tooMany(k, 20, 60 * 60_000); if (KEY.length) noter('etat-refus', '/api/etat', ipOf(req)); E(404, 'Adresse inconnue.'); }
   res.setHeader('X-Robots-Tag', 'noindex'); res.setHeader('Cache-Control', 'no-store');
   const t = now(), j1 = t - DAY, j7 = t - 7 * DAY;
   let hote = null; try { hote = JSON.parse(fs.readFileSync(HOTE, 'utf8')); } catch { /* pas de résumé du serveur */ }

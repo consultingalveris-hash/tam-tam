@@ -12,17 +12,26 @@ R('GET', /^\/api\/meta$/, async ({ req, url }) => {
     invite: inv ? { by: (u => u ? (inv.qr || !u.name ? '@' + u.handle : u.name) : '')(getUser(inv.by_user)) } : null };
 }, false);
 
+// Audit du 20/11/2026 : au plus deux copies de sauvegarde en cours d'envoi à la fois (plusieurs demandes en même temps
+// pouvaient remplir la mémoire et arrêter Tam-Tam pour tout le monde).
+// La copie reste en mémoire tant que le visiteur ne l'a pas entièrement reçue : la place est libérée à la fin de l'envoi.
+let bkBusy = 0;
+const bkOne = (res, f) => {
+  if (bkBusy >= 2) E(429, 'Une sauvegarde est déjà en cours. Réessayez dans un instant.');
+  const x = f(); bkBusy++; let done = false; const free = () => { if (!done) { done = true; bkBusy--; } };
+  res.once('close', free); res.once('finish', free); setTimeout(() => { if (!done) res.destroy(); }, 10 * 60_000).unref(); return x;
+};
 R('GET', /^\/api\/backup\/export$/, async ({ req, res }) => {
   if (!BK_PUB) E(404, 'Adresse inconnue.');
   if (tooMany('bk:' + ipOf(req), 6, 60 * 60_000)) E(429, 'Trop de demandes.');
-  const buf = exportBackup();
+  const buf = bkOne(res, () => exportBackup());
   res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf.length, 'Cache-Control': 'no-store', 'Content-Disposition': `attachment; filename="tamtam-${new Date().toISOString().slice(0, 10)}.ttbk"` });
   res.end(buf); return null;
 }, false);
 R('GET', /^\/api\/backup\/media$/, async ({ req, res, url }) => {
   if (!BK_PUB) E(404, 'Adresse inconnue.');
   if (tooMany('bkm:' + ipOf(req), 120, 60 * 60_000)) E(429, 'Trop de demandes.');
-  const since = String(url.searchParams.get('since') || '0').slice(0, 80), x = exportMedia(/^\d+(:[A-Za-z0-9_-]{0,40})?$/.test(since) ? since : '0');
+  const since = String(url.searchParams.get('since') || '0').slice(0, 80), x = bkOne(res, () => exportMedia(/^\d+(:[A-Za-z0-9_-]{0,40})?$/.test(since) ? since : '0'));
   res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': x.buf.length, 'Cache-Control': 'no-store', 'X-TT-Next': String(x.last), 'X-TT-More': x.more ? '1' : '0', 'X-TT-Count': String(x.count) });
   res.end(x.buf); return null;
 }, false);
