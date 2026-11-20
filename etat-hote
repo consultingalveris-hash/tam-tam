@@ -16,6 +16,8 @@ getent group sudo wheel 2>/dev/null | cut -d: -f4 | tr ',' '\n' | sort -u > "$T/
 docker ps --format '{{.Names}} {{.Image}} {{.Status}}' > "$T/dock" 2>/dev/null
 df -P / | awk 'NR==2 {print $5}' > "$T/disk"
 tail -n 15 /var/log/tam-tam-auto-maj.log > "$T/maj" 2>/dev/null
+# Garde contre les robots (fail2ban, audit du 20/11/2026) : nombre d'adresses bloquées.
+{ command -v fail2ban-client >/dev/null 2>&1 && timeout 10 fail2ban-client status sshd 2>/dev/null; } > "$T/f2b"
 python3 - "$OUT/etat.json" "$T" <<'PY' || echo '{"erreur":"le resume du serveur n a pas pu etre ecrit"}' > "$OUT/etat.json"
 import json, os, re, sys, time
 def e(name):
@@ -42,6 +44,8 @@ out = {
   'conteneurs': [d for d in e('dock').splitlines() if d.strip()],
   'disqueUtilise': e('disk').strip(),
   'misesAJour': [m for m in e('maj').splitlines() if m.strip()],
+  'gardeRobots': (lambda t: {'enMarche': True, 'bloqueesMaintenant': int((re.search(r'Currently banned:\s*(\d+)', t) or [0, 0])[1]),
+                              'bloqueesDepuisDemarrage': int((re.search(r'Total banned:\s*(\d+)', t) or [0, 0])[1])} if 'Currently banned' in t else 'non installé ou arrêté')(e('f2b')),
 }
 tmp = sys.argv[1] + '.tmp'
 with open(tmp, 'w') as f: json.dump(out, f, ensure_ascii=False, indent=1)

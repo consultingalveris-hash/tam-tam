@@ -46,6 +46,19 @@ sysctl -q vm.swappiness=20 2>/dev/null || true
 # Appels de groupe : mémoire réseau suffisante pour le serveur de répartition (recommandation LiveKit).
 printf 'net.core.rmem_max=5000000\nnet.core.wmem_max=5000000\n' > /etc/sysctl.d/90-tamtam.conf 2>/dev/null && sysctl -q -p /etc/sysctl.d/90-tamtam.conf 2>/dev/null || true
 
+# Garde contre les robots qui essaient de deviner le mot de passe du serveur (audit du 20/11/2026 : ~20 000 essais en 7 jours) :
+# fail2ban bloque 1 heure (puis plus longtemps s'il recommence) toute adresse qui se trompe 5 fois en 10 minutes.
+# La console de LWS n'est pas concernée. Rien n'empêche Tam-Tam de s'installer si cette étape échoue.
+if [ -z "$ESSAI" ]; then
+  command -v fail2ban-server >/dev/null 2>&1 || { DEBIAN_FRONTEND=noninteractive timeout 300 apt-get install -y -qq fail2ban >/dev/null 2>&1 \
+    || { timeout 300 apt-get update -qq >/dev/null 2>&1; DEBIAN_FRONTEND=noninteractive timeout 300 apt-get install -y -qq fail2ban >/dev/null 2>&1; } || true; }
+  if command -v fail2ban-server >/dev/null 2>&1; then
+    F2B_BACK=systemd; [ -s /var/log/auth.log ] && F2B_BACK=auto
+    printf '[sshd]\nenabled = true\nbackend = %s\nmaxretry = 5\nfindtime = 10m\nbantime = 1h\nbantime.increment = true\nbantime.maxtime = 1w\n' "$F2B_BACK" > /etc/fail2ban/jail.d/tam-tam.local
+    { systemctl enable -q fail2ban && systemctl restart fail2ban; } >/dev/null 2>&1 && echo "Garde contre les robots (fail2ban) en marche." || echo "ATTENTION : garde contre les robots (fail2ban) non lancé."
+  else echo "ATTENTION : garde contre les robots (fail2ban) non installé."; fi
+fi
+
 # Relais d'appels (TURN) : aide les appels à passer quand les réseaux mobiles bloquent la connexion directe.
 SECRET_TURN_F=/root/.tam-tam-turn
 [ -s "$SECRET_TURN_F" ] || { head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$SECRET_TURN_F"; chmod 600 "$SECRET_TURN_F"; }
