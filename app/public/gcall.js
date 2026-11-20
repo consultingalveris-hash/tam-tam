@@ -26,13 +26,16 @@ const GCall = {
   },
   async join(callId, video) {
     if (this.busy() && !(this.inc && this.inc.callId === callId)) return toast('Un appel est déjà en cours.');
-    this.stopRing();
+    this.stopRing(); this.inc = null;
     const g = [...(S.gcalls || new Map()).values()].find(x => x.callId === callId); if (video === undefined) video = g ? g.video : true;
+    this.joining = true; this.render(); // écran « connexion » tout de suite, sans retour furtif à la liste
+    const fail = m => { this.joining = false; this.render(); toast(m); };
     let local;
-    try { local = await this.media(video); } catch (e) { return toast(e.message); }
-    let r; try { r = await api('/api/gcall/join', {callId}); } catch (e) { local.getTracks().forEach(t => t.stop()); return toast(e.message); }
+    try { local = await this.media(video); } catch (e) { return fail(e.message); }
+    let r; try { r = await api('/api/gcall/join', {callId}); } catch (e) { local.getTracks().forEach(t => t.stop()); return fail(e.message); }
+    this.joining = false;
     let lay = 'grid'; try { lay = localStorage.getItem('tt-glay') || 'grid'; } catch {}
-    this.c = {id: callId, chatId: r.chatId, video, local, mic: true, cam: local.getVideoTracks().length > 0, peers: new Map(), since: Date.now(), lay, main: null, layMenu: false};
+    this.c = {id: callId, chatId: r.chatId, video, local, mic: true, cam: local.getVideoTracks().length > 0, peers: new Map(), since: Date.now(), lay, main: null, layMenu: false, ringing: new Map((r.ringing || []).map(u => [u, Date.now() + 45000]))};
     Spk.start(video);
     this.c.tick = setInterval(() => this.clock(), 1000);
     this.render();
@@ -104,14 +107,17 @@ const GCall = {
       if (S.tab === 'chats') renderBody(); if (S.chatId === ev.chatId) renderChatHead();
       return;
     }
+    if (ev.type === 'cancel') { if (this.inc && this.inc.callId === ev.callId) { this.dismiss(); toast('Appel de groupe annulé'); } return; }
     if (ev.type === 'ring') {
       if (this.busy()) { if (!(Call.c && Call.c.peer === ev.from)) toast(`${first(uOf(ev.from).name)} lance un appel de groupe.`); return; }
       this.inc = ev; this.render(); this.ringT = setTimeout(() => this.dismiss(), 45000);
       Call.tone.call(this, 'ring'); return;
     }
     const c = this.c; if (!c || ev.callId !== c.id) return;
-    if (ev.type === 'joined') { toast(`${first(uOf(ev.user).name)} a rejoint l’appel`); return; }
-    if (ev.type === 'left') { this.drop(ev.user); return; }
+    if (ev.type === 'joined') { c.ringing.delete(ev.user); toast(`${first(uOf(ev.user).name)} a rejoint l’appel`); this.render(); return; }
+    if (ev.type === 'left') { c.ringing.delete(ev.user); c.peers.has(ev.user) ? this.drop(ev.user) : this.render(); return; }
+    if (ev.type === 'ringing') { (ev.users || []).forEach(u => c.ringing.set(u, Date.now() + 45000)); this.render(); return; }
+    if (ev.type === 'declined') { if (c.ringing.delete(ev.user)) this.render(); return; }
     let p = c.peers.get(ev.from);
     if (ev.type === 'offer') {
       if (!p) p = await this.peer(ev.from);
@@ -124,6 +130,9 @@ const GCall = {
   },
   stopRing() { clearTimeout(this.ringT); Call.tone.call(this, null); },
   dismiss() { this.stopRing(); this.inc = null; this.render(); },
+  decline() { const ev = this.inc; if (ev) api('/api/gcall/decline', {callId: ev.callId}).catch(() => {}); this.dismiss(); },
+  // appui long sur la case de quelqu'un qui ne décroche pas : on arrête de le faire sonner
+  cancelRing(uid) { const c = this.c; if (!c || !c.ringing.has(uid)) return; c.ringing.delete(uid); this.render(); api('/api/gcall/cancel', {callId: c.id, user: uid}).then(() => toast(`Appel annulé pour ${first(uOf(uid).name)}`)).catch(e => toast(e.message)); },
   accept() { const ev = this.inc; if (!ev) return; this.inc = null; this.join(ev.callId, ev.video); },
 
   leave() {
@@ -159,7 +168,8 @@ const GCall = {
 
   /* ---------- affichage ---------- */
   el() { let e = document.getElementById('gcall'); if (!e) { e = document.createElement('div'); e.id = 'gcall'; document.body.appendChild(e); } return e; },
-  clock() { const c = this.c, el = document.getElementById('gTime'); if (!c || !el) return; const s = Math.floor((Date.now() - c.since) / 1000); el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; },
+  clock() { const c = this.c, el = document.getElementById('gTime'); if (!c || !el) return;
+    if ([...c.ringing.values()].some(t => t <= Date.now())) { for (const [u, t] of c.ringing) if (t <= Date.now()) c.ringing.delete(u); return this.render(); } const s = Math.floor((Date.now() - c.since) / 1000); el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; },
   tile(uid, stream, cam, mic, me, state) {
     const u = me ? S.me : uOf(uid), vid = stream && cam !== false && stream.getVideoTracks().length;
     return `<div class="gt${me ? ' me' : ''}" data-uid="${uid}">${vid ? `<video autoplay playsinline${me ? ' muted' : ''} data-v="${uid}"></video>` : `<div class="gt-av">${avatar(u, 'xl')}</div>`}
@@ -182,8 +192,9 @@ const GCall = {
   },
   render() {
     const root = this.el(), c = this.c, ev = this.inc;
+    if (!c && !ev && this.joining) { root.hidden = false; root.className = 'call'; document.body.classList.add('in-call'); noKeyboard(); root.innerHTML = '<div class="call-in" role="dialog" aria-modal="true" aria-label="Appel de groupe"><div class="call-who"><p>Connexion à l’appel de groupe…</p></div></div>'; return; }
     if (!c && !ev) { root.innerHTML = ''; root.hidden = true; if (!Call.c) document.body.classList.remove('in-call'); return; }
-    root.hidden = false; document.body.classList.add('in-call');
+    root.hidden = false; document.body.classList.add('in-call'); noKeyboard();
     const btn = (act, icon, label, cls = '') => `<button class="cb ${cls}" type="button" data-act="${act}" aria-label="${label}">${icon}<span>${label}</span></button>`;
     if (!c) {
       const chat = S.chats.get(ev.chatId);
@@ -194,11 +205,11 @@ const GCall = {
     }
     const chat = S.chats.get(c.chatId), n = c.peers.size + 1;
     // Membres pas encore arrivés : leur photo de profil sous les caméras.
-    const here = new Set([S.me.id, ...c.peers.keys()]), waiting = chat ? (chat.members || []).map(m => m.id).filter(id => !here.has(id)) : [];
+    const here = new Set([S.me.id, ...c.peers.keys()]), t0 = Date.now(), waiting = [...c.ringing].filter(([u, t]) => t > t0 && !here.has(u)).map(([u]) => u);
     const ids = [S.me.id, ...c.peers.keys()];
     if (!ids.includes(c.main)) c.main = ids.find(id => id !== S.me.id) || S.me.id;
     // Les membres qui n'ont pas encore décroché ont déjà leur case (photo de profil) ; ils prennent leur place à leur arrivée.
-    const W = uid => `<div class="gt wait" data-uid="${uid}"><div class="gt-av">${avatar(uOf(uid), 'xl')}</div><span class="gt-name">${esc(first(uOf(uid).name))} · appel…</span></div>`;
+    const W = uid => `<div class="gt wait" data-uid="${uid}" title="Appui long pour annuler l’appel"><div class="gt-av">${avatar(uOf(uid), 'xl')}</div><span class="gt-name">${esc(first(uOf(uid).name))} · appel…</span></div>`;
     const T = uid => uid === S.me.id ? this.tile(S.me.id, c.local, c.cam, c.mic, true) : c.peers.has(uid) ? (p => this.tile(p.uid, p.stream, p.cam, p.mic, false, p.state))(c.peers.get(uid)) : W(uid);
     const all = ids.concat(waiting.slice(0, Math.max(0, (c.room ? 32 : 8) - ids.length))), lay = all.length > 1 ? c.lay : 'grid', tot = all.length;
     const stage = lay === 'grid'
@@ -216,6 +227,9 @@ const GCall = {
       ${all.length > 1 ? `<button class="g-laydot" type="button" data-act="gcallLay" aria-label="Disposition des caméras" title="Disposition des caméras" aria-expanded="${!!c.layMenu}"><i aria-hidden="true"></i></button>` : ''}
       ${c.addMenu ? callPick(this.pickList()) : ''}</div>`;
     if (lay !== 'grid') this.dragInit(root);
+    root.querySelectorAll('.gt.wait').forEach(el => { let t = null; const off = () => { clearTimeout(t); t = null; el.classList.remove('press'); };
+      el.addEventListener('pointerdown', () => { el.classList.add('press'); t = setTimeout(() => { off(); if (navigator.vibrate) try { navigator.vibrate(30); } catch {} this.cancelRing(+el.dataset.uid); }, 650); });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(k => el.addEventListener(k, off)); el.addEventListener('contextmenu', e => e.preventDefault()); });
     root.querySelectorAll('video[data-v]').forEach(v => { const uid = +v.dataset.v; v.srcObject = uid === S.me.id ? c.local : c.peers.get(uid)?.stream || null; });
     root.querySelectorAll('audio[data-a]').forEach(a => { const p = c.peers.get(+a.dataset.a); if (p && p.stream) { a.srcObject = p.stream; a.play && a.play().catch(() => {}); } });
     Spk.apply();
@@ -225,7 +239,7 @@ const GCall = {
 window.addEventListener('beforeunload', () => { if (GCall.c) GCall.leave(); });
 Object.assign(ACT, {
   gcallVideo() { GCall.start(true); }, gcallAudio() { GCall.start(false); },
-  gcallJoin(d) { GCall.join(d.id); }, gcallAccept() { GCall.accept(); }, gcallDecline() { GCall.dismiss(); },
+  gcallJoin(d) { GCall.join(d.id); }, gcallAccept() { GCall.accept(); }, gcallDecline() { GCall.decline(); },
   gcallMic() { GCall.toggleMic(); }, gcallSpk() { spkToggle(() => GCall.render()); },
   gcallLay() { const c = GCall.c; if (!c) return; c.layMenu = !c.layMenu; c.addMenu = false; GCall.render(); },
   gcallLaySet(d) { const c = GCall.c; if (!c) return; c.lay = d.k; c.layMenu = false; try { localStorage.setItem('tt-glay', d.k); } catch {} GCall.render(); }, gcallCam() { GCall.toggleCam(); }, gcallLeave() { GCall.leave(); },

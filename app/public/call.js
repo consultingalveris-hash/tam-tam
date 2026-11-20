@@ -212,7 +212,7 @@ const Call = {
   render() {
     const c = this.c, root = this.el(); if (!c) { root.innerHTML = ''; root.hidden = true; document.body.classList.remove('in-call'); return; }
     const u = uOf(c.peer), showRemote = c.state === 'live' && c.remote && c.peerCam !== false && c.remote.getVideoTracks().length > 0, showLocal = c.cam && c.local && c.local.getVideoTracks().length;
-    root.hidden = false; document.body.classList.add('in-call');
+    root.hidden = false; document.body.classList.add('in-call'); noKeyboard();
     root.className = 'call' + (showRemote ? ' has-video' : '');
     const btn = (act, icon, label, cls = '') => `<button class="cb ${cls}" type="button" data-act="${act}" aria-label="${label}">${icon}<span>${label}</span></button>`;
     root.innerHTML = `<div class="call-in" role="dialog" aria-modal="true" aria-label="Appel avec ${esc(u.name)}">
@@ -226,7 +226,7 @@ const Call = {
       <div class="call-bar"${c.state === 'incoming' ? '' : ' hidden'}>${c.state === 'incoming'
         ? `${btn('callDecline', I.phone, 'Refuser', 'red down')}${btn('callAccept', c.video ? I.video : I.phone, 'Décrocher', 'green')}`
         : ''}</div>${c.state === 'incoming' ? '' : callSide({add: c.state === 'live', mic: c.mic, cam: c.cam, flip: showLocal, end: 'callEnd', pre: 'call'})}${c.addMenu ? callPick(this.pickList()) : ''}</div>`;
-    this.attach(); this.clock();
+    this.attach(); this.clock(); pipInit(document.getElementById('callLocal'));
   },
   attach() {
     const c = this.c; if (!c) return;
@@ -299,6 +299,25 @@ async function spkToggle(redraw) {
   const ok = await Spk.toggle();
   if (!ok) { toast('Dans le navigateur, c’est le téléphone qui choisit où va le son (casque ou écouteurs s’ils sont branchés, sinon haut-parleur). Pour choisir vous-même, utilisez l’application Tam-Tam de Google Play.', 7000); return; }
   toast(Spk.on ? 'Haut-parleur activé' : 'Haut-parleur coupé'); redraw();
+}
+// L'écran d'appel s'ouvre : on referme le clavier s'il était sorti (zone de message encore active).
+function noKeyboard() { const a = document.activeElement; if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) a.blur(); }
+// Petite image de soi : appui long (ou clic maintenu à la souris), puis on la pose où l'on veut. La place est retenue.
+function pipInit(el) {
+  if (!el || el.dataset.pip) return; el.dataset.pip = '1';
+  const put = (x, y) => { const p = el.parentElement.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
+    x = Math.max(8, Math.min(p.width - w - 8, x)); y = Math.max(8, Math.min(p.height - h - 8, y));
+    Object.assign(el.style, {left: x + 'px', top: y + 'px', right: 'auto', bottom: 'auto'}); return [x, y, p, w, h]; };
+  try { const s = JSON.parse(localStorage.getItem('tt-pip') || 'null'); if (s) requestAnimationFrame(() => { const p = el.parentElement.getBoundingClientRect(); put(s.x * (p.width - el.offsetWidth), s.y * (p.height - el.offsetHeight)); }); } catch {}
+  let t = null, drag = false, dx = 0, dy = 0;
+  el.addEventListener('pointerdown', e => { const r = el.getBoundingClientRect(); dx = e.clientX - r.left; dy = e.clientY - r.top; el.setPointerCapture(e.pointerId);
+    const go = () => { t = null; drag = true; el.classList.add('moving'); if (navigator.vibrate) try { navigator.vibrate(20); } catch {} };
+    if (e.pointerType === 'mouse') go(); else t = setTimeout(go, 280); });
+  el.addEventListener('pointermove', e => { if (!drag) return; e.preventDefault(); const p = el.parentElement.getBoundingClientRect(); put(e.clientX - p.left - dx, e.clientY - p.top - dy); });
+  const end = () => { clearTimeout(t); t = null; if (!drag) return; drag = false; el.classList.remove('moving');
+    const p = el.parentElement.getBoundingClientRect(), x = parseFloat(el.style.left), y = parseFloat(el.style.top);
+    try { localStorage.setItem('tt-pip', JSON.stringify({x: x / Math.max(1, p.width - el.offsetWidth), y: y / Math.max(1, p.height - el.offsetHeight)})); } catch {} };
+  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end); el.addEventListener('contextmenu', e => e.preventDefault());
 }
 /* Boutons pendant l'appel : de simples icônes alignées en haut à droite.
    Coupé = trait rouge en travers de l'icône ; on touche à nouveau pour rallumer. */

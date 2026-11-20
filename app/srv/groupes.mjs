@@ -33,6 +33,9 @@ export function lkToken(uid, name, room) {
 }
 // appel de groupe lancé mais que personne n'a rejoint : terminé au bout de 10 minutes
 setInterval(() => { for (const [id, g] of gcalls) if (!g.parts.size && now() - g.started > 10 * 60_000) { gcalls.delete(id); run(`UPDATE calls SET ended=? WHERE call_id=?`, now(), id); } }, 60_000);
+// Personnes qu'on fait sonner : leur case « appel… » s'affiche 45 s, ou jusqu'à ce qu'elles rejoignent, ignorent ou qu'on annule.
+export const RING_MS = 45_000;
+export const ringList = g => [...(g.ring || new Map())].filter(([, t]) => t > now()).map(([u]) => u);
 export const gcallOf = chatId => [...gcalls.entries()].find(([, g]) => g.chatId === chatId);
 export function gstate(g, id) { pushMany(memberIds(g.chatId), { t: 'gcall', type: 'state', callId: id, chatId: g.chatId, video: g.video, parts: [...g.parts], mode: g.mode }); }
 export function gleave(uid, id) {
@@ -52,7 +55,7 @@ R('POST', /^\/api\/gcall\/start$/, async ({ req, me, body }) => {
   const id = crypto.randomBytes(9).toString('base64url'), video = !!body.video;
   const env = body.keyEnv && typeof body.keyEnv === 'object' && typeof body.keyEnv.ct === 'string' && JSON.stringify(body.keyEnv).length < 60_000 ? body.keyEnv : null;
   const mode = body.sfu && sfuOn() && env ? 'sfu' : 'mesh';
-  gcalls.set(id, { chatId: c.id, video, parts: new Set(), started: now(), mode, keyEnv: mode === 'sfu' ? env : null });
+  gcalls.set(id, { chatId: c.id, video, parts: new Set(), started: now(), mode, keyEnv: mode === 'sfu' ? env : null, ring: new Map(memberIds(c.id).filter(u => u !== me.id).map(u => [u, now() + RING_MS])) });
   run(`INSERT INTO calls(call_id,kind,chat_id,caller,callee,video,status,started) VALUES(?,?,?,?,NULL,?,?,?)`, id, 'group', c.id, me.id, video ? 1 : 0, 'answered', now());
   const fn = '@' + me.handle;
   sysMsg(c.id, `${fn} a lancé un appel ${video ? 'vidéo' : 'vocal'} de groupe`);
@@ -68,11 +71,11 @@ R('POST', /^\/api\/gcall\/join$/, async ({ req, me, body }) => {
   const cap = g.mode === 'sfu' ? GMAX_SFU : GMAX;
   if (!g.parts.has(me.id) && g.parts.size >= cap) E(409, `L’appel est complet (${cap} personnes au maximum).`);
   const others = [...g.parts].filter(x => x !== me.id);
-  g.parts.add(me.id);
+  g.parts.add(me.id); if (g.ring) g.ring.delete(me.id);
   const row = q1(`SELECT joined FROM calls WHERE call_id=?`, id); if (row) { const j = new Set(J(row.joined, [])); j.add(me.id); run(`UPDATE calls SET joined=? WHERE call_id=?`, JSON.stringify([...j]), id); }
   for (const p of others) push(p, { t: 'gcall', type: 'joined', callId: id, user: me.id });
   gstate(g, id);
-  return { parts: others, video: g.video, chatId: g.chatId, mode: g.mode, ...(g.mode === 'sfu' ? { sfu: { url: lkUrlFor(req), token: lkToken(me.id, me.handle, 'tt-' + id) }, keyEnv: g.keyEnv } : {}) };
+  return { parts: others, ringing: ringList(g), video: g.video, chatId: g.chatId, mode: g.mode, ...(g.mode === 'sfu' ? { sfu: { url: lkUrlFor(req), token: lkToken(me.id, me.handle, 'tt-' + id) }, keyEnv: g.keyEnv } : {}) };
 });
 R('POST', /^\/api\/gcall\/signal$/, async ({ me, body }) => {
   const id = String(body.callId || ''), g = gcalls.get(id), to = +body.to, type = String(body.type || '');
@@ -89,11 +92,29 @@ R('POST', /^\/api\/gcall\/ring$/, async ({ me, body }) => {
   const want = new Set((Array.isArray(body.users) ? body.users : []).map(Number));
   const c = q1(`SELECT * FROM chats WHERE id=?`, g.chatId), fn = '@' + me.handle;
   const to = memberIds(g.chatId).filter(uid => uid !== me.id && !g.parts.has(uid) && (!want.size || want.has(uid)));
+  g.ring = g.ring || new Map(); for (const uid of to) g.ring.set(uid, now() + RING_MS);
+  for (const p of g.parts) push(p, { t: 'gcall', type: 'ringing', callId: id, users: to });
   for (const uid of to) {
     push(uid, { t: 'gcall', type: 'ring', callId: id, chatId: g.chatId, from: me.id, video: g.video });
     webPush(uid, { title: (c && c.name) || 'Groupe', body: `${fn} vous appelle dans un appel ${g.video ? 'vidéo' : 'vocal'} de groupe`, tag: 'gcall-' + g.chatId, url: '/?chat=' + g.chatId });
   }
   return { ok: true, rung: to.length };
+});
+// La personne appelée ignore l'appel : sa case disparaît chez les autres.
+R('POST', /^\/api\/gcall\/decline$/, async ({ me, body }) => {
+  const id = String(body.callId || ''), g = gcalls.get(id); if (!g || !isMember(g.chatId, me.id)) return { ok: true };
+  if (g.ring) g.ring.delete(me.id);
+  for (const p of g.parts) push(p, { t: 'gcall', type: 'declined', callId: id, user: me.id });
+  return { ok: true };
+});
+// Un participant annule l'appel vers quelqu'un qui ne décroche pas (appui long sur sa case).
+R('POST', /^\/api\/gcall\/cancel$/, async ({ me, body }) => {
+  const id = String(body.callId || ''), g = gcalls.get(id), uid = +body.user;
+  if (!g || !g.parts.has(me.id) || !isMember(g.chatId, me.id) || g.parts.has(uid)) E(400, 'Impossible d’annuler cet appel.');
+  if (g.ring) g.ring.delete(uid);
+  push(uid, { t: 'gcall', type: 'cancel', callId: id });
+  for (const p of g.parts) push(p, { t: 'gcall', type: 'declined', callId: id, user: uid });
+  return { ok: true };
 });
 R('POST', /^\/api\/gcall\/leave$/, async ({ me, body }) => { gleave(me.id, String(body.callId || '')); return { ok: true }; });
 R('GET', /^\/api\/gcall\/active$/, async ({ me }) => {
