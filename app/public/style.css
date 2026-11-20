@@ -1437,11 +1437,11 @@ body:has(#pop) .rrail,body:has(#layer .layer) .rrail{display:none}
 .ci.end{color:#ff3b3b;margin-top:6px}.ci.end svg{width:24px;height:24px;transform:rotate(135deg)}
 .call-top{right:56px}
 .call-local,.call:not(.has-video) .call-local{top:auto;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 20px)}
-.gcall .call-in{padding-right:50px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 52px)}
-.g-laydot{position:absolute;z-index:4;left:max(10px,env(safe-area-inset-left,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 12px);display:grid;place-items:center;width:40px;height:40px;padding:0;border:0;background:none;cursor:pointer}
+.gcall .call-in{padding-right:50px}
+.g-laydot{position:absolute;z-index:4;right:max(8px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 12px);display:grid;place-items:center;width:40px;height:40px;padding:0;border:0;background:none;cursor:pointer}
 .g-laydot i{width:10.5px;height:10.5px;border-radius:50%;background:#fff;box-shadow:0 0 10px 2px rgb(255 255 255/.6)}
 .g-laydot[aria-expanded="true"] i{background:#14b8c9}
-.g-laymenu{left:12px;right:auto;transform:none;bottom:calc(env(safe-area-inset-bottom,0px) + 66px)}
+.g-laymenu{left:auto;right:12px;transform:none;bottom:calc(env(safe-area-inset-bottom,0px) + 66px)}
 .call-pick{position:absolute;z-index:5;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,calc(100% - 32px));max-height:70%;display:flex;flex-direction:column;border-radius:18px;background:rgb(8 20 25/.94);backdrop-filter:blur(10px);box-shadow:0 12px 40px rgb(0 0 0/.5);color:#fff}
 .cp-head{display:flex;align-items:center;justify-content:space-between;padding:10px 6px 4px 16px}.cp-head b{font-size:16px}.cp-head .ci{filter:none;width:40px;height:40px}
 .cp-list{overflow-y:auto;padding:0 8px 10px}
