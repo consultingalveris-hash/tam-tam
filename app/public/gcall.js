@@ -105,7 +105,7 @@ const GCall = {
       return;
     }
     if (ev.type === 'ring') {
-      if (this.busy()) { toast(`${first(uOf(ev.from).name)} lance un appel de groupe.`); return; }
+      if (this.busy()) { if (!(Call.c && Call.c.peer === ev.from)) toast(`${first(uOf(ev.from).name)} lance un appel de groupe.`); return; }
       this.inc = ev; this.render(); this.ringT = setTimeout(() => this.dismiss(), 45000);
       Call.tone.call(this, 'ring'); return;
     }
@@ -139,6 +139,22 @@ const GCall = {
     const c = this.c; if (!c) return; const v = c.local.getVideoTracks()[0];
     if (!v) return toast('Pour la vidéo, quittez et rejoignez l’appel en vidéo.');
     c.cam = !c.cam; v.enabled = c.cam; this.lkMute('video', c.cam); c.peers.forEach((p, uid) => this.sig(uid, 'media', {cam: c.cam, mic: c.mic})); this.render();
+  },
+
+  /* ---------- ajouter quelqu'un pendant l'appel ---------- */
+  pickList() {
+    const c = this.c, chat = S.chats.get(c.chatId) || {}, here = new Set([S.me.id, ...c.peers.keys()]), mem = new Set((chat.members || []).map(m => m.id));
+    const absent = [...mem].filter(id => !here.has(id)), others = ((S.contacts && S.contacts.contacts) || []).map(u => u.id).filter(id => !mem.has(id) && id !== S.me.id);
+    return [['Membres du groupe pas encore là', absent], ['Vos autres contacts (ajoutés au groupe)', others]];
+  },
+  async addPerson(uid) {
+    const c = this.c; if (!c) return; c.addMenu = false; this.render();
+    const chat = S.chats.get(c.chatId) || {};
+    if (!(chat.members || []).some(m => m.id === uid)) {
+      try { const r = await api(`/api/chats/${c.chatId}/members`, {add: [uid]}); S.chats.set(r.chat.id, r.chat); keepUsers(Object.values(r.chat.users)); } catch (e) { return toast(e.message); }
+    }
+    try { await api('/api/gcall/ring', {callId: c.id, users: [uid]}); toast(`Ça sonne chez ${first(uOf(uid).name)}…`); } catch (e) { toast(e.message); }
+    if (this.c === c) this.render();
   },
 
   /* ---------- affichage ---------- */
@@ -196,7 +212,9 @@ const GCall = {
       ${lay !== 'grid' ? '<p class="g-hint">Appui long sur une petite caméra, puis glissez-la sur la grande pour les échanger.</p>' : ''}
       ${n === 1 ? '<p class="g-wait">En attente des autres membres du groupe…</p>' : ''}
       ${c.layMenu ? `<div class="g-laymenu" role="menu" aria-label="Disposition des caméras">${LAYS.map(([k, l, h]) => `<button type="button" role="menuitemradio" aria-checked="${c.lay === k}" data-act="gcallLaySet" data-k="${k}"><span class="g-ico ${k}" aria-hidden="true"><i></i><i></i><i></i><i></i></span><b>${l}</b><small>${h}</small></button>`).join('')}</div>` : ''}
-      <div class="call-bar"><button class="cb lay-dot" type="button" data-act="gcallLay" aria-label="Disposition des caméras" aria-expanded="${!!c.layMenu}"><i aria-hidden="true"></i><span>Disposition</span></button>${btn('gcallMic', I.mic, c.mic ? 'Micro' : 'Micro coupé', c.mic ? '' : 'off')}${btn('gcallCam', I.video, c.cam ? 'Caméra' : 'Caméra coupée', c.cam ? '' : 'off')}${btn('gcallSpk', I.speaker, 'Haut-parleur', Spk.on ? 'on' : '')}${btn('gcallLeave', I.phone, 'Quitter', 'red down')}</div></div>`;
+      ${callSide({add: true, mic: c.mic, cam: c.cam, flip: false, end: 'gcallLeave', pre: 'gcall'})}
+      ${all.length > 1 ? `<button class="g-laydot" type="button" data-act="gcallLay" aria-label="Disposition des caméras" title="Disposition des caméras" aria-expanded="${!!c.layMenu}"><i aria-hidden="true"></i></button>` : ''}
+      ${c.addMenu ? callPick(this.pickList()) : ''}</div>`;
     if (lay !== 'grid') this.dragInit(root);
     root.querySelectorAll('video[data-v]').forEach(v => { const uid = +v.dataset.v; v.srcObject = uid === S.me.id ? c.local : c.peers.get(uid)?.stream || null; });
     root.querySelectorAll('audio[data-a]').forEach(a => { const p = c.peers.get(+a.dataset.a); if (p && p.stream) { a.srcObject = p.stream; a.play && a.play().catch(() => {}); } });
@@ -209,6 +227,6 @@ Object.assign(ACT, {
   gcallVideo() { GCall.start(true); }, gcallAudio() { GCall.start(false); },
   gcallJoin(d) { GCall.join(d.id); }, gcallAccept() { GCall.accept(); }, gcallDecline() { GCall.dismiss(); },
   gcallMic() { GCall.toggleMic(); }, gcallSpk() { spkToggle(() => GCall.render()); },
-  gcallLay() { const c = GCall.c; if (!c) return; c.layMenu = !c.layMenu; GCall.render(); },
+  gcallLay() { const c = GCall.c; if (!c) return; c.layMenu = !c.layMenu; c.addMenu = false; GCall.render(); },
   gcallLaySet(d) { const c = GCall.c; if (!c) return; c.lay = d.k; c.layMenu = false; try { localStorage.setItem('tt-glay', d.k); } catch {} GCall.render(); }, gcallCam() { GCall.toggleCam(); }, gcallLeave() { GCall.leave(); },
 });

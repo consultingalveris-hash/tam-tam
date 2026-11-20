@@ -81,6 +81,20 @@ R('POST', /^\/api\/gcall\/signal$/, async ({ me, body }) => {
   push(to, { t: 'gcall', type, callId: id, from: me.id, data });
   return { ok: true };
 });
+// Pendant un appel de groupe : faire sonner des membres du groupe qui ne sont pas (encore) dans l'appel.
+R('POST', /^\/api\/gcall\/ring$/, async ({ me, body }) => {
+  const id = String(body.callId || ''), g = gcalls.get(id);
+  if (!g || !g.parts.has(me.id) || !isMember(g.chatId, me.id)) E(400, 'Cet appel est terminé.');
+  if (tooMany('gring:' + me.id, 30, 10 * 60_000)) E(429, 'Trop d’appels. Patientez quelques minutes.');
+  const want = new Set((Array.isArray(body.users) ? body.users : []).map(Number));
+  const c = q1(`SELECT * FROM chats WHERE id=?`, g.chatId), fn = '@' + me.handle;
+  const to = memberIds(g.chatId).filter(uid => uid !== me.id && !g.parts.has(uid) && (!want.size || want.has(uid)));
+  for (const uid of to) {
+    push(uid, { t: 'gcall', type: 'ring', callId: id, chatId: g.chatId, from: me.id, video: g.video });
+    webPush(uid, { title: (c && c.name) || 'Groupe', body: `${fn} vous appelle dans un appel ${g.video ? 'vidéo' : 'vocal'} de groupe`, tag: 'gcall-' + g.chatId, url: '/?chat=' + g.chatId });
+  }
+  return { ok: true, rung: to.length };
+});
 R('POST', /^\/api\/gcall\/leave$/, async ({ me, body }) => { gleave(me.id, String(body.callId || '')); return { ok: true }; });
 R('GET', /^\/api\/gcall\/active$/, async ({ me }) => {
   const mine = new Set(qa(`SELECT chat_id FROM members WHERE user_id=?`, me.id).map(r => r.chat_id));

@@ -19,7 +19,8 @@ R('GET', /^\/api\/call\/ice$/, async ({ me }) => {
 // Données d'appel (offre, réponse, réseau) : refusées si trop lourdes, au lieu d'être coupées en morceaux illisibles.
 export const sigData = d => { if (d == null) return null; const t = JSON.stringify(d); if (t.length > 60_000) E(413, 'Signal d’appel trop lourd.'); return JSON.parse(t); };
 export const pendingRings = new Map(); // personne appelée -> sonnerie en attente (45 s)
-export const CALL_T = ['ring', 'accept', 'decline', 'busy', 'end', 'offer', 'answer', 'ice', 'media'];
+// 'move' : on ajoute quelqu'un pendant un appel à deux ; l'autre personne est invitée à passer dans l'appel de groupe créé.
+export const CALL_T = ['ring', 'accept', 'decline', 'busy', 'end', 'offer', 'answer', 'ice', 'media', 'move'];
 R('POST', /^\/api\/call\/signal$/, async ({ me, body }) => {
   const type = String(body.type || ''), callId = clean(body.callId, 40), to = +body.to, cid = +body.chatId;
   if (!CALL_T.includes(type) || !/^[A-Za-z0-9_-]{8,40}$/.test(callId)) E(400, 'Signal d’appel invalide.');

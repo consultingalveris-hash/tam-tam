@@ -87,6 +87,7 @@ const Call = {
         this.sig('answer', {data: c.pc.localDescription}); break;
       case 'answer': if (c.pc) { await c.pc.setRemoteDescription(ev.data); await this.flush(); } break;
       case 'ice': if (ev.data) { if (c.pc && c.pc.remoteDescription) c.pc.addIceCandidate(ev.data).catch(() => {}); else c.q.push(ev.data); } break;
+      case 'move': this.moved(ev); break;
       case 'media': c.peerCam = !!(ev.data && ev.data.cam); c.peerMic = !(ev.data && ev.data.mic === false); this.render(); break;
       case 'decline': case 'busy':
         clearTimeout(c.timer); this.tone(null); c.state = ev.type === 'busy' ? 'busy' : 'declined'; this.render();
@@ -172,6 +173,35 @@ const Call = {
     if (!ok) toast('Ce téléphone ne permet pas de changer de caméra pendant l’appel.');
   },
 
+  /* ---------- ajouter quelqu'un : l'appel à deux devient un appel de groupe ---------- */
+  pickList() { const c = this.c, list = ((S.contacts && S.contacts.contacts) || []).map(u => u.id).filter(id => id !== c.peer && id !== S.me.id); return [['Vos contacts', list]]; },
+  async addPerson(uid) {
+    const c = this.c; if (!c || c.state !== 'live' || c.moving) return;
+    c.addMenu = false;
+    if (!((S.contacts && S.contacts.contacts) || []).some(u => u.id === c.peer)) { this.render(); return toast('Pour ajouter quelqu’un, la personne en ligne doit être dans vos contacts.'); }
+    c.moving = true; this.render(); toast('Passage en appel de groupe…');
+    let chat, g;
+    try {
+      const r = await api('/api/chats/group', {name: `Appel · ${first(uOf(c.peer).name)}, ${first(uOf(uid).name)}`.slice(0, 50), members: [c.peer, uid]});
+      keepUsers(Object.values(r.chat.users)); S.chats.set(r.chat.id, r.chat); chat = r.chat;
+      g = await api('/api/gcall/start', {chatId: chat.id, video: c.video});
+    } catch (e) { c.moving = false; this.render(); return toast(e.message); }
+    if (this.c !== c) return;
+    await this.sig('move', {data: {callId: g.callId, chatId: chat.id}});
+    await this.sig('end', {log: {dur: c.since ? (Date.now() - c.since) / 1000 : 0}});
+    const video = c.video; this.cleanup();
+    renderTabs(); if (S.tab === 'chats') renderBody();
+    GCall.join(g.callId, video);
+  },
+  // l'autre personne a ajouté quelqu'un : on la suit dans l'appel de groupe
+  async moved(ev) {
+    const c = this.c; if (!c || ev.from !== c.peer || !ev.data || typeof ev.data.callId !== 'string') return;
+    const video = c.video; c.moving = true; this.cleanup();
+    try { await loadChats(); } catch {}
+    if (GCall.inc && GCall.inc.callId === ev.data.callId) GCall.stopRing(), GCall.inc = null;
+    GCall.join(ev.data.callId, video);
+  },
+
   /* ---------- affichage ---------- */
   el() { let e = document.getElementById('call'); if (!e) { e = document.createElement('div'); e.id = 'call'; document.body.appendChild(e); } return e; },
   label() {
@@ -193,9 +223,9 @@ const Call = {
       ${c.weak && c.state === 'live' ? '<div class="call-weak" role="status">📶 Réseau faible : image réduite pour garder un son clair</div>' : ''}
       ${showRemote ? `<div class="call-top"><b>${esc(u.name)}</b><span id="callTime"></span></div>` : ''}
       <video id="callLocal" class="call-local${c.front === false ? ' rear' : ''}" autoplay playsinline muted${showLocal ? '' : ' hidden'}></video>
-      <div class="call-bar">${c.state === 'incoming'
+      <div class="call-bar"${c.state === 'incoming' ? '' : ' hidden'}>${c.state === 'incoming'
         ? `${btn('callDecline', I.phone, 'Refuser', 'red down')}${btn('callAccept', c.video ? I.video : I.phone, 'Décrocher', 'green')}`
-        : `${btn('callMic', I.mic, c.mic ? 'Micro' : 'Micro coupé', c.mic ? '' : 'off')}${btn('callCam', I.video, c.cam ? 'Caméra' : 'Caméra coupée', c.cam ? '' : 'off')}${btn('callSpk', I.speaker, 'Haut-parleur', Spk.on ? 'on' : '')}${showLocal ? btn('callFlip', I.camera, 'Retourner') : ''}${btn('callEnd', I.phone, 'Raccrocher', 'red down')}`}</div></div>`;
+        : ''}</div>${c.state === 'incoming' ? '' : callSide({add: c.state === 'live', mic: c.mic, cam: c.cam, flip: showLocal, end: 'callEnd', pre: 'call'})}${c.addMenu ? callPick(this.pickList()) : ''}</div>`;
     this.attach(); this.clock();
   },
   attach() {
@@ -270,7 +300,25 @@ async function spkToggle(redraw) {
   if (!ok) { toast('Dans le navigateur, c’est le téléphone qui choisit où va le son (casque ou écouteurs s’ils sont branchés, sinon haut-parleur). Pour choisir vous-même, utilisez l’application Tam-Tam de Google Play.', 7000); return; }
   toast(Spk.on ? 'Haut-parleur activé' : 'Haut-parleur coupé'); redraw();
 }
+/* Boutons pendant l'appel : de simples icônes alignées en haut à droite.
+   Coupé = trait rouge en travers de l'icône ; on touche à nouveau pour rallumer. */
+function callSide(o) {
+  const b = (act, icon, label, cls = '') => `<button class="ci ${cls}" type="button" data-act="${act}" aria-label="${label}" title="${label}">${icon}</button>`, p = o.pre;
+  return `<div class="call-side">${o.add ? b(p + 'Add', I.addUser, 'Ajouter quelqu’un à l’appel', 'add') : ''}${b(p + 'Mic', I.mic, o.mic ? 'Couper le micro' : 'Rallumer le micro', o.mic ? '' : 'off')}${b(p + 'Cam', I.video, o.cam ? 'Couper la caméra' : 'Rallumer la caméra', o.cam ? '' : 'off')}${b(p + 'Spk', I.speaker, Spk.on ? 'Couper le haut-parleur' : 'Mettre le haut-parleur', Spk.on ? '' : 'off')}${o.flip ? b(p + 'Flip', I.flip, 'Retourner la caméra') : ''}${b(o.end, I.phone, o.end === 'gcallLeave' ? 'Quitter l’appel' : 'Raccrocher', 'end')}</div>`;
+}
+function callPick(groups) {
+  const rows = groups.filter(g => g[1].length).map(([t, ids]) => `<p class="cp-t">${esc(t)}</p>${ids.map(id => `<button type="button" class="cp-row" data-act="callAddPick" data-id="${id}">${avatar(uOf(id), 'sm')}<span class="cp-n">${esc(uOf(id).name)}</span>${I.addUser}</button>`).join('')}`).join('');
+  return `<div class="call-pick" role="dialog" aria-label="Ajouter quelqu’un à l’appel"><div class="cp-head"><b>Ajouter à l’appel</b><button class="ci" type="button" data-act="callAddClose" aria-label="Fermer">${I.close}</button></div><div class="cp-list">${rows || '<p class="cp-none">Aucun autre contact à ajouter pour l’instant.</p>'}</div></div>`;
+}
+async function callAddOpen() {
+  const k = GCall.c ? GCall : Call; if (!k.c) return;
+  if (!S.contacts) { try { await loadContacts(); } catch {} }
+  if (!k.c) return; k.c.addMenu = !k.c.addMenu; k.c.layMenu = false; k.render();
+}
 Object.assign(ACT, {
+  callAdd() { callAddOpen(); }, gcallAdd() { callAddOpen(); },
+  callAddClose() { const k = GCall.c ? GCall : Call; if (k.c) { k.c.addMenu = false; k.render(); } },
+  callAddPick(d) { const k = GCall.c ? GCall : Call; k.addPerson(+d.id); },
   callSpk() { spkToggle(() => Call.render()); },
   callAudio() { Call.start(false); }, callVideo() { Call.start(true); },
   callAccept() { Call.accept(); }, callDecline() { Call.decline(); }, callEnd() { Call.hangup(); },

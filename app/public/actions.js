@@ -58,6 +58,8 @@ const ACT = {
   selMenu() {
     const ids = [...(S.sel || [])]; if (!ids.length) return; const allPinned = ids.every(i => S.chats.get(i)?.pinned), arch = S.filt === 'arch', n = ids.length;
     sheet(`<div class="menu" style="padding-top:12px">
+      <button type="button" data-act="selCall" data-v="1">${I.video}Appel vidéo</button>
+      <button type="button" data-act="selCall" data-v="">${I.phone}Appel vocal</button>
       <button type="button" data-act="selDo" data-k="read">${I.check || '✓'}Marquer comme lu</button>
       <button type="button" data-act="selDo" data-k="unread"><span class="pin-ic" aria-hidden="true">●</span>Marquer comme non lu</button>
       <button type="button" data-act="selDo" data-k="pin"><span class="pin-ic" aria-hidden="true">📌</span>${allPinned ? 'Retirer l’épingle' : 'Épingler en haut'}</button>
@@ -73,6 +75,25 @@ const ACT = {
     const allMuted = ids.every(i => S.chats.get(i)?.muted);
     try { for (const i of ids) await chatMine(i, d.k === 'pin' ? {pin: !allPinned} : d.k === 'arch' ? {archive: S.filt !== 'arch'} : d.k === 'mute' ? {mute: !allMuted} : {unread: d.k === 'unread'}, true); if (d.k === 'mute') toast(allMuted ? 'Son réactivé' : 'Son coupé : plus de sonnerie ni de notification pour ces discussions'); if (d.k === 'arch') toast(S.filt === 'arch' ? 'Remises dans la liste' : `${ids.length > 1 ? 'Discussions rangées' : 'Discussion rangée'} dans Archives`); } catch (e) { toast(e.message); }
     S.sel = null; renderTabs(); renderBody();
+  },
+  // Appeler les discussions choisies : une seule → appel normal ; plusieurs → un groupe « Appel · … » est créé et l'appel de groupe lancé.
+  async selCall(d) {
+    const video = !!d.v, chats = [...(S.sel || [])].map(i => S.chats.get(i)).filter(Boolean); closeLayer(); if (!chats.length) return;
+    S.sel = null; renderBody();
+    if (Call.c || GCall.c) return toast('Un appel est déjà en cours.');
+    if (chats.length === 1) { await openChat(chats[0].id); return chats[0].type === 'group' ? GCall.start(video) : Call.start(video); }
+    if (!S.contacts) { try { await loadContacts(); } catch {} }
+    const mine = new Set(((S.contacts && S.contacts.contacts) || []).map(u => u.id)), all = new Set();
+    for (const c of chats) { if (c.type === 'group') (c.members || []).forEach(m => m.id !== S.me.id && all.add(m.id)); else if (c.peer) all.add(c.peer); }
+    const ids = [...all].filter(id => mine.has(id)), out = all.size - ids.length;
+    if (!ids.length) return toast('Ces personnes ne sont pas dans vos contacts : appel de groupe impossible.');
+    if (ids.length === 1) { const dc = [...S.chats.values()].find(c => c.type === 'direct' && c.peer === ids[0] && !c.num); if (dc) { await openChat(dc.id); return Call.start(video); } }
+    const name = ('Appel · ' + ids.map(id => first(uOf(id).name)).join(', ')).slice(0, 50);
+    try {
+      const r = await api('/api/chats/group', {name, members: ids}); keepUsers(Object.values(r.chat.users)); S.chats.set(r.chat.id, r.chat);
+      renderTabs(); await openChat(r.chat.id); await GCall.start(video);
+      if (out) toast(`${out} personne${out > 1 ? 's' : ''} hors de vos contacts ${out > 1 ? 'n’ont' : 'n’a'} pas pu être appelée${out > 1 ? 's' : ''}.`);
+    } catch (e) { toast(e.message); }
   },
   selLeaveAsk() { confirmSheet('Quitter ?', 'Vous ne recevrez plus les messages de ces groupes.', 'Quitter', 'selLeaveYes', ''); },
   async selLeaveYes() { closeLayer(); const ids = [...(S.sel || [])].filter(i => S.chats.get(i)?.type === 'group'); try { for (const i of ids) { await api(`/api/chats/${i}/leave`, {}); S.chats.delete(i); if (S.chatId === i) ACT.back(); } toast(ids.length > 1 ? 'Groupes quittés' : 'Groupe quitté'); } catch (e) { toast(e.message); } S.sel = null; renderTabs(); renderBody(); },
