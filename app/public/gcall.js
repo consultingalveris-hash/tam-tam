@@ -33,6 +33,7 @@ const GCall = {
     let r; try { r = await api('/api/gcall/join', {callId}); } catch (e) { local.getTracks().forEach(t => t.stop()); return toast(e.message); }
     let lay = 'grid'; try { lay = localStorage.getItem('tt-glay') || 'grid'; } catch {}
     this.c = {id: callId, chatId: r.chatId, video, local, mic: true, cam: local.getVideoTracks().length > 0, peers: new Map(), since: Date.now(), lay, main: null, layMenu: false};
+    Spk.start(video);
     this.c.tick = setInterval(() => this.clock(), 1000);
     this.render();
     if (r.mode === 'sfu') return this.lk(r);
@@ -130,7 +131,7 @@ const GCall = {
     api('/api/gcall/leave', {callId: c.id}).catch(() => {});
     c.leaving = true; if (c.room) { try { c.room.disconnect(); } catch {} }
     clearInterval(c.tick); c.peers.forEach(p => { try { if (p.net) p.net(); if (p.pc) p.pc.close(); } catch {} }); c.local.getTracks().forEach(t => t.stop());
-    this.c = null; this.render(); if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead();
+    Spk.stop(); this.c = null; this.render(); if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead();
   },
   lkMute(kind, on) { const c = this.c; if (!c || !c.room) return; c.room.localParticipant.trackPublications.forEach(pub => { if (pub.kind === kind && pub.track) (on ? pub.unmute() : pub.mute()).catch(() => {}); }); },
   toggleMic() { const c = this.c; if (!c) return; c.mic = !c.mic; c.local.getAudioTracks().forEach(t => { t.enabled = c.mic; }); this.lkMute('audio', c.mic); c.peers.forEach((p, uid) => this.sig(uid, 'media', {cam: c.cam, mic: c.mic})); this.render(); },
@@ -195,10 +196,11 @@ const GCall = {
       ${lay !== 'grid' ? '<p class="g-hint">Appui long sur une petite caméra, puis glissez-la sur la grande pour les échanger.</p>' : ''}
       ${n === 1 ? '<p class="g-wait">En attente des autres membres du groupe…</p>' : ''}
       ${c.layMenu ? `<div class="g-laymenu" role="menu" aria-label="Disposition des caméras">${LAYS.map(([k, l, h]) => `<button type="button" role="menuitemradio" aria-checked="${c.lay === k}" data-act="gcallLaySet" data-k="${k}"><span class="g-ico ${k}" aria-hidden="true"><i></i><i></i><i></i><i></i></span><b>${l}</b><small>${h}</small></button>`).join('')}</div>` : ''}
-      <div class="call-bar"><button class="cb lay-dot" type="button" data-act="gcallLay" aria-label="Disposition des caméras" aria-expanded="${!!c.layMenu}"><i aria-hidden="true"></i><span>Disposition</span></button>${btn('gcallMic', I.mic, c.mic ? 'Micro' : 'Micro coupé', c.mic ? '' : 'off')}${btn('gcallCam', I.video, c.cam ? 'Caméra' : 'Caméra coupée', c.cam ? '' : 'off')}${btn('gcallLeave', I.phone, 'Quitter', 'red down')}</div></div>`;
+      <div class="call-bar"><button class="cb lay-dot" type="button" data-act="gcallLay" aria-label="Disposition des caméras" aria-expanded="${!!c.layMenu}"><i aria-hidden="true"></i><span>Disposition</span></button>${btn('gcallMic', I.mic, c.mic ? 'Micro' : 'Micro coupé', c.mic ? '' : 'off')}${btn('gcallCam', I.video, c.cam ? 'Caméra' : 'Caméra coupée', c.cam ? '' : 'off')}${btn('gcallSpk', I.speaker, 'Haut-parleur', Spk.on ? 'on' : '')}${btn('gcallLeave', I.phone, 'Quitter', 'red down')}</div></div>`;
     if (lay !== 'grid') this.dragInit(root);
     root.querySelectorAll('video[data-v]').forEach(v => { const uid = +v.dataset.v; v.srcObject = uid === S.me.id ? c.local : c.peers.get(uid)?.stream || null; });
     root.querySelectorAll('audio[data-a]').forEach(a => { const p = c.peers.get(+a.dataset.a); if (p && p.stream) { a.srcObject = p.stream; a.play && a.play().catch(() => {}); } });
+    Spk.apply();
     this.clock();
   },
 };
@@ -206,7 +208,7 @@ window.addEventListener('beforeunload', () => { if (GCall.c) GCall.leave(); });
 Object.assign(ACT, {
   gcallVideo() { GCall.start(true); }, gcallAudio() { GCall.start(false); },
   gcallJoin(d) { GCall.join(d.id); }, gcallAccept() { GCall.accept(); }, gcallDecline() { GCall.dismiss(); },
-  gcallMic() { GCall.toggleMic(); },
+  gcallMic() { GCall.toggleMic(); }, gcallSpk() { spkToggle(() => GCall.render()); },
   gcallLay() { const c = GCall.c; if (!c) return; c.layMenu = !c.layMenu; GCall.render(); },
   gcallLaySet(d) { const c = GCall.c; if (!c) return; c.lay = d.k; c.layMenu = false; try { localStorage.setItem('tt-glay', d.k); } catch {} GCall.render(); }, gcallCam() { GCall.toggleCam(); }, gcallLeave() { GCall.leave(); },
 });

@@ -7,6 +7,8 @@ import android.bluetooth.BluetoothManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -106,6 +108,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onDestroy() {
         pxStopNow();
+        callAudioReset();
         super.onDestroy();
     }
 
@@ -251,6 +254,32 @@ public class MainActivity extends BridgeActivity {
         return u != null && (u.equals(SITE) || u.startsWith(SITE + "/"));
     }
 
+    private void callSpeaker(boolean on) {
+        AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (am == null) return;
+        try {
+            am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            setVolumeControlStream(AudioManager.STREAM_VOICE_CALL);
+            if (Build.VERSION.SDK_INT >= 31) {
+                if (on) {
+                    for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
+                        if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) { am.setCommunicationDevice(d); return; }
+                    }
+                } else am.clearCommunicationDevice();
+            } else am.setSpeakerphoneOn(on);
+        } catch (Exception ignored) { }
+    }
+
+    private void callAudioReset() {
+        AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (am == null) return;
+        try {
+            if (Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice(); else am.setSpeakerphoneOn(false);
+            am.setMode(AudioManager.MODE_NORMAL);
+            setVolumeControlStream(AudioManager.USE_DEFAULT_STREAM_TYPE);
+        } catch (Exception ignored) { }
+    }
+
     private class NativeBridge {
         @JavascriptInterface
         public void setSecure(final boolean on) {
@@ -262,7 +291,14 @@ public class MainActivity extends BridgeActivity {
         }
 
         @JavascriptInterface
-        public int version() { return 3; }
+        public int version() { return 4; }
+
+        // Appels : haut-parleur ou écouteur (ou casque branché). « on » = haut-parleur du téléphone.
+        @JavascriptInterface
+        public void speaker(final boolean on) { runOnUiThread(() -> { if (fromSite(getBridge().getWebView())) callSpeaker(on); }); }
+
+        @JavascriptInterface
+        public void callOver() { runOnUiThread(() -> callAudioReset()); }
 
         @JavascriptInterface
         public void pxPrepare() { runOnUiThread(() -> { if (fromSite(getBridge().getWebView())) pxAskPermissions(false); }); }

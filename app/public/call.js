@@ -126,7 +126,7 @@ const Call = {
     pc.ontrack = e => { c.remote = e.streams[0] || new MediaStream([e.track]); this.attach(); };
     pc.onconnectionstatechange = () => {
       if (this.c !== c) return;
-      if (pc.connectionState === 'connected') { if (!c.since && c.pcAt) Perf.add('call', performance.now() - c.pcAt); if (!c.net) c.net = NetAdapt.watch(pc, false, i => { const w = i >= 3; if (w !== !!c.weak) { c.weak = w; if (this.c === c) this.render(); } }); if (!c.since) { c.since = Date.now(); c.tick = setInterval(() => this.clock(), 1000); } c.state = 'live'; c.lost && clearTimeout(c.lost); this.render(); this.sig('media', {data: {cam: c.cam, mic: c.mic}}); }
+      if (pc.connectionState === 'connected') { if (!c.since && c.pcAt) Perf.add('call', performance.now() - c.pcAt); if (!c.net) c.net = NetAdapt.watch(pc, false, i => { const w = i >= 3; if (w !== !!c.weak) { c.weak = w; if (this.c === c) this.render(); } }); if (!c.since) { Spk.start(c.video); c.since = Date.now(); c.tick = setInterval(() => this.clock(), 1000); } c.state = 'live'; c.lost && clearTimeout(c.lost); this.render(); this.sig('media', {data: {cam: c.cam, mic: c.mic}}); }
       else if (pc.connectionState === 'disconnected') { c.state = 'reconnecting'; this.render(); c.lost = setTimeout(() => { if (this.c === c && pc.connectionState !== 'connected') this.hangup(); }, 15000); }
       else if (pc.connectionState === 'failed') { toast('La connexion a échoué. Vérifiez votre réseau et rappelez.'); this.hangup(); }
     };
@@ -195,7 +195,7 @@ const Call = {
       <video id="callLocal" class="call-local${c.front === false ? ' rear' : ''}" autoplay playsinline muted${showLocal ? '' : ' hidden'}></video>
       <div class="call-bar">${c.state === 'incoming'
         ? `${btn('callDecline', I.phone, 'Refuser', 'red down')}${btn('callAccept', c.video ? I.video : I.phone, 'Décrocher', 'green')}`
-        : `${btn('callMic', I.mic, c.mic ? 'Micro' : 'Micro coupé', c.mic ? '' : 'off')}${btn('callCam', I.video, c.cam ? 'Caméra' : 'Caméra coupée', c.cam ? '' : 'off')}${showLocal ? btn('callFlip', I.camera, 'Retourner') : ''}${btn('callEnd', I.phone, 'Raccrocher', 'red down')}`}</div></div>`;
+        : `${btn('callMic', I.mic, c.mic ? 'Micro' : 'Micro coupé', c.mic ? '' : 'off')}${btn('callCam', I.video, c.cam ? 'Caméra' : 'Caméra coupée', c.cam ? '' : 'off')}${btn('callSpk', I.speaker, 'Haut-parleur', Spk.on ? 'on' : '')}${showLocal ? btn('callFlip', I.camera, 'Retourner') : ''}${btn('callEnd', I.phone, 'Raccrocher', 'red down')}`}</div></div>`;
     this.attach(); this.clock();
   },
   attach() {
@@ -203,6 +203,7 @@ const Call = {
     const r = document.getElementById('callRemote'), a = document.getElementById('callAudio'), l = document.getElementById('callLocal');
     if (c.remote) { if (r && r.srcObject !== c.remote) r.srcObject = c.remote; if (a && a.srcObject !== c.remote) { a.srcObject = c.remote; a.play && a.play().catch(() => {}); } if (r) r.muted = true; }
     if (l && c.local && l.srcObject !== c.local) l.srcObject = c.local;
+    Spk.apply();
     if (c.state === 'live' && c.remote && c.remote.getVideoTracks().length && r && r.hidden && c.peerCam !== false) this.render();
   },
 
@@ -235,13 +236,42 @@ const Call = {
     const c = this.c; if (!c) return;
     clearTimeout(c.timer); clearInterval(c.tick); clearTimeout(c.lost); if (c.net) c.net(); this.tone(null);
     this.stopTracks(c.local); try { c.pc && c.pc.close(); } catch {}
+    if (c.since) Spk.stop();
     this.c = null; this.render();
   },
 };
 // ouvert depuis la notification « touchez pour répondre » : on reprend la sonnerie en attente
 Call.checkPending = async function () { if (this.c || GCall.c) return; try { const r = await api('/api/call/pending'); if (r.ev && !this.c) this.onSignal(r.ev); } catch {} };
 window.addEventListener('beforeunload', () => { if (Call.c && Call.c.state !== 'incoming') Call.hangup(); });
+
+/* Haut-parleur : dans l'application Android, le pont bascule vraiment la sortie du son ;
+   dans le navigateur, on choisit la sortie quand le navigateur le permet (setSinkId). */
+const Spk = {
+  on: false, sink: '',
+  nat() { try { return !!(window.TamTamAndroid && TamTamAndroid.version() >= 4); } catch { return false; } },
+  start(video) { this.on = !!video; this.sink = ''; if (this.nat()) try { TamTamAndroid.speaker(this.on); } catch {} },
+  stop() { this.on = false; this.sink = ''; if (this.nat()) try { TamTamAndroid.callOver(); } catch {} },
+  apply(root) { if (!this.sink) return; (root || document).querySelectorAll('#call audio, #gcall audio, audio[data-a]').forEach(a => { if (a.setSinkId && a.sinkId !== this.sink) a.setSinkId(this.sink).catch(() => {}); }); },
+  async toggle() {
+    const want = !this.on;
+    if (this.nat()) { try { TamTamAndroid.speaker(want); this.on = want; } catch {} return true; }
+    if (!('setSinkId' in HTMLMediaElement.prototype)) return false;
+    let outs = [];
+    try { outs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audiooutput' && d.deviceId); } catch {}
+    const spk = outs.find(d => /speaker|haut-parleur|haut parleur|loud/i.test(d.label));
+    const ear = outs.find(d => d !== spk && !/^(default|communications)$/.test(d.deviceId));
+    const id = want ? (spk && spk.deviceId) : (ear ? ear.deviceId : 'default');
+    if (!id) return false;
+    this.sink = id; this.on = want; this.apply(); return true;
+  },
+};
+async function spkToggle(redraw) {
+  const ok = await Spk.toggle();
+  if (!ok) { toast('Dans le navigateur, c’est le téléphone qui choisit où va le son (casque ou écouteurs s’ils sont branchés, sinon haut-parleur). Pour choisir vous-même, utilisez l’application Tam-Tam de Google Play.', 7000); return; }
+  toast(Spk.on ? 'Haut-parleur activé' : 'Haut-parleur coupé'); redraw();
+}
 Object.assign(ACT, {
+  callSpk() { spkToggle(() => Call.render()); },
   callAudio() { Call.start(false); }, callVideo() { Call.start(true); },
   callAccept() { Call.accept(); }, callDecline() { Call.decline(); }, callEnd() { Call.hangup(); },
   callMic() { Call.toggleMic(); }, callCam() { Call.toggleCam(); }, callFlip() { Call.flip(); },
