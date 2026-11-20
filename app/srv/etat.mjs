@@ -5,7 +5,7 @@
 // (créée par l'installateur, envoyée une fois par e-mail au propriétaire) : sans elle, la page n'existe pas (404).
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { BASE_URL, DAY, E, blockedNow, OWNER, Rfor, db, ipOf, now, q1, qa, run, sha, tooMany } from './core.mjs';
+import { BASE_URL, DAY, E, blockedNow, cookies, OWNER, Rfor, db, ipOf, now, q1, qa, run, sha, tooMany } from './core.mjs';
 import { sendMail, mailHtml } from './messages.mjs';
 
 const R = Rfor(8);
@@ -33,9 +33,16 @@ const groupe = (since, col, extra = '') => qa(`SELECT ${col} k, COUNT(*) n FROM 
 R('GET', /^\/api\/etat$/, ({ req, url, res }) => {
   // Sans la bonne clé : la page « n'existe pas », et les essais sont limités.
   // Audit du 20/11/2026 : seuls les essais avec une mauvaise clé sont comptés (les visites du propriétaire ne le bloquent plus).
-  const k = 'etat:' + ipOf(req);
-  if (blockedNow(k, 20, 60 * 60_000) || !keyOk(url.searchParams.get('cle'))) { tooMany(k, 20, 60 * 60_000); if (KEY.length) noter('etat-refus', '/api/etat', ipOf(req)); E(404, 'Adresse inconnue.'); }
-  res.setHeader('X-Robots-Tag', 'noindex'); res.setHeader('Cache-Control', 'no-store');
+  // Audit du 20/11/2026 : la clé peut venir de l'en-tête X-Etat-Cle (programmes) ou du lien reçu par e-mail ; dans ce cas
+  // elle est aussitôt rangée dans un cookie réservé à cette page et le navigateur est renvoyé vers l'adresse SANS la clé
+  // (elle ne reste ni dans l'historique, ni dans la barre d'adresse, ni dans les liens suivis).
+  const k = 'etat:' + ipOf(req), cq = url.searchParams.get('cle'), cle = req.headers['x-etat-cle'] || cq || cookies(req).tt_etat;
+  if (blockedNow(k, 20, 60 * 60_000) || !keyOk(cle)) { tooMany(k, 20, 60 * 60_000); if (KEY.length) noter('etat-refus', '/api/etat', ipOf(req)); E(404, 'Adresse inconnue.'); }
+  res.setHeader('X-Robots-Tag', 'noindex'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('Referrer-Policy', 'no-referrer');
+  if (cq) {
+    res.writeHead(303, { Location: '/api/etat', 'Set-Cookie': `tt_etat=${encodeURIComponent(String(cle))}; Path=/api/etat; Max-Age=3600; HttpOnly; Secure; SameSite=Strict` });
+    res.end(); return null;
+  }
   const t = now(), j1 = t - DAY, j7 = t - 7 * DAY;
   let hote = null; try { hote = JSON.parse(fs.readFileSync(HOTE, 'utf8')); } catch { /* pas de résumé du serveur */ }
   const mailMasque = e => String(e || '').replace(/^(.).*?(.)?@/, (m, a, b) => a + '…' + (b || '') + '@');
