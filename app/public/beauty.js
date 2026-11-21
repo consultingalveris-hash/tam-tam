@@ -97,8 +97,9 @@ c=mix(c,vec3(dot(c,L)),gray);gl_FragColor=vec4(clamp(c,0.,1.),1.);}`,
     k.render();
   },
 };
-// Bandeau des filtres, en bas de l'écran d'appel.
+// Bandeau des filtres, en bas de l'écran d'appel. Chaque pastille montre le même portrait avec l'effet du filtre
+// (portraits illustrés créés avec ChatGPT, rangés côte à côte dans fx-portraits.jpg).
 function fxPick(pre) {
   const m = Beauty.mode;
-  return `<div class="fx-pick" role="radiogroup" aria-label="Filtres vidéo">${Beauty.FX.map(([k, l, , css]) => `<button type="button" role="radio" aria-checked="${m === k}" data-act="${pre}FxSet" data-k="${k}"><i style="filter:${css}" aria-hidden="true"></i><span>${l}</span></button>`).join('')}</div>`;
+  return `<div class="fx-pick" role="radiogroup" aria-label="Filtres vidéo">${Beauty.FX.map(([k, l], n) => `<button type="button" role="radio" aria-checked="${m === k}" data-act="${pre}FxSet" data-k="${k}"><i style="background-position:${(n * 100 / 6).toFixed(3)}% 0" aria-hidden="true"></i><span>${l}</span></button>`).join('')}</div>`;
 }

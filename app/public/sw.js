@@ -1,6 +1,6 @@
 /* tam-tam — travailleur de fond : notifications et ouverture hors connexion. */
-const CACHE = 'tamtam-v117';
-const SHELL = ['/', '/style.css', '/i18n.js', '/i18n-en.js', '/kit.js', '/secure.js', '/app.js', '/sheets.js', '/status.js', '/settings.js', '/lock.js', '/sound.js', '/media.js', '/store.js', '/profile.js', '/translate.js', '/actions.js', '/beauty.js', '/call.js', '/gcall.js', '/device.js', '/tabs.js', '/emoji.js', '/camera.js', '/memories.js', '/sounds.js', '/secours.js', '/proche.js', '/start.js', '/icon.svg', '/logo-tamtam.svg', '/icon-192.png'];
+const CACHE = 'tamtam-v118';
+const SHELL = ['/', '/style.css', '/i18n.js', '/i18n-en.js', '/kit.js', '/secure.js', '/app.js', '/sheets.js', '/status.js', '/settings.js', '/lock.js', '/sound.js', '/media.js', '/store.js', '/profile.js', '/translate.js', '/actions.js', '/beauty.js', '/fx-portraits.jpg', '/call.js', '/gcall.js', '/device.js', '/tabs.js', '/emoji.js', '/camera.js', '/memories.js', '/sounds.js', '/secours.js', '/proche.js', '/start.js', '/icon.svg', '/logo-tamtam.svg', '/icon-192.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k !== MEDIA).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 const MEDIA = 'tt-media';
