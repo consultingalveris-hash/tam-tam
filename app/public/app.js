@@ -35,7 +35,7 @@ function keepUsers(list) { for (const u of list || []) if (u) { S.users.set(u.id
 const PC_IC = '<svg class="pc-ic" viewBox="0 0 24 24" width="13" height="13" aria-label="Envoyé depuis un ordinateur" role="img"><title>Envoyé depuis un ordinateur : les captures d’écran n’y sont pas signalées</title><rect x="3" y="4" width="18" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 /* ---------- appels au serveur ---------- */
 async function api(path, body, opts = {}) {
-  const init = {method: body !== undefined ? 'POST' : 'GET', headers: {}, credentials: 'same-origin'};
+  const init = {method: body !== undefined ? 'POST' : 'GET', headers: {}, credentials: 'same-origin', keepalive: !!opts.keep};
   if (body !== undefined) { if (opts.raw) { init.body = body; init.headers['Content-Type'] = opts.type; } else { init.body = JSON.stringify(body); init.headers['Content-Type'] = 'application/json'; } }
   let r;
   try { r = await fetch(path, init); } catch { if (typeof Secours !== 'undefined') Secours.fail(); throw new Error('Pas de connexion internet. Réessayez.'); }

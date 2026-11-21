@@ -73,7 +73,8 @@ const GCall = {
   },
   async media(video) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Ce navigateur ne permet pas les appels. Essayez Chrome, Brave ou Safari à jour.');
-    const v = video ? {facingMode: 'user', width: {ideal: 640}, height: {ideal: 360}, frameRate: {max: 15}} : false;
+    // jusqu'à 4 personnes (liaisons directes) : image plus nette ; au-delà, plus légère
+    const big = ((S.chats.get(S.chatId) || {}).members || []).length <= 4, v = video ? (big ? {facingMode: 'user', width: {ideal: 960}, height: {ideal: 540}, frameRate: {ideal: 24, max: 24}} : {facingMode: 'user', width: {ideal: 640}, height: {ideal: 360}, frameRate: {max: 15}}) : false;
     try { return Beauty.stream(await getAV(v)); }
     catch (e) {
       throw new Error(e && e.name === 'NotAllowedError' ? 'Autorisez le micro' + (video ? ' et la caméra' : '') + ' pour tam-tam dans votre navigateur, puis réessayez.' : 'Micro introuvable sur cet appareil.');
@@ -91,6 +92,7 @@ const GCall = {
       if (this.c !== c) return; p.state = pc.connectionState;
       if (p.state === 'connected') { this.sig(uid, 'media', {cam: c.cam, mic: c.mic}); if (!p.net) p.net = NetAdapt.watch(pc, true); }
       if (p.state === 'failed') { this.drop(uid); }
+      clearTimeout(p.lostT); if (p.state === 'disconnected') p.lostT = setTimeout(() => { if (this.c === c && p.pc.connectionState !== 'connected') this.drop(uid); }, 6000);
       this.render();
     };
     this.render(); return p;
@@ -136,7 +138,7 @@ const GCall = {
 
   leave() {
     const c = this.c; if (!c) return;
-    api('/api/gcall/leave', {callId: c.id}).catch(() => {});
+    api('/api/gcall/leave', {callId: c.id}, {keep: true}).catch(() => {});
     c.leaving = true; if (c.room) { try { c.room.disconnect(); } catch {} }
     clearInterval(c.tick); c.peers.forEach(p => { try { if (p.net) p.net(); if (p.pc) p.pc.close(); } catch {} }); c.local.getTracks().forEach(t => t.stop());
     Spk.stop(); this.c = null; this.render(); if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead();
@@ -174,8 +176,8 @@ const GCall = {
     if ([...c.ringing.values()].some(t => t <= Date.now())) { for (const [u, t] of c.ringing) if (t <= Date.now()) c.ringing.delete(u); return this.render(); } const s = Math.floor((Date.now() - c.since) / 1000); el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; },
   tile(uid, stream, cam, mic, me, state) {
     const u = me ? S.me : uOf(uid), vid = stream && cam !== false && stream.getVideoTracks().length;
-    return `<div class="gt${me ? ' me' : ''}" data-uid="${uid}">${vid ? `<video autoplay playsinline${me ? ' muted' : ''} data-v="${uid}"></video>` : `<div class="gt-av">${avatar(u, 'xl')}</div>`}
-      ${!me ? `<audio autoplay data-a="${uid}"></audio>` : ''}
+    return `<div class="gt${me ? ' me' : ''}" data-uid="${uid}">${vid ? `<video autoplay playsinline muted data-k="v${uid}" data-v="${uid}"></video>` : `<div class="gt-av">${avatar(u, 'xl')}</div>`}
+      ${!me ? `<audio autoplay data-k="a${uid}" data-a="${uid}"></audio>` : ''}
       <span class="gt-name">${mic === false ? '🔇 ' : ''}${esc(me ? 'Vous' : first(u.name))}${state && state !== 'connected' ? ' · connexion…' : ''}</span></div>`;
   },
   // Appui long sur une petite caméra, puis glisser sur la grande : elles échangent leur place.
@@ -221,7 +223,7 @@ const GCall = {
       : `<div class="g-stage l-${lay}"><div class="g-main">${T(c.main)}</div><div class="g-secs">${all.filter(id => id !== c.main).map(T).join('')}</div></div>`;
     const LAYS = [['grid', 'Équilibré', 'Toutes les caméras de la même taille'], ['side', 'Principale à gauche', 'Une grande caméra, les autres à droite'], ['top', 'Principale en haut', 'Une grande caméra, les autres en dessous']];
     root.className = 'call gcall';
-    root.innerHTML = `<div class="call-in" role="dialog" aria-modal="true" aria-label="Appel de groupe">
+    keepMedia(root, `<div class="call-in" role="dialog" aria-modal="true" aria-label="Appel de groupe">
       <div class="g-top"><b>${esc(chat ? chat.name : 'Groupe')}</b><span><span id="gTime">0:00</span> · ${n} personne${n > 1 ? 's' : ''}</span></div>
       ${stage}
       ${lay !== 'grid' ? '<p class="g-hint">Appui long sur une petite caméra, puis glissez-la sur la grande pour les échanger.</p>' : ''}
@@ -230,18 +232,17 @@ const GCall = {
       ${callSide({add: true, mic: c.mic, cam: c.cam, flip: false, fx: c.cam && c.local.getVideoTracks().length > 0, end: 'gcallLeave', pre: 'gcall'})}
       ${c.fxMenu ? fxPick('gcall') : ''}
       ${all.length > 1 ? `<button class="g-laydot" type="button" data-act="gcallLay" aria-label="Disposition des caméras" title="Disposition des caméras" aria-expanded="${!!c.layMenu}"><i aria-hidden="true"></i></button>` : ''}
-      ${c.addMenu ? callPick(this.pickList()) : ''}</div>`;
+      ${c.addMenu ? callPick(this.pickList()) : ''}</div>`);
     if (lay !== 'grid') this.dragInit(root);
     root.querySelectorAll('.gt.wait').forEach(el => { let t = null; const off = () => { clearTimeout(t); t = null; el.classList.remove('press'); };
       el.addEventListener('pointerdown', () => { el.classList.add('press'); t = setTimeout(() => { off(); if (navigator.vibrate) try { navigator.vibrate(30); } catch {} this.cancelRing(+el.dataset.uid); }, 650); });
       ['pointerup', 'pointerleave', 'pointercancel'].forEach(k => el.addEventListener(k, off)); el.addEventListener('contextmenu', e => e.preventDefault()); });
-    root.querySelectorAll('video[data-v]').forEach(v => { const uid = +v.dataset.v; v.srcObject = uid === S.me.id ? c.local : c.peers.get(uid)?.stream || null; });
-    root.querySelectorAll('audio[data-a]').forEach(a => { const p = c.peers.get(+a.dataset.a); if (p && p.stream) { a.srcObject = p.stream; a.play && a.play().catch(() => {}); } });
+    root.querySelectorAll('video[data-v]').forEach(v => { const uid = +v.dataset.v; playOn(v, uid === S.me.id ? c.local : c.peers.get(uid)?.stream); });
+    root.querySelectorAll('audio[data-a]').forEach(a => { const p = c.peers.get(+a.dataset.a); if (p && p.stream) playOn(a, p.stream); });
     Spk.apply();
     this.clock();
   },
 };
-window.addEventListener('beforeunload', () => { if (GCall.c) GCall.leave(); });
 Object.assign(ACT, {
   gcallVideo() { GCall.start(true); }, gcallAudio() { GCall.start(false); },
   gcallJoin(d) { GCall.join(d.id); }, gcallAccept() { GCall.accept(); }, gcallDecline() { GCall.decline(); },

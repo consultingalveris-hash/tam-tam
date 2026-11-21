@@ -5,7 +5,7 @@
 /* Appels sur réseau faible (3G, coupures) : le son passe en priorité ; l'image baisse en netteté et en fluidité
    selon le débit réellement disponible, puis remonte quand le réseau s'améliore. */
 const NetAdapt = {
-  TIERS: [{min: 1_500_000, br: 1_200_000, gbr: 500_000, sc: 1, fps: 30, gfps: 15}, {min: 600_000, br: 600_000, gbr: 300_000, sc: 1.5, fps: 24, gfps: 15}, {min: 250_000, br: 250_000, gbr: 150_000, sc: 2.5, fps: 15, gfps: 10}, {min: 0, br: 100_000, gbr: 80_000, sc: 4, fps: 8, gfps: 8}],
+  TIERS: [{min: 3_000_000, br: 2_500_000, gbr: 900_000, sc: 1, fps: 30, gfps: 24}, {min: 1_500_000, br: 1_400_000, gbr: 500_000, sc: 1, fps: 30, gfps: 15}, {min: 600_000, br: 600_000, gbr: 300_000, sc: 1.5, fps: 24, gfps: 15}, {min: 250_000, br: 250_000, gbr: 150_000, sc: 2.5, fps: 15, gfps: 10}, {min: 0, br: 100_000, gbr: 80_000, sc: 4, fps: 8, gfps: 8}],
   async apply(pc, t, group) {
     for (const s of pc.getSenders()) { if (!s.track) continue; try { const p = s.getParameters(); if (!p.encodings || !p.encodings.length) p.encodings = [{}];
       if (s.track.kind === 'audio') { p.encodings[0].priority = 'high'; p.encodings[0].networkPriority = 'high'; p.encodings[0].maxBitrate = t.min < 250_000 ? 24_000 : 40_000; }
@@ -23,7 +23,7 @@ const NetAdapt = {
         if (x.type === 'remote-inbound-rtp' && x.kind === 'video' && x.fractionLost != null) loss = Math.max(loss, x.fractionLost);
         if (x.type === 'remote-inbound-rtp' && x.kind === 'audio' && x.fractionLost != null) loss = Math.max(loss, x.fractionLost * 1.5);
       }); } catch { return; }
-      if (!bw) return; let i = this.TIERS.findIndex(t => bw >= t.min); if (loss > 0.12) i = Math.min(3, i + 2); else if (loss > 0.05) i = Math.min(3, i + 1);
+      if (!bw) return; let i = this.TIERS.findIndex(t => bw >= t.min); const last = this.TIERS.length - 1; if (loss > 0.12) i = Math.min(last, i + 2); else if (loss > 0.05) i = Math.min(last, i + 1);
       const now = Date.now(); if (i === st.tier || (now - st.at < 8000 && st.tier >= 0 && i < st.tier)) return;
       st.tier = i; st.at = now; await this.apply(pc, this.TIERS[i], group); if (onTier) onTier(i, bw, loss);
     };
@@ -33,11 +33,11 @@ const NetAdapt = {
 const Call = {
   c: null, // appel en cours
   rid: () => Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join(''),
-  sig(type, extra = {}) { const c = this.c; if (!c) return Promise.resolve(); return api('/api/call/signal', {type, callId: c.id, chatId: c.chatId, to: c.peer, video: c.video, ...extra}).catch(() => {}); },
+  sig(type, extra = {}) { const c = this.c; if (!c) return Promise.resolve(); return api('/api/call/signal', {type, callId: c.id, chatId: c.chatId, to: c.peer, video: c.video, ...extra}, {keep: type === 'end'}).catch(() => {}); },
 
   async media(video) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Ce navigateur ne permet pas les appels. Essayez Chrome, Brave ou Safari à jour.');
-    try { return Beauty.stream(await getAV(video ? {facingMode: 'user', width: {ideal: 1280}, height: {ideal: 720}} : false)); }
+    try { return Beauty.stream(await getAV(video ? {facingMode: 'user', width: {ideal: 1280}, height: {ideal: 720}, frameRate: {ideal: 30}} : false)); }
     catch (e) {
       throw new Error(e && e.name === 'NotAllowedError' ? 'Autorisez le micro' + (video ? ' et la caméra' : '') + ' pour tam-tam dans votre navigateur (icône à gauche de l’adresse), puis réessayez.' : 'Micro introuvable sur cet appareil.');
     }
@@ -127,8 +127,8 @@ const Call = {
     pc.ontrack = e => { c.remote = e.streams[0] || new MediaStream([e.track]); this.attach(); };
     pc.onconnectionstatechange = () => {
       if (this.c !== c) return;
-      if (pc.connectionState === 'connected') { if (!c.since && c.pcAt) Perf.add('call', performance.now() - c.pcAt); if (!c.net) c.net = NetAdapt.watch(pc, false, i => { const w = i >= 3; if (w !== !!c.weak) { c.weak = w; if (this.c === c) this.render(); } }); if (!c.since) { Spk.start(c.video); c.since = Date.now(); c.tick = setInterval(() => this.clock(), 1000); } c.state = 'live'; c.lost && clearTimeout(c.lost); this.render(); this.sig('media', {data: {cam: c.cam, mic: c.mic}}); }
-      else if (pc.connectionState === 'disconnected') { c.state = 'reconnecting'; this.render(); c.lost = setTimeout(() => { if (this.c === c && pc.connectionState !== 'connected') this.hangup(); }, 15000); }
+      if (pc.connectionState === 'connected') { if (!c.since && c.pcAt) Perf.add('call', performance.now() - c.pcAt); if (!c.net) c.net = NetAdapt.watch(pc, false, i => { const w = i >= NetAdapt.TIERS.length - 1; if (w !== !!c.weak) { c.weak = w; if (this.c === c) this.render(); } }); if (!c.since) { Spk.start(c.video); c.since = Date.now(); c.tick = setInterval(() => this.clock(), 1000); } c.state = 'live'; c.lost && clearTimeout(c.lost); this.render(); this.sig('media', {data: {cam: c.cam, mic: c.mic}}); }
+      else if (pc.connectionState === 'disconnected') { c.state = 'reconnecting'; this.render(); clearTimeout(c.lost); c.lost = setTimeout(() => { if (this.c === c && pc.connectionState !== 'connected') { toast('Appel coupé : la connexion avec l’autre personne est perdue.'); this.hangup(); } }, 8000); }
       else if (pc.connectionState === 'failed') { toast('La connexion a échoué. Vérifiez votre réseau et rappelez.'); this.hangup(); }
     };
     return pc;
@@ -168,7 +168,7 @@ const Call = {
       if (snd) await snd.replaceTrack(nv).catch(() => {});
       c.local.addTrack(nv);
       if (ok) c.front = !back;
-      const l = document.getElementById('callLocal'); if (l) { l.srcObject = null; l.srcObject = c.local; l.play && l.play().catch(() => {}); l.classList.toggle('rear', c.front === false); }
+      const l = document.getElementById('callLocal'); if (l) { l.srcObject = null; playOn(l, c.local); l.classList.toggle('rear', c.front === false); }
     }
     c.flipping = false; this.render();
     if (!ok) toast('Ce téléphone ne permet pas de changer de caméra pendant l’appel.');
@@ -218,24 +218,24 @@ const Call = {
     root.hidden = false; document.body.classList.add('in-call'); noKeyboard();
     root.className = 'call' + (showRemote ? ' has-video' : '') + (c.fxMenu && showLocal ? ' fx-open' : '');
     const btn = (act, icon, label, cls = '') => `<button class="cb ${cls}" type="button" data-act="${act}" aria-label="${label}">${icon}<span>${label}</span></button>`;
-    root.innerHTML = `<div class="call-in" role="dialog" aria-modal="true" aria-label="Appel avec ${esc(u.name)}">
-      <video id="callRemote" class="call-remote" autoplay playsinline${showRemote ? '' : ' hidden'}></video>
-      <audio id="callAudio" autoplay></audio>
+    keepMedia(root, `<div class="call-in" role="dialog" aria-modal="true" aria-label="Appel avec ${esc(u.name)}">
+      <video id="callRemote" data-k="remote" class="call-remote" autoplay playsinline muted${showRemote ? '' : ' hidden'}></video>
+      <audio id="callAudio" data-k="audio" autoplay></audio>
       ${showRemote ? '' : `<div class="call-who"><div class="call-av${c.state === 'ringing' || c.state === 'incoming' ? ' pulse' : ''}">${avatar(u, 'xl')}</div><h2>${esc(u.name)}</h2>
         <p id="callTime">${esc(this.label())}</p>${c.state === 'live' && c.peerMic === false ? '<p class="call-note">Micro coupé de son côté</p>' : ''}</div>`}
       ${c.weak && c.state === 'live' ? '<div class="call-weak" role="status">📶 Réseau faible : image réduite pour garder un son clair</div>' : ''}
       ${showRemote ? `<div class="call-top"><b>${esc(u.name)}</b><span id="callTime"></span></div>` : ''}
-      <video id="callLocal" class="call-local${c.front === false ? ' rear' : ''}" autoplay playsinline muted${showLocal ? '' : ' hidden'}></video>
+      <video id="callLocal" data-k="local" class="call-local${c.front === false ? ' rear' : ''}" autoplay playsinline muted${showLocal ? '' : ' hidden'}></video>
       <div class="call-bar"${c.state === 'incoming' ? '' : ' hidden'}>${c.state === 'incoming'
         ? `${btn('callDecline', I.phone, 'Refuser', 'red down')}${btn('callAccept', c.video ? I.video : I.phone, 'Décrocher', 'green')}`
-        : ''}</div>${c.state === 'incoming' ? '' : callSide({add: c.state === 'live', mic: c.mic, cam: c.cam, flip: showLocal, fx: showLocal, end: 'callEnd', pre: 'call'})}${c.addMenu ? callPick(this.pickList()) : ''}${c.fxMenu && showLocal ? fxPick('call') : ''}</div>`;
+        : ''}</div>${c.state === 'incoming' ? '' : callSide({add: c.state === 'live', mic: c.mic, cam: c.cam, flip: showLocal, fx: showLocal, end: 'callEnd', pre: 'call'})}${c.addMenu ? callPick(this.pickList()) : ''}${c.fxMenu && showLocal ? fxPick('call') : ''}</div>`);
     this.attach(); this.clock(); pipInit(document.getElementById('callLocal'));
   },
   attach() {
     const c = this.c; if (!c) return;
     const r = document.getElementById('callRemote'), a = document.getElementById('callAudio'), l = document.getElementById('callLocal');
-    if (c.remote) { if (r && r.srcObject !== c.remote) r.srcObject = c.remote; if (a && a.srcObject !== c.remote) { a.srcObject = c.remote; a.play && a.play().catch(() => {}); } if (r) r.muted = true; }
-    if (l && c.local && l.srcObject !== c.local) l.srcObject = c.local;
+    if (c.remote) { if (r) r.muted = true; playOn(r, c.remote); playOn(a, c.remote); }
+    if (l && c.local) playOn(l, c.local);
     Spk.apply();
     if (c.state === 'live' && c.remote && c.remote.getVideoTracks().length && r && r.hidden && c.peerCam !== false) this.render();
   },
@@ -275,7 +275,9 @@ const Call = {
 };
 // ouvert depuis la notification « touchez pour répondre » : on reprend la sonnerie en attente
 Call.checkPending = async function () { if (this.c || GCall.c) return; try { const r = await api('/api/call/pending'); if (r.ev && !this.c) this.onSignal(r.ev); } catch {} };
-window.addEventListener('beforeunload', () => { if (Call.c && Call.c.state !== 'incoming') Call.hangup(); });
+// Page fermée ou application quittée : on raccroche vraiment (requête qui part même si la page se ferme).
+const callBye = () => { if (Call.c && Call.c.state !== 'incoming') Call.hangup(); if (GCall.c) GCall.leave(); };
+window.addEventListener('pagehide', callBye); window.addEventListener('beforeunload', callBye);
 
 /* Haut-parleur : dans l'application Android, le pont bascule vraiment la sortie du son ;
    dans le navigateur, on choisit la sortie quand le navigateur le permet (setSinkId). */
@@ -317,6 +319,13 @@ async function getAV(v) {
     : 'Caméra introuvable : l’appel continue en audio.', 8000);
   return s;
 }
+// Redessiner l'écran d'appel sans recréer les vidéos : on garde les mêmes lecteurs (sinon l'image se fige ou clignote).
+function keepMedia(root, html) {
+  const old = new Map(); root.querySelectorAll('video[data-k],audio[data-k]').forEach(v => old.set(v.dataset.k, v));
+  root.innerHTML = html;
+  root.querySelectorAll('video[data-k],audio[data-k]').forEach(n => { const o = old.get(n.dataset.k); if (!o) return; o.className = n.className; o.hidden = n.hidden; n.replaceWith(o); });
+}
+const playOn = (el, s) => { if (!el) return; if (s && el.srcObject !== s) el.srcObject = s; if (el.srcObject && el.paused) el.play().catch(() => {}); };
 // L'écran d'appel s'ouvre : on referme le clavier s'il était sorti (zone de message encore active).
 function noKeyboard() { const a = document.activeElement; if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) a.blur(); }
 // Petite image de soi : appui long (ou clic maintenu à la souris), puis on la pose où l'on veut. La place est retenue.

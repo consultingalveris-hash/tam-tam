@@ -14,6 +14,8 @@ await d.click('[data-act=callFx]'); await d.waitForTimeout(300);
 out('choix :', await d.evaluate(() => [...document.querySelectorAll('.fx-pick span')].map(x => x.textContent)));
 await d.click('[data-act=callFxSet][data-k=doux]'); await d.waitForTimeout(1500);
 out('image filtrée envoyée :', await d.evaluate(() => { const t = Call.c.local.getVideoTracks()[0]; const s = Call.c.pc.getSenders().find(x => x.track && x.track.kind === 'video'); return [Beauty.raw.has(t), s.track === t, t.readyState]; }));
+out('WebGL utilisé et image qui bouge :', await d.evaluate(async () => { const cv = document.createElement('canvas'); const ok = !!cv.getContext('webgl'); const v = document.getElementById('callLocal'); const t1 = v.currentTime; await new Promise(r => setTimeout(r, 800)); return [ok, v.currentTime > t1]; }));
+out('même lecteur vidéo après plusieurs changements :', await d.evaluate(async () => { const r1 = document.getElementById('callRemote'), l1 = document.getElementById('callLocal'); Call.render(); Call.render(); return [r1 === document.getElementById('callRemote'), l1 === document.getElementById('callLocal')]; }));
 out('Awa reçoit toujours l’image :', await a.evaluate(() => { const v = document.getElementById('callRemote'); return v && v.videoWidth > 0; }));
 await d.screenshot({path: 'shots/c214-fx.png'});
 await d.click('[data-act=callFxSet][data-k=nb]'); await d.waitForTimeout(400);
