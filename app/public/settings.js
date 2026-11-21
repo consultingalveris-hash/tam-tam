@@ -95,7 +95,7 @@ function profMedia(u, set) {
 }
 function trConsentAsk(open) {
   sheet(`${head('Activer la traduction')}<div class="sheet-body"><p>La traduction de Tam-Tam s’améliore grâce à ses utilisateurs, notamment pour les <b>langues africaines</b>.</p>
-    <p class="hint">En l’activant, vous acceptez que vos messages traduits et vos corrections soient gardés <b>sans votre nom ni identifiant</b> (numéros, e-mails et liens retirés) pour enrichir la base de traduction de Tam-Tam (article 13 des <a href="/conditions" target="_blank" rel="noopener">Conditions générales</a>). Vos autres messages restent chiffrés et illisibles pour Tam-Tam.</p>
+    <p class="hint">En l’activant, vous acceptez que vos messages traduits et vos corrections soient gardés <b>sans votre nom ni identifiant</b> (numéros, e-mails et liens retirés) pour enrichir la base de traduction de Tam-Tam (article 13 des <a href="/conditions" target="_blank" rel="noopener">Conditions générales</a>). Vos corrections peuvent aussi être partagées avec des partenaires, y compris à des fins commerciales, pour financer la gratuité de Tam-Tam. Vos autres messages restent chiffrés et illisibles pour Tam-Tam.</p>
     <p class="hint">Si vous refusez, vous ne recevez aucune traduction : les messages s’affichent tels qu’ils ont été écrits. Vous pouvez changer d’avis à tout moment dans Réglages → Traduction.</p>
     <div class="actions"><button class="btn ghost" type="button" data-act="trConsentNo">Non, pas de traduction</button><button class="btn" type="button" data-act="trConsentYes"${open ? ' data-open="1"' : ''}>J’accepte et j’active</button></div></div>`, 'Traduction');
 }

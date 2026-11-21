@@ -27,6 +27,7 @@ const ACT = {
   async mailLoad() { try { const m = await api('/api/admin/mail'); S.mail = m; const el = $('#mailBox'); if (el) el.outerHTML = mailBox(); } catch (e) { toast(e.message); } },
   authMode(d) { A.mode = d.m; renderAuth(); },
   lkLater() { try { localStorage.setItem('tt:lkLater', String(Date.now())); } catch {} renderBody(); },
+  cguOk() { try { localStorage.setItem('tt:cgu13', '1'); } catch {} renderBody(); },
   bkLater() { try { localStorage.setItem('tt:bkLater', String(Date.now())); } catch {} renderBody(); },
   async codeResend() { try { const c = await api('/api/code/send', {email: A.cmail, lang: I18N.lang}); A.demo = c.demo || ''; renderAuth(); toast('Nouveau code envoyé'); } catch (e) { renderAuth(e.message); } },
   uiLang(d) { if (d.v !== I18N.lang) I18N.set(d.v); },

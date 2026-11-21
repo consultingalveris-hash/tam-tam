@@ -315,6 +315,12 @@ function bkBanner() {
   if (Date.now() - t < 3 * 864e5) return '';
   return `<div class="inst bk"><span class="bk-ic">${I.lock}</span><div><b>Protégez vos messages</b><span>Choisissez un code de secours pour les retrouver si vous changez de téléphone.</span></div><button class="btn sm" type="button" data-act="keyCode">Choisir</button><button class="ib" type="button" data-act="bkLater" aria-label="Plus tard">${I.close}</button></div>`;
 }
+// Conditions 1.3 : prévenir les membres inscrits avant le 21 novembre 2026, au moins 15 jours avant le 6 décembre (article 23 des conditions).
+function cguBanner() {
+  if (!S.me || !(S.me.cguAt < Date.UTC(2026, 10, 21, 18)) || Date.now() > Date.UTC(2027, 0, 6)) return '';
+  try { if (localStorage.getItem('tt:cgu13') === '1') return ''; } catch {}
+  return `<div class="inst bk"><span class="bk-ic">${I.info}</span><div><b>Nos conditions évoluent le 6 décembre</b><span>Vos corrections de traduction pourront aussi être partagées avec des partenaires, toujours sans votre nom. <a href="/conditions#contributions" target="_blank" rel="noopener">Lire</a></span></div><button class="ib" type="button" data-act="cguOk" aria-label="J’ai compris">${I.close}</button></div>`;
+}
 // Pas encore de schéma : on le propose une fois connecté, par un message dans la liste (« Plus tard » le cache 3 jours).
 function lkBanner() {
   if (!S.me || !S.lock || S.lock.type !== 'off') return '';
@@ -324,7 +330,7 @@ function lkBanner() {
 }
 function renderBody() {
   const b = $('#body'); if (!b) return;
-  if (S.tab === 'chats') b.innerHTML = (typeof Px !== 'undefined' ? Px.banner() : '') + (lkBanner() || bkBanner()) + Device.banner() + gcallBanner() + chatRows();
+  if (S.tab === 'chats') b.innerHTML = (typeof Px !== 'undefined' ? Px.banner() : '') + (lkBanner() || bkBanner()) + cguBanner() + Device.banner() + gcallBanner() + chatRows();
   else if (S.tab === 'contacts') { b.innerHTML = Book.body(); Book.after(); }
   else if (S.tab === 'calls') { b.innerHTML = Calls.body(); Calls.after(); }
   else if (S.tab === 'souvenirs') { b.innerHTML = Mem.body(); Mem.hydrate(b); }
