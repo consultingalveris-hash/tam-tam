@@ -11,7 +11,7 @@ for (const p of [a, m, k]) await p.evaluate(async () => { await loadChats(); });
 // le clavier : zone de message active au moment de l'appel
 await d.focus('#msgIn'); await d.evaluate(() => GCall.start(true)); await d.waitForTimeout(2500);
 out('clavier refermé :', await d.evaluate(() => document.activeElement.id !== 'msgIn'));
-const wait = p => p.evaluate(() => [...document.querySelectorAll('#gcall .gt.wait .gt-name')].map(x => x.textContent));
+const wait = p => p.evaluate(() => [document.querySelectorAll('#gcall .gt.wait').length, document.querySelector('.g-wait')?.textContent || '']);
 out('en attente au début :', await wait(d));
 await a.evaluate(() => GCall.accept()); await m.evaluate(() => GCall.accept()); await d.waitForTimeout(4000);
 out('après arrivée Awa et Moussa :', await wait(d));
@@ -22,9 +22,7 @@ out('Moussa raccroche → plus parmi les participants :', await d.evaluate(() =>
 // on refait sonner Moussa puis on annule par appui long
 await d.evaluate(id => GCall.addPerson(id), ids[1]); await d.waitForTimeout(1000);
 out('Moussa sonne de nouveau :', [await m.evaluate(() => !!GCall.inc), await wait(d)]);
-const box = await (await d.$('#gcall .gt.wait')).boundingBox();
-await d.mouse.move(box.x + 40, box.y + 40); await d.mouse.down(); await d.waitForTimeout(900); await d.mouse.up(); await d.waitForTimeout(800);
-out('appui long → annulé :', [await wait(d), await m.evaluate(() => !!GCall.inc)]);
+out('texte « ça sonne » au lieu d’une case vide :', await d.evaluate(() => document.querySelector('.g-wait')?.textContent));
 await d.screenshot({path: 'shots/c213-groupe.png'});
 for (const p of [d, a]) await p.evaluate(() => GCall.c && GCall.leave()); await d.waitForTimeout(800);
 // appel à deux : petite image déplaçable

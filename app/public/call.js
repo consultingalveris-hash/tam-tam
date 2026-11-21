@@ -37,7 +37,7 @@ const Call = {
 
   async media(video) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Ce navigateur ne permet pas les appels. Essayez Chrome, Brave ou Safari à jour.');
-    try { return await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}, video: video ? {facingMode: 'user', width: {ideal: 1280}, height: {ideal: 720}} : false}); }
+    try { return Beauty.stream(await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}, video: video ? {facingMode: 'user', width: {ideal: 1280}, height: {ideal: 720}} : false})); }
     catch (e) {
       if (video) { try { const s = await navigator.mediaDevices.getUserMedia({audio: true}); toast('Caméra indisponible : l’appel continue en audio.'); return s; } catch {} }
       throw new Error(e && e.name === 'NotAllowedError' ? 'Autorisez le micro' + (video ? ' et la caméra' : '') + ' pour tam-tam dans votre navigateur (icône à gauche de l’adresse), puis réessayez.' : 'Micro introuvable sur cet appareil.');
@@ -66,7 +66,8 @@ const Call = {
   async onSignal(ev) {
     const c = this.c;
     if (ev.type === 'ring') {
-      if (c || GCall.c) { api('/api/call/signal', {type: 'busy', callId: ev.callId, chatId: ev.chatId, to: ev.from, video: ev.video}).catch(() => {}); return; }
+      if ((c && !this.over()) || GCall.c) { api('/api/call/signal', {type: 'busy', callId: ev.callId, chatId: ev.chatId, to: ev.from, video: ev.video}).catch(() => {}); return; }
+      if (c) this.cleanup();
       this.c = {id: ev.callId, chatId: ev.chatId, peer: ev.from, video: ev.video, out: false, state: 'incoming', q: [], mic: true, cam: ev.video};
       this.render(); this.tone('ring'); this.notify(ev);
       this.c.timer = setTimeout(() => { if (this.c && this.c.state === 'incoming' && this.c.id === ev.callId) this.cleanup(); }, 50000);
@@ -142,7 +143,7 @@ const Call = {
     const c = this.c; if (!c || !c.local) return;
     let v = c.local.getVideoTracks()[0];
     if (!v) { // passer d'un appel vocal à la vidéo
-      try { const s = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'user'}}); v = s.getVideoTracks()[0]; c.local.addTrack(v); if (c.pc) { c.pc.addTrack(v, c.local); await c.pc.setLocalDescription(await c.pc.createOffer()); this.sig('offer', {data: c.pc.localDescription}); } c.cam = true; }
+      try { const s = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'user'}}); v = Beauty.track(s.getVideoTracks()[0]); c.local.addTrack(v); if (c.pc) { c.pc.addTrack(v, c.local); await c.pc.setLocalDescription(await c.pc.createOffer()); this.sig('offer', {data: c.pc.localDescription}); } c.cam = true; }
       catch { return toast('Caméra indisponible.'); }
     } else { c.cam = !c.cam; v.enabled = c.cam; }
     this.render(); this.sig('media', {data: {cam: c.cam, mic: c.mic}});
@@ -151,7 +152,7 @@ const Call = {
     const c = this.c, v = c && c.local && c.local.getVideoTracks()[0]; if (!v || c.flipping) return;
     c.flipping = true; const back = c.front !== false; // on passe à l'arrière si on était devant
     // Sur la plupart des téléphones, il faut d'abord libérer la caméra en cours avant d'ouvrir l'autre.
-    const oldId = v.getSettings ? v.getSettings().deviceId : null;
+    const vr = Beauty.rawOf(v), oldId = vr.getSettings ? vr.getSettings().deviceId : null;
     c.local.removeTrack(v); v.stop();
     const tries = [{facingMode: {exact: back ? 'environment' : 'user'}}];
     try { const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
@@ -163,6 +164,7 @@ const Call = {
     let ok = !!nv;
     if (!nv) { try { nv = (await navigator.mediaDevices.getUserMedia({video: oldId ? {deviceId: {exact: oldId}} : {facingMode: 'user'}})).getVideoTracks()[0]; } catch {} }
     if (nv) {
+      nv = Beauty.track(nv);
       const snd = c.pc && (c.pc.getSenders().find(x => x.track && x.track.kind === 'video') || c.pc.getSenders().find(x => !x.track));
       if (snd) await snd.replaceTrack(nv).catch(() => {});
       c.local.addTrack(nv);
@@ -174,6 +176,8 @@ const Call = {
   },
 
   /* ---------- ajouter quelqu'un : l'appel à deux devient un appel de groupe ---------- */
+  // appel en train de se fermer (« Appel terminé » affiché un instant) : ne bloque pas un nouvel appel
+  over() { return !!this.c && ['ended', 'declined', 'busy', 'noanswer'].includes(this.c.state); },
   pickList() { const c = this.c, list = ((S.contacts && S.contacts.contacts) || []).map(u => u.id).filter(id => id !== c.peer && id !== S.me.id); return [['Vos contacts', list]]; },
   async addPerson(uid) {
     const c = this.c; if (!c || c.state !== 'live' || c.moving) return;
@@ -210,10 +214,10 @@ const Call = {
   },
   clock() { const c = this.c, el = document.getElementById('callTime'); if (!c || !el || !c.since) return; const s = Math.floor((Date.now() - c.since) / 1000); el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; },
   render() {
-    const c = this.c, root = this.el(); if (!c) { root.innerHTML = ''; root.hidden = true; document.body.classList.remove('in-call'); return; }
+    const c = this.c, root = this.el(); if (!c) { root.innerHTML = ''; root.hidden = true; if (!GCall.c && !GCall.inc) document.body.classList.remove('in-call'); return; }
     const u = uOf(c.peer), showRemote = c.state === 'live' && c.remote && c.peerCam !== false && c.remote.getVideoTracks().length > 0, showLocal = c.cam && c.local && c.local.getVideoTracks().length;
     root.hidden = false; document.body.classList.add('in-call'); noKeyboard();
-    root.className = 'call' + (showRemote ? ' has-video' : '');
+    root.className = 'call' + (showRemote ? ' has-video' : '') + (c.fxMenu && showLocal ? ' fx-open' : '');
     const btn = (act, icon, label, cls = '') => `<button class="cb ${cls}" type="button" data-act="${act}" aria-label="${label}">${icon}<span>${label}</span></button>`;
     root.innerHTML = `<div class="call-in" role="dialog" aria-modal="true" aria-label="Appel avec ${esc(u.name)}">
       <video id="callRemote" class="call-remote" autoplay playsinline${showRemote ? '' : ' hidden'}></video>
@@ -225,7 +229,7 @@ const Call = {
       <video id="callLocal" class="call-local${c.front === false ? ' rear' : ''}" autoplay playsinline muted${showLocal ? '' : ' hidden'}></video>
       <div class="call-bar"${c.state === 'incoming' ? '' : ' hidden'}>${c.state === 'incoming'
         ? `${btn('callDecline', I.phone, 'Refuser', 'red down')}${btn('callAccept', c.video ? I.video : I.phone, 'Décrocher', 'green')}`
-        : ''}</div>${c.state === 'incoming' ? '' : callSide({add: c.state === 'live', mic: c.mic, cam: c.cam, flip: showLocal, end: 'callEnd', pre: 'call'})}${c.addMenu ? callPick(this.pickList()) : ''}</div>`;
+        : ''}</div>${c.state === 'incoming' ? '' : callSide({add: c.state === 'live', mic: c.mic, cam: c.cam, flip: showLocal, fx: showLocal, end: 'callEnd', pre: 'call'})}${c.addMenu ? callPick(this.pickList()) : ''}${c.fxMenu && showLocal ? fxPick('call') : ''}</div>`;
     this.attach(); this.clock(); pipInit(document.getElementById('callLocal'));
   },
   attach() {
@@ -323,7 +327,7 @@ function pipInit(el) {
    Coupé = trait rouge en travers de l'icône ; on touche à nouveau pour rallumer. */
 function callSide(o) {
   const b = (act, icon, label, cls = '') => `<button class="ci ${cls}" type="button" data-act="${act}" aria-label="${label}" title="${label}">${icon}</button>`, p = o.pre;
-  return `<div class="call-side">${o.add ? b(p + 'Add', I.addUser, 'Ajouter quelqu’un à l’appel', 'add') : ''}${b(p + 'Mic', I.mic, o.mic ? 'Couper le micro' : 'Rallumer le micro', o.mic ? '' : 'off')}${b(p + 'Cam', I.video, o.cam ? 'Couper la caméra' : 'Rallumer la caméra', o.cam ? '' : 'off')}${b(p + 'Spk', I.speaker, Spk.on ? 'Couper le haut-parleur' : 'Mettre le haut-parleur', Spk.on ? '' : 'off')}${o.flip ? b(p + 'Flip', I.flip, 'Retourner la caméra') : ''}${b(o.end, I.phone, o.end === 'gcallLeave' ? 'Quitter l’appel' : 'Raccrocher', 'end')}</div>`;
+  return `<div class="call-side">${o.add ? b(p + 'Add', I.addUser, 'Ajouter quelqu’un à l’appel', 'add') : ''}${b(p + 'Mic', I.mic, o.mic ? 'Couper le micro' : 'Rallumer le micro', o.mic ? '' : 'off')}${b(p + 'Cam', I.video, o.cam ? 'Couper la caméra' : 'Rallumer la caméra', o.cam ? '' : 'off')}${b(p + 'Spk', I.speaker, Spk.on ? 'Couper le haut-parleur' : 'Mettre le haut-parleur', Spk.on ? '' : 'off')}${o.fx && Beauty.ok ? b(p + 'Fx', I.wand, 'Filtres vidéo', Beauty.mode !== 'off' ? 'fxon' : '') : ''}${o.flip ? b(p + 'Flip', I.flip, 'Retourner la caméra') : ''}${b(o.end, I.phone, o.end === 'gcallLeave' ? 'Quitter l’appel' : 'Raccrocher', 'end')}</div>`;
 }
 function callPick(groups) {
   const rows = groups.filter(g => g[1].length).map(([t, ids]) => `<p class="cp-t">${esc(t)}</p>${ids.map(id => `<button type="button" class="cp-row" data-act="callAddPick" data-id="${id}">${avatar(uOf(id), 'sm')}<span class="cp-n">${esc(uOf(id).name)}</span>${I.addUser}</button>`).join('')}`).join('');
@@ -335,6 +339,8 @@ async function callAddOpen() {
   if (!k.c) return; k.c.addMenu = !k.c.addMenu; k.c.layMenu = false; k.render();
 }
 Object.assign(ACT, {
+  callFx() { const c = Call.c; if (!c) return; c.fxMenu = !c.fxMenu; c.addMenu = false; Call.render(); },
+  callFxSet(d) { Beauty.mode = d.k; Beauty.apply(Call); },
   callAdd() { callAddOpen(); }, gcallAdd() { callAddOpen(); },
   callAddClose() { const k = GCall.c ? GCall : Call; if (k.c) { k.c.addMenu = false; k.render(); } },
   callAddPick(d) { const k = GCall.c ? GCall : Call; k.addPerson(+d.id); },

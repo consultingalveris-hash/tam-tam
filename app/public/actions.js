@@ -51,8 +51,8 @@ const ACT = {
   async chatRead(d) { closeLayer(); try { await chatMine(+d.id, {unread: !!d.v}); } catch (e) { toast(e.message); } },
   async chatArch(d) { closeLayer(); const c = S.chats.get(+d.id), on = !c.archived; try { await chatMine(+d.id, {archive: on}); renderHead(); toast(on ? 'Discussion rangée dans Archives' : 'Discussion remise dans la liste'); } catch (e) { toast(e.message); } },
   chatPriv(d) { closeLayer(); Priv.toggle(+d.id); },
-  chatClearAsk(d) { confirmSheet('Supprimer la discussion ?', 'Tous les messages disparaîtront de votre côté seulement. Les autres membres les garderont. Si quelqu’un vous écrit à nouveau, la discussion réapparaîtra.', 'Supprimer', 'chatClearYes', d.id); },
-  async chatClearYes(d) { closeLayer(); const id = +d.id; try { await chatMine(id, {clear: true}, true); S.msgs.delete(id); if (S.chatId === id) ACT.back(); renderTabs(); renderBody(); toast('Discussion supprimée de votre côté'); } catch (e) { toast(e.message); } },
+  chatClearAsk(d) { if (S.chats.get(+d.id)?.type === 'group') return confirmSheet('Supprimer le groupe ?', 'Vous quitterez le groupe et il disparaîtra de votre liste. Les autres membres le garderont.', 'Supprimer', 'chatClearYes', d.id); confirmSheet('Supprimer la discussion ?', 'Tous les messages disparaîtront de votre côté seulement. Les autres membres les garderont. Si quelqu’un vous écrit à nouveau, la discussion réapparaîtra.', 'Supprimer', 'chatClearYes', d.id); },
+  async chatClearYes(d) { closeLayer(); const id = +d.id; if (S.chats.get(id)?.type === 'group') { try { await api(`/api/chats/${id}/leave`, {}); S.chats.delete(id); S.msgs.delete(id); if (S.chatId === id) ACT.back(); renderTabs(); renderBody(); toast('Groupe supprimé de votre liste'); } catch (e) { toast(e.message); } return; } try { await chatMine(id, {clear: true}, true); S.msgs.delete(id); if (S.chatId === id) ACT.back(); renderTabs(); renderBody(); toast('Discussion supprimée de votre côté'); } catch (e) { toast(e.message); } },
   selStart(d) { closeLayer(); S.sel = new Set([+d.id]); renderBody(); },
   selOff() { S.sel = null; renderBody(); },
   selMenu() {
@@ -70,7 +70,7 @@ const ACT = {
   },
   async selDo(d) {
     const ids = [...(S.sel || [])]; if (!ids.length) return; if (d.k !== 'clear') closeLayer();
-    if (d.k === 'clear') return confirmSheet(`Supprimer ${ids.length > 1 ? `ces ${ids.length} discussions` : 'cette discussion'} ?`, 'Les messages disparaîtront de votre côté seulement.', 'Supprimer', 'selClearYes', '');
+    if (d.k === 'clear') return confirmSheet(`Supprimer ${ids.length > 1 ? `ces ${ids.length} discussions` : 'cette discussion'} ?`, ids.some(i => S.chats.get(i)?.type === 'group') ? 'Les messages disparaîtront de votre côté seulement. Pour les groupes, vous les quitterez : ils disparaîtront de votre liste.' : 'Les messages disparaîtront de votre côté seulement.', 'Supprimer', 'selClearYes', '');
     const allPinned = ids.every(i => S.chats.get(i)?.pinned);
     const allMuted = ids.every(i => S.chats.get(i)?.muted);
     try { for (const i of ids) await chatMine(i, d.k === 'pin' ? {pin: !allPinned} : d.k === 'arch' ? {archive: S.filt !== 'arch'} : d.k === 'mute' ? {mute: !allMuted} : {unread: d.k === 'unread'}, true); if (d.k === 'mute') toast(allMuted ? 'Son réactivé' : 'Son coupé : plus de sonnerie ni de notification pour ces discussions'); if (d.k === 'arch') toast(S.filt === 'arch' ? 'Remises dans la liste' : `${ids.length > 1 ? 'Discussions rangées' : 'Discussion rangée'} dans Archives`); } catch (e) { toast(e.message); }
@@ -97,7 +97,7 @@ const ACT = {
   },
   selLeaveAsk() { confirmSheet('Quitter ?', 'Vous ne recevrez plus les messages de ces groupes.', 'Quitter', 'selLeaveYes', ''); },
   async selLeaveYes() { closeLayer(); const ids = [...(S.sel || [])].filter(i => S.chats.get(i)?.type === 'group'); try { for (const i of ids) { await api(`/api/chats/${i}/leave`, {}); S.chats.delete(i); if (S.chatId === i) ACT.back(); } toast(ids.length > 1 ? 'Groupes quittés' : 'Groupe quitté'); } catch (e) { toast(e.message); } S.sel = null; renderTabs(); renderBody(); },
-  async selClearYes() { closeLayer(); const ids = [...(S.sel || [])]; try { for (const i of ids) { await chatMine(i, {clear: true}, true); S.msgs.delete(i); if (S.chatId === i) ACT.back(); } toast('Discussions supprimées de votre côté'); } catch (e) { toast(e.message); } S.sel = null; renderTabs(); renderBody(); },
+  async selClearYes() { closeLayer(); const ids = [...(S.sel || [])]; try { for (const i of ids) { if (S.chats.get(i)?.type === 'group') { await api(`/api/chats/${i}/leave`, {}); S.chats.delete(i); } else await chatMine(i, {clear: true}, true); S.msgs.delete(i); if (S.chatId === i) ACT.back(); } toast('Discussions supprimées de votre côté'); } catch (e) { toast(e.message); } S.sel = null; renderTabs(); renderBody(); },
   async react(d) { closeLayer(); try { await api(`/api/messages/${d.id}/react`, {emo: d.e}); } catch (e) { toast(e.message); } },
   reactMore(d) { moreEmoji(+d.id); },
   reactWho(d) {

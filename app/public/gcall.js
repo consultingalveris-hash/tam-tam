@@ -13,7 +13,7 @@ const GCall = {
   sig(to, type, data) { const c = this.c; if (!c) return; api('/api/gcall/signal', {callId: c.id, to, type, data}).catch(() => {}); },
   async loadActive() { try { const r = await api('/api/gcall/active'); S.sfuOk = !!r.sfu; S.gcalls = new Map(r.calls.map(g => [g.chatId, g])); if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead(); } catch {} },
   active(chatId) { const g = S.gcalls && S.gcalls.get(chatId); return g && g.parts.length ? g : null; },
-  busy() { return !!(this.c || Call.c); },
+  busy() { return !!(this.c || (Call.c && !Call.over())); },
 
   async start(video) {
     const chat = S.chats.get(S.chatId); if (!chat || chat.type !== 'group') return;
@@ -74,7 +74,7 @@ const GCall = {
   async media(video) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Ce navigateur ne permet pas les appels. Essayez Chrome, Brave ou Safari à jour.');
     const v = video ? {facingMode: 'user', width: {ideal: 640}, height: {ideal: 360}, frameRate: {max: 15}} : false;
-    try { return await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}, video: v}); }
+    try { return Beauty.stream(await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}, video: v})); }
     catch (e) {
       if (video) { try { const s = await navigator.mediaDevices.getUserMedia({audio: true}); toast('Caméra indisponible : vous participez en audio.'); return s; } catch {} }
       throw new Error(e && e.name === 'NotAllowedError' ? 'Autorisez le micro' + (video ? ' et la caméra' : '') + ' pour tam-tam dans votre navigateur, puis réessayez.' : 'Micro introuvable sur cet appareil.');
@@ -110,7 +110,7 @@ const GCall = {
     if (ev.type === 'cancel') { if (this.inc && this.inc.callId === ev.callId) { this.dismiss(); toast('Appel de groupe annulé'); } return; }
     if (ev.type === 'ring') {
       if (this.busy()) { if (!(Call.c && Call.c.peer === ev.from)) toast(`${first(uOf(ev.from).name)} lance un appel de groupe.`); return; }
-      this.inc = ev; this.render(); this.ringT = setTimeout(() => this.dismiss(), 45000);
+      if (Call.c) Call.cleanup(); this.inc = ev; this.render(); this.ringT = setTimeout(() => this.dismiss(), 45000);
       Call.tone.call(this, 'ring'); return;
     }
     const c = this.c; if (!c || ev.callId !== c.id) return;
@@ -169,6 +169,9 @@ const GCall = {
   /* ---------- affichage ---------- */
   el() { let e = document.getElementById('gcall'); if (!e) { e = document.createElement('div'); e.id = 'gcall'; document.body.appendChild(e); } return e; },
   clock() { const c = this.c, el = document.getElementById('gTime'); if (!c || !el) return;
+    // Seul dans l'appel : tout le monde a raccroché, ou personne n'a décroché → l'appel se termine tout seul.
+    const now = Date.now(), ringOn = [...c.ringing.values()].some(t => t > now);
+    if (!c.peers.size && (c.hadPeers || (!ringOn && now - c.since > 50_000))) { c.aloneAt = c.aloneAt || now; if (now - c.aloneAt > 4000) { toast(c.hadPeers ? 'Tout le monde a raccroché : appel terminé.' : 'Personne n’a décroché : appel terminé.'); return this.leave(); } } else c.aloneAt = 0;
     if ([...c.ringing.values()].some(t => t <= Date.now())) { for (const [u, t] of c.ringing) if (t <= Date.now()) c.ringing.delete(u); return this.render(); } const s = Math.floor((Date.now() - c.since) / 1000); el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; },
   tile(uid, stream, cam, mic, me, state) {
     const u = me ? S.me : uOf(uid), vid = stream && cam !== false && stream.getVideoTracks().length;
@@ -203,15 +206,17 @@ const GCall = {
         <div class="call-bar">${btn('gcallDecline', I.phone, 'Ignorer', 'red down')}${btn('gcallAccept', ev.video ? I.video : I.phone, 'Rejoindre', 'green')}</div></div>`;
       return;
     }
-    const chat = S.chats.get(c.chatId), n = c.peers.size + 1;
+    // Une case n'apparaît que lorsque la personne a décroché et que son image arrive (pas de case vide pendant que ça sonne).
+    const live = [...c.peers.values()].filter(p => p.lk || p.state === 'connected' || p.state === 'disconnected').map(p => p.uid), chat = S.chats.get(c.chatId), n = live.length + 1;
+    if (c.peers.size) c.hadPeers = true;
     // Membres pas encore arrivés : leur photo de profil sous les caméras.
     const here = new Set([S.me.id, ...c.peers.keys()]), t0 = Date.now(), waiting = [...c.ringing].filter(([u, t]) => t > t0 && !here.has(u)).map(([u]) => u);
-    const ids = [S.me.id, ...c.peers.keys()];
+    const ids = [S.me.id, ...live];
     if (!ids.includes(c.main)) c.main = ids.find(id => id !== S.me.id) || S.me.id;
     // Les membres qui n'ont pas encore décroché ont déjà leur case (photo de profil) ; ils prennent leur place à leur arrivée.
     const W = uid => `<div class="gt wait" data-uid="${uid}" title="Appui long pour annuler l’appel"><div class="gt-av">${avatar(uOf(uid), 'xl')}</div><span class="gt-name">${esc(first(uOf(uid).name))} · appel…</span></div>`;
     const T = uid => uid === S.me.id ? this.tile(S.me.id, c.local, c.cam, c.mic, true) : c.peers.has(uid) ? (p => this.tile(p.uid, p.stream, p.cam, p.mic, false, p.state))(c.peers.get(uid)) : W(uid);
-    const all = ids.concat(waiting.slice(0, Math.max(0, (c.room ? 32 : 8) - ids.length))), lay = all.length > 1 ? c.lay : 'grid', tot = all.length;
+    const all = ids, lay = all.length > 1 ? c.lay : 'grid', tot = all.length;
     const stage = lay === 'grid'
       ? `<div class="g-grid n${tot > 8 ? 'x' : tot}">${all.map(T).join('')}</div>`
       : `<div class="g-stage l-${lay}"><div class="g-main">${T(c.main)}</div><div class="g-secs">${all.filter(id => id !== c.main).map(T).join('')}</div></div>`;
@@ -221,9 +226,10 @@ const GCall = {
       <div class="g-top"><b>${esc(chat ? chat.name : 'Groupe')}</b><span><span id="gTime">0:00</span> · ${n} personne${n > 1 ? 's' : ''}</span></div>
       ${stage}
       ${lay !== 'grid' ? '<p class="g-hint">Appui long sur une petite caméra, puis glissez-la sur la grande pour les échanger.</p>' : ''}
-      ${n === 1 ? '<p class="g-wait">En attente des autres membres du groupe…</p>' : ''}
+      ${waiting.length ? `<p class="g-wait">📞 Ça sonne chez ${esc(waiting.map(u => first(uOf(u).name)).join(', '))}…</p>` : n === 1 ? '<p class="g-wait">En attente des autres membres du groupe…</p>' : ''}
       ${c.layMenu ? `<div class="g-laymenu" role="menu" aria-label="Disposition des caméras">${LAYS.map(([k, l, h]) => `<button type="button" role="menuitemradio" aria-checked="${c.lay === k}" data-act="gcallLaySet" data-k="${k}"><span class="g-ico ${k}" aria-hidden="true"><i></i><i></i><i></i><i></i></span><b>${l}</b><small>${h}</small></button>`).join('')}</div>` : ''}
-      ${callSide({add: true, mic: c.mic, cam: c.cam, flip: false, end: 'gcallLeave', pre: 'gcall'})}
+      ${callSide({add: true, mic: c.mic, cam: c.cam, flip: false, fx: c.cam && c.local.getVideoTracks().length > 0, end: 'gcallLeave', pre: 'gcall'})}
+      ${c.fxMenu ? fxPick('gcall') : ''}
       ${all.length > 1 ? `<button class="g-laydot" type="button" data-act="gcallLay" aria-label="Disposition des caméras" title="Disposition des caméras" aria-expanded="${!!c.layMenu}"><i aria-hidden="true"></i></button>` : ''}
       ${c.addMenu ? callPick(this.pickList()) : ''}</div>`;
     if (lay !== 'grid') this.dragInit(root);
@@ -240,7 +246,9 @@ window.addEventListener('beforeunload', () => { if (GCall.c) GCall.leave(); });
 Object.assign(ACT, {
   gcallVideo() { GCall.start(true); }, gcallAudio() { GCall.start(false); },
   gcallJoin(d) { GCall.join(d.id); }, gcallAccept() { GCall.accept(); }, gcallDecline() { GCall.decline(); },
-  gcallMic() { GCall.toggleMic(); }, gcallSpk() { spkToggle(() => GCall.render()); },
+  gcallMic() { GCall.toggleMic(); },
+  gcallFx() { const c = GCall.c; if (!c) return; c.fxMenu = !c.fxMenu; c.addMenu = false; c.layMenu = false; GCall.render(); },
+  gcallFxSet(d) { Beauty.mode = d.k; Beauty.apply(GCall); }, gcallSpk() { spkToggle(() => GCall.render()); },
   gcallLay() { const c = GCall.c; if (!c) return; c.layMenu = !c.layMenu; c.addMenu = false; GCall.render(); },
   gcallLaySet(d) { const c = GCall.c; if (!c) return; c.lay = d.k; c.layMenu = false; try { localStorage.setItem('tt-glay', d.k); } catch {} GCall.render(); }, gcallCam() { GCall.toggleCam(); }, gcallLeave() { GCall.leave(); },
 });
