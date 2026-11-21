@@ -35,7 +35,7 @@ const GCall = {
     let r; try { r = await api('/api/gcall/join', {callId}); } catch (e) { local.getTracks().forEach(t => t.stop()); return fail(e.message); }
     this.joining = false;
     let lay = 'grid'; try { lay = localStorage.getItem('tt-glay') || 'grid'; } catch {}
-    this.c = {id: callId, chatId: r.chatId, video, local, mic: true, cam: local.getVideoTracks().length > 0, peers: new Map(), since: Date.now(), lay, main: null, layMenu: false, ringing: new Map((r.ringing || []).map(u => [u, Date.now() + 45000]))};
+    this.c = {id: callId, chatId: r.chatId, video, local, mic: true, cam: local.getVideoTracks().length > 0, peers: new Map(), since: Date.now(), lay, main: null, layMenu: false, ringing: new Map((r.ringing || []).map(u => [u, Date.now() + 20000]))};
     Spk.start(video);
     this.c.tick = setInterval(() => this.clock(), 1000);
     this.render();
@@ -74,9 +74,8 @@ const GCall = {
   async media(video) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Ce navigateur ne permet pas les appels. Essayez Chrome, Brave ou Safari à jour.');
     const v = video ? {facingMode: 'user', width: {ideal: 640}, height: {ideal: 360}, frameRate: {max: 15}} : false;
-    try { return Beauty.stream(await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}, video: v})); }
+    try { return Beauty.stream(await getAV(v)); }
     catch (e) {
-      if (video) { try { const s = await navigator.mediaDevices.getUserMedia({audio: true}); toast('Caméra indisponible : vous participez en audio.'); return s; } catch {} }
       throw new Error(e && e.name === 'NotAllowedError' ? 'Autorisez le micro' + (video ? ' et la caméra' : '') + ' pour tam-tam dans votre navigateur, puis réessayez.' : 'Micro introuvable sur cet appareil.');
     }
   },
@@ -110,13 +109,13 @@ const GCall = {
     if (ev.type === 'cancel') { if (this.inc && this.inc.callId === ev.callId) { this.dismiss(); toast('Appel de groupe annulé'); } return; }
     if (ev.type === 'ring') {
       if (this.busy()) { if (!(Call.c && Call.c.peer === ev.from)) toast(`${first(uOf(ev.from).name)} lance un appel de groupe.`); return; }
-      if (Call.c) Call.cleanup(); this.inc = ev; this.render(); this.ringT = setTimeout(() => this.dismiss(), 45000);
+      if (Call.c) Call.cleanup(); this.inc = ev; this.render(); this.ringT = setTimeout(() => this.dismiss(), 20000);
       Call.tone.call(this, 'ring'); return;
     }
     const c = this.c; if (!c || ev.callId !== c.id) return;
     if (ev.type === 'joined') { c.ringing.delete(ev.user); toast(`${first(uOf(ev.user).name)} a rejoint l’appel`); this.render(); return; }
     if (ev.type === 'left') { c.ringing.delete(ev.user); c.peers.has(ev.user) ? this.drop(ev.user) : this.render(); return; }
-    if (ev.type === 'ringing') { (ev.users || []).forEach(u => c.ringing.set(u, Date.now() + 45000)); this.render(); return; }
+    if (ev.type === 'ringing') { (ev.users || []).forEach(u => c.ringing.set(u, Date.now() + 20000)); this.render(); return; }
     if (ev.type === 'declined') { if (c.ringing.delete(ev.user)) this.render(); return; }
     let p = c.peers.get(ev.from);
     if (ev.type === 'offer') {
@@ -171,7 +170,7 @@ const GCall = {
   clock() { const c = this.c, el = document.getElementById('gTime'); if (!c || !el) return;
     // Seul dans l'appel : tout le monde a raccroché, ou personne n'a décroché → l'appel se termine tout seul.
     const now = Date.now(), ringOn = [...c.ringing.values()].some(t => t > now);
-    if (!c.peers.size && (c.hadPeers || (!ringOn && now - c.since > 50_000))) { c.aloneAt = c.aloneAt || now; if (now - c.aloneAt > 4000) { toast(c.hadPeers ? 'Tout le monde a raccroché : appel terminé.' : 'Personne n’a décroché : appel terminé.'); return this.leave(); } } else c.aloneAt = 0;
+    if (!c.peers.size && (c.hadPeers || (!ringOn && now - c.since > 23_000))) { c.aloneAt = c.aloneAt || now; if (now - c.aloneAt > 4000) { toast(c.hadPeers ? 'Tout le monde a raccroché : appel terminé.' : 'Personne n’a décroché : appel terminé.'); return this.leave(); } } else c.aloneAt = 0;
     if ([...c.ringing.values()].some(t => t <= Date.now())) { for (const [u, t] of c.ringing) if (t <= Date.now()) c.ringing.delete(u); return this.render(); } const s = Math.floor((Date.now() - c.since) / 1000); el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; },
   tile(uid, stream, cam, mic, me, state) {
     const u = me ? S.me : uOf(uid), vid = stream && cam !== false && stream.getVideoTracks().length;

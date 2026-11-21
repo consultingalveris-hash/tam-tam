@@ -95,6 +95,7 @@ const ACT = {
       if (out) toast(`${out} personne${out > 1 ? 's' : ''} hors de vos contacts ${out > 1 ? 'n’ont' : 'n’a'} pas pu être appelée${out > 1 ? 's' : ''}.`);
     } catch (e) { toast(e.message); }
   },
+  async chatCall(d) { closeLayer(); const c = S.chats.get(+d.id); if (!c) return; if (Call.c || GCall.c) return toast('Un appel est déjà en cours.'); await openChat(c.id); return c.type === 'group' ? GCall.start(!!d.v) : Call.start(!!d.v); },
   selLeaveAsk() { confirmSheet('Quitter ?', 'Vous ne recevrez plus les messages de ces groupes.', 'Quitter', 'selLeaveYes', ''); },
   async selLeaveYes() { closeLayer(); const ids = [...(S.sel || [])].filter(i => S.chats.get(i)?.type === 'group'); try { for (const i of ids) { await api(`/api/chats/${i}/leave`, {}); S.chats.delete(i); if (S.chatId === i) ACT.back(); } toast(ids.length > 1 ? 'Groupes quittés' : 'Groupe quitté'); } catch (e) { toast(e.message); } S.sel = null; renderTabs(); renderBody(); },
   async selClearYes() { closeLayer(); const ids = [...(S.sel || [])]; try { for (const i of ids) { if (S.chats.get(i)?.type === 'group') { await api(`/api/chats/${i}/leave`, {}); S.chats.delete(i); } else await chatMine(i, {clear: true}, true); S.msgs.delete(i); if (S.chatId === i) ACT.back(); } toast('Discussions supprimées de votre côté'); } catch (e) { toast(e.message); } S.sel = null; renderTabs(); renderBody(); },

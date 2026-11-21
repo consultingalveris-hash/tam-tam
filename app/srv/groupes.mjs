@@ -34,7 +34,7 @@ export function lkToken(uid, name, room) {
 // appel de groupe lancé mais que personne n'a rejoint : terminé au bout de 10 minutes
 setInterval(() => { for (const [id, g] of gcalls) if (!g.parts.size && now() - g.started > 10 * 60_000) { gcalls.delete(id); run(`UPDATE calls SET ended=? WHERE call_id=?`, now(), id); } }, 60_000);
 // Personnes qu'on fait sonner : leur case « appel… » s'affiche 45 s, ou jusqu'à ce qu'elles rejoignent, ignorent ou qu'on annule.
-export const RING_MS = 45_000;
+export const RING_MS = 20_000; // 20 s : on n'insiste pas (la personne est peut-être en réunion)
 export const ringList = g => [...(g.ring || new Map())].filter(([, t]) => t > now()).map(([u]) => u);
 export const gcallOf = chatId => [...gcalls.entries()].find(([, g]) => g.chatId === chatId);
 export function gstate(g, id) { pushMany(memberIds(g.chatId), { t: 'gcall', type: 'state', callId: id, chatId: g.chatId, video: g.video, parts: [...g.parts], mode: g.mode }); }

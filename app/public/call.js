@@ -37,9 +37,8 @@ const Call = {
 
   async media(video) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Ce navigateur ne permet pas les appels. Essayez Chrome, Brave ou Safari à jour.');
-    try { return Beauty.stream(await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}, video: video ? {facingMode: 'user', width: {ideal: 1280}, height: {ideal: 720}} : false})); }
+    try { return Beauty.stream(await getAV(video ? {facingMode: 'user', width: {ideal: 1280}, height: {ideal: 720}} : false)); }
     catch (e) {
-      if (video) { try { const s = await navigator.mediaDevices.getUserMedia({audio: true}); toast('Caméra indisponible : l’appel continue en audio.'); return s; } catch {} }
       throw new Error(e && e.name === 'NotAllowedError' ? 'Autorisez le micro' + (video ? ' et la caméra' : '') + ' pour tam-tam dans votre navigateur (icône à gauche de l’adresse), puis réessayez.' : 'Micro introuvable sur cet appareil.');
     }
   },
@@ -303,6 +302,20 @@ async function spkToggle(redraw) {
   const ok = await Spk.toggle();
   if (!ok) { toast('Dans le navigateur, c’est le téléphone qui choisit où va le son (casque ou écouteurs s’ils sont branchés, sinon haut-parleur). Pour choisir vous-même, utilisez l’application Tam-Tam de Google Play.', 7000); return; }
   toast(Spk.on ? 'Haut-parleur activé' : 'Haut-parleur coupé'); redraw();
+}
+// Micro + caméra. Si la caméra ne s'ouvre pas avec les réglages demandés, on réessaie plus simplement ;
+// si elle est occupée (autre onglet, autre application) ou refusée, l'appel continue en audio et on dit pourquoi.
+async function getAV(v) {
+  const audio = {echoCancellation: true, noiseSuppression: true}, gum = c => navigator.mediaDevices.getUserMedia(c);
+  if (!v) return gum({audio, video: false});
+  let err;
+  for (const video of [v, {facingMode: 'user'}, true]) { try { return await gum({audio, video}); } catch (e) { err = e; if (e && e.name === 'NotAllowedError') break; } }
+  const s = await gum({audio});
+  const n = err && err.name;
+  toast(n === 'NotReadableError' || n === 'AbortError' || n === 'TrackStartError' ? 'La caméra est déjà utilisée par un autre onglet ou une autre application : l’appel continue en audio. Fermez l’autre, puis touchez la caméra.'
+    : n === 'NotAllowedError' ? 'La caméra n’est pas autorisée pour Tam-Tam : l’appel continue en audio. Autorisez-la (icône à gauche de l’adresse), puis touchez la caméra.'
+    : 'Caméra introuvable : l’appel continue en audio.', 8000);
+  return s;
 }
 // L'écran d'appel s'ouvre : on referme le clavier s'il était sorti (zone de message encore active).
 function noKeyboard() { const a = document.activeElement; if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) a.blur(); }

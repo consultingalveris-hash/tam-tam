@@ -84,6 +84,8 @@ function chatListMenu(id) {
   const c = S.chats.get(id); if (!c) return;
   const u = c.type === 'direct' ? uOf(c.peer) : null, blocked = u && (S.me.blocked || []).some(b => b.id === u.id), unread = c.unread || c.marked;
   sheet(`${head(esc(chatTitle(c)))}<div class="menu">
+    ${c.blocked ? '' : `<button type="button" data-act="chatCall" data-id="${id}" data-v="1">${I.video}Appel vidéo</button>
+    <button type="button" data-act="chatCall" data-id="${id}" data-v="">${I.phone}Appel vocal</button>`}
     <button type="button" data-act="chatPin" data-id="${id}"><span class="pin-ic" aria-hidden="true">📌</span>${c.pinned ? 'Ne plus épingler' : 'Épingler en haut (4 au maximum)'}</button>
     <button type="button" data-act="chatRead" data-id="${id}" data-v="${unread ? '' : '1'}">${I.eye}${unread ? 'Marquer comme lue' : 'Marquer comme non lue'}</button>
     <button type="button" data-act="chatArch" data-id="${id}">${ARCH_IC}${c.archived ? 'Désarchiver' : 'Archiver'}</button>
