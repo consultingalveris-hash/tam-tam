@@ -16,6 +16,11 @@ getent group sudo wheel 2>/dev/null | cut -d: -f4 | tr ',' '\n' | sort -u > "$T/
 docker ps --format '{{.Names}} {{.Image}} {{.Status}}' > "$T/dock" 2>/dev/null
 df -P / | awk 'NR==2 {print $5}' > "$T/disk"
 tail -n 15 /var/log/tam-tam-auto-maj.log > "$T/maj" 2>/dev/null
+# Capacité (21/11/2026) : octets reçus et envoyés par le serveur (toutes cartes réseau sauf « lo »), pour le débit moyen
+# depuis le relevé précédent (environ 5 minutes) ; c'est là que pèsent les appels qui passent par le relais.
+awk -F'[: ]+' 'NR>2 && $2!="lo" {rx+=$3; tx+=$11} END {print rx, tx}' /proc/net/dev > "$T/net" 2>/dev/null
+cp "$OUT/net.prev" "$T/netprev" 2>/dev/null; { cat "$T/net"; date +%s; } | tr '\n' ' ' > "$OUT/net.prev"
+nproc > "$T/cpu" 2>/dev/null; cat /proc/loadavg > "$T/load" 2>/dev/null; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo > "$T/mem" 2>/dev/null
 # Garde contre les robots (fail2ban, audit du 20/11/2026) : nombre d'adresses bloquées.
 { command -v fail2ban-client >/dev/null 2>&1 && timeout 10 fail2ban-client status sshd 2>/dev/null; } > "$T/f2b"
 python3 - "$OUT/etat.json" "$T" <<'PY' || echo '{"erreur":"le resume du serveur n a pas pu etre ecrit"}' > "$OUT/etat.json"
@@ -44,6 +49,11 @@ out = {
   'conteneurs': [d for d in e('dock').splitlines() if d.strip()],
   'disqueUtilise': e('disk').strip(),
   'misesAJour': [m for m in e('maj').splitlines() if m.strip()],
+  'reseau': (lambda a, b: {'mbpsEntrant': round((a[0]-b[0])*8/max(1, a[2]-b[2])/1e6, 2), 'mbpsSortant': round((a[1]-b[1])*8/max(1, a[2]-b[2])/1e6, 2), 'surSecondes': a[2]-b[2], 'mesure': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+             if len(a) == 3 and len(b) == 3 and a[2] > b[2] and a[0] >= b[0] and a[1] >= b[1] else 'premier relevé')(
+             [int(x) for x in (e('net').split() + [str(int(time.time()))])[:3] if x.isdigit()], [int(x) for x in e('netprev').split()[:3] if x.isdigit()]),
+  'processeurs': e('cpu').strip(), 'charge': e('load').split()[:3],
+  'memoire': {l.split(':')[0]: int(l.split()[1]) // 1024 for l in e('mem').splitlines() if len(l.split()) > 1},
   'gardeRobots': (lambda t: {'enMarche': True, 'bloqueesMaintenant': int((re.search(r'Currently banned:\s*(\d+)', t) or [0, 0])[1]),
                               'bloqueesDepuisDemarrage': int((re.search(r'Total banned:\s*(\d+)', t) or [0, 0])[1])} if 'Currently banned' in t else 'non installé ou arrêté')(e('f2b')),
 }

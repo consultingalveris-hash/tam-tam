@@ -12,6 +12,7 @@ import './srv/google.mjs';
 import './srv/traduction.mjs';
 import { VITRINE_ORIGIN } from './srv/visite.mjs';
 import { noter } from './srv/etat.mjs';
+import { mesurer } from './srv/capacite.mjs';
 
 // Ordre des routes : celui des fichiers (rang), puis celui de déclaration dans chaque fichier (tri stable).
 routes.sort((a, b) => a.rank - b.rank);
@@ -27,10 +28,12 @@ const server = http.createServer(async (req, res) => {
       // Protection contre les requêtes venues d'autres sites.
       if (req.method !== 'GET') { const o = req.headers.origin; if (o && o !== BASE_URL && !ALT_ORIGINS.includes(o) && !(p.startsWith('/api/visite/') && o === VITRINE_ORIGIN) && !(BASE_URL.startsWith('http://localhost') && o.startsWith('http://localhost'))) E(403, 'Origine refusée.'); }
       const rt = routes.find(r => r.method === req.method && r.re.test(p)); if (!rt) E(404, 'Adresse inconnue.');
+      const t0 = performance.now(); // capacité : temps de réponse du serveur
       const me = currentUser(req); if (rt.auth && !me) E(401, 'Connectez-vous.');
       const body = req.method === 'POST' && !/^\/api\/media(\/up\/[A-Za-z0-9_-]+\/chunk)?$/.test(p) ? await readJson(req) : {};
       const out = await rt.fn({ req, res, url, body, me, m: p.match(rt.re) });
       if (out !== null && !res.headersSent) send(res, 200, out);
+      if (out !== null) mesurer(performance.now() - t0);
       return;
     }
     if (p === '/demo' ) { res.writeHead(301, { Location: '/demo/' }); return res.end(); }

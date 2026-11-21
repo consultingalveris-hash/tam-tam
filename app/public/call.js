@@ -18,7 +18,7 @@ const NetAdapt = {
     const tick = async () => {
       if (pc.connectionState === 'closed') return clearInterval(st.iv);
       let bw = 0, loss = 0;
-      try { const r = await pc.getStats(); r.forEach(x => {
+      try { const r = await pc.getStats(); st.q = callQ(r); r.forEach(x => {
         if (x.type === 'candidate-pair' && x.nominated && x.state === 'succeeded' && x.availableOutgoingBitrate) bw = Math.max(bw, x.availableOutgoingBitrate);
         if (x.type === 'remote-inbound-rtp' && x.kind === 'video' && x.fractionLost != null) loss = Math.max(loss, x.fractionLost);
         if (x.type === 'remote-inbound-rtp' && x.kind === 'audio' && x.fractionLost != null) loss = Math.max(loss, x.fractionLost * 1.5);
@@ -27,9 +27,22 @@ const NetAdapt = {
       const now = Date.now(); if (i === st.tier || (now - st.at < 8000 && st.tier >= 0 && i < st.tier)) return;
       st.tier = i; st.at = now; await this.apply(pc, this.TIERS[i], group); if (onTier) onTier(i, bw, loss);
     };
-    st.iv = setInterval(tick, 4000); setTimeout(tick, 1500); return () => clearInterval(st.iv);
+    st.iv = setInterval(tick, 4000); setTimeout(tick, 1500); const stop = () => clearInterval(st.iv); stop.st = st; return stop;
   },
 };
+// Qualité d'un appel (pour l'état du serveur, aucun contenu) : passé par le relais ou non, aller-retour, pertes, images par seconde.
+function callQ(r) {
+  const q = {relais: false, rtt: null, perte: null, ips: null}; let pair = null, lost = 0, got = 0;
+  r.forEach(x => { if (x.type === 'candidate-pair' && x.nominated && x.state === 'succeeded') pair = x;
+    if (x.type === 'inbound-rtp') { lost += x.packetsLost || 0; got += x.packetsReceived || 0; if (x.kind === 'video' && x.framesPerSecond != null) q.ips = x.framesPerSecond; } });
+  if (pair) { if (pair.currentRoundTripTime != null) q.rtt = Math.round(pair.currentRoundTripTime * 1000); const lc = r.get(pair.localCandidateId), rc = r.get(pair.remoteCandidateId); q.relais = !!((lc && lc.candidateType === 'relay') || (rc && rc.candidateType === 'relay')); }
+  if (got + lost > 0) q.perte = Math.round(lost / (got + lost) * 1000) / 1000;
+  return q;
+}
+function callQSend(net, dur, video, groupe) {
+  const q = net && net.st && net.st.q; if (!q || !dur || dur < 5) return;
+  api('/api/call/qualite', {dur: Math.round(dur), rtt: q.rtt, perte: q.perte, relais: q.relais, ips: q.ips, video: !!video, groupe: !!groupe}, {keep: true}).catch(() => {});
+}
 const Call = {
   c: null, // appel en cours
   rid: () => Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join(''),
@@ -267,7 +280,7 @@ const Call = {
   stopTracks(s) { (s || (this.c && this.c.local))?.getTracks().forEach(t => t.stop()); },
   cleanup() {
     const c = this.c; if (!c) return;
-    clearTimeout(c.timer); clearInterval(c.tick); clearTimeout(c.lost); if (c.net) c.net(); this.tone(null);
+    clearTimeout(c.timer); clearInterval(c.tick); clearTimeout(c.lost); if (c.net) { callQSend(c.net, c.since ? (Date.now() - c.since) / 1000 : 0, c.cam || c.peerCam, false); c.net(); } this.tone(null);
     this.stopTracks(c.local); try { c.pc && c.pc.close(); } catch {}
     if (c.since) Spk.stop();
     this.c = null; this.render();
@@ -283,13 +296,13 @@ window.addEventListener('pagehide', callBye); window.addEventListener('beforeunl
    dans le navigateur, on choisit la sortie quand le navigateur le permet (setSinkId). */
 const Spk = {
   on: false, sink: '',
-  nat() { try { return !!(window.TamTamAndroid && TamTamAndroid.version() >= 4); } catch { return false; } },
-  start(video) { this.on = !!video; this.sink = ''; if (this.nat()) try { TamTamAndroid.speaker(this.on); } catch {} },
-  stop() { this.on = false; this.sink = ''; if (this.nat()) try { TamTamAndroid.callOver(); } catch {} },
+  nat() { try { return !!(window.TamTamAndroid && window.TamTamAndroid.version() >= 4); } catch { return false; } },
+  start(video) { this.on = !!video; this.sink = ''; if (this.nat()) try { window.TamTamAndroid.speaker(this.on); } catch {} },
+  stop() { this.on = false; this.sink = ''; if (this.nat()) try { window.TamTamAndroid.callOver(); } catch {} },
   apply(root) { if (!this.sink) return; (root || document).querySelectorAll('#call audio, #gcall audio, audio[data-a]').forEach(a => { if (a.setSinkId && a.sinkId !== this.sink) a.setSinkId(this.sink).catch(() => {}); }); },
   async toggle() {
     const want = !this.on;
-    if (this.nat()) { try { TamTamAndroid.speaker(want); this.on = want; } catch {} return true; }
+    if (this.nat()) { try { window.TamTamAndroid.speaker(want); this.on = want; } catch {} return true; }
     if (!('setSinkId' in HTMLMediaElement.prototype)) return false;
     let outs = [];
     try { outs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audiooutput' && d.deviceId); } catch {}

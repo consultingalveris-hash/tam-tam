@@ -140,7 +140,7 @@ const GCall = {
     const c = this.c; if (!c) return;
     api('/api/gcall/leave', {callId: c.id}, {keep: true}).catch(() => {});
     c.leaving = true; if (c.room) { try { c.room.disconnect(); } catch {} }
-    clearInterval(c.tick); c.peers.forEach(p => { try { if (p.net) p.net(); if (p.pc) p.pc.close(); } catch {} }); c.local.getTracks().forEach(t => t.stop());
+    clearInterval(c.tick); let sent = false; c.peers.forEach(p => { try { if (p.net) { if (!sent) { callQSend(p.net, (Date.now() - c.since) / 1000, c.video, true); sent = true; } p.net(); } if (p.pc) p.pc.close(); } catch {} }); c.local.getTracks().forEach(t => t.stop());
     Spk.stop(); this.c = null; this.render(); if (S.tab === 'chats') renderBody(); if (S.chatId) renderChatHead();
   },
   lkMute(kind, on) { const c = this.c; if (!c || !c.room) return; c.room.localParticipant.trackPublications.forEach(pub => { if (pub.kind === kind && pub.track) (on ? pub.unmute() : pub.mute()).catch(() => {}); }); },
