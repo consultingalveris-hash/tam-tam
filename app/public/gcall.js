@@ -226,8 +226,7 @@ const GCall = {
     keepMedia(root, `<div class="call-in" role="dialog" aria-modal="true" aria-label="Appel de groupe">
       <div class="g-top"><b>${esc(chat ? chat.name : 'Groupe')}</b><span><span id="gTime">0:00</span> · ${n} personne${n > 1 ? 's' : ''}</span></div>
       ${stage}
-      ${lay !== 'grid' ? '<p class="g-hint">Appui long sur une petite caméra, puis glissez-la sur la grande pour les échanger.</p>' : ''}
-      ${waiting.length ? `<p class="g-wait">📞 Ça sonne chez ${esc(waiting.map(u => first(uOf(u).name)).join(', '))}…</p>` : n === 1 ? '<p class="g-wait">En attente des autres membres du groupe…</p>' : ''}
+      ${c.fxMenu ? '' : waiting.length ? `<p class="g-wait">📞 Ça sonne chez ${esc(waiting.map(u => first(uOf(u).name)).join(', '))}…</p>` : n === 1 ? '<p class="g-wait">En attente des autres membres du groupe…</p>' : ''}
       ${c.layMenu ? `<div class="g-laymenu" role="menu" aria-label="Disposition des caméras">${LAYS.map(([k, l, h]) => `<button type="button" role="menuitemradio" aria-checked="${c.lay === k}" data-act="gcallLaySet" data-k="${k}"><span class="g-ico ${k}" aria-hidden="true"><i></i><i></i><i></i><i></i></span><b>${l}</b><small>${h}</small></button>`).join('')}</div>` : ''}
       ${callSide({add: true, mic: c.mic, cam: c.cam, flip: false, fx: c.cam && c.local.getVideoTracks().length > 0, end: 'gcallLeave', pre: 'gcall'})}
       ${c.fxMenu ? fxPick('gcall') : ''}
