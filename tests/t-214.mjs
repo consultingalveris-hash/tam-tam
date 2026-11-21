@@ -11,7 +11,7 @@ await a.evaluate(() => loadChats());
 await d.evaluate(() => Call.start(true)); await a.waitForTimeout(2500); await a.evaluate(() => Call.accept()); await d.waitForTimeout(3500);
 out('bouton filtres :', await d.evaluate(() => !!document.querySelector('[data-act=callFx]')));
 await d.click('[data-act=callFx]'); await d.waitForTimeout(300);
-out('choix :', await d.evaluate(() => [...document.querySelectorAll('.fx-pick span')].map(x => x.textContent)));
+out('choix :', await d.evaluate(() => [...document.querySelectorAll('.fx-pick button')].map(x => x.getAttribute('aria-label'))));
 await d.click('[data-act=callFxSet][data-k=doux]'); await d.waitForTimeout(1500);
 out('image filtrée envoyée :', await d.evaluate(() => { const t = Call.c.local.getVideoTracks()[0]; const s = Call.c.pc.getSenders().find(x => x.track && x.track.kind === 'video'); return [Beauty.raw.has(t), s.track === t, t.readyState]; }));
 out('WebGL utilisé et image qui bouge :', await d.evaluate(async () => { const cv = document.createElement('canvas'); const ok = !!cv.getContext('webgl'); const v = document.getElementById('callLocal'); const t1 = v.currentTime; await new Promise(r => setTimeout(r, 800)); return [ok, v.currentTime > t1]; }));
