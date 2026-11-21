@@ -142,7 +142,7 @@ const Call = {
     const c = this.c; if (!c || !c.local) return;
     let v = c.local.getVideoTracks()[0];
     if (!v) { // passer d'un appel vocal à la vidéo
-      try { const s = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'user'}}); v = Beauty.track(s.getVideoTracks()[0]); c.local.addTrack(v); if (c.pc) { c.pc.addTrack(v, c.local); await c.pc.setLocalDescription(await c.pc.createOffer()); this.sig('offer', {data: c.pc.localDescription}); } c.cam = true; }
+      try { const t = await camTrack(); if (!t || this.c !== c) { if (t) t.stop(); return; } v = Beauty.track(t); c.local.addTrack(v); if (c.pc) { c.pc.addTrack(v, c.local); await c.pc.setLocalDescription(await c.pc.createOffer()); this.sig('offer', {data: c.pc.localDescription}); } c.cam = true; }
       catch { return toast('Caméra indisponible.'); }
     } else { c.cam = !c.cam; v.enabled = c.cam; }
     this.render(); this.sig('media', {data: {cam: c.cam, mic: c.mic}});
@@ -313,11 +313,26 @@ async function getAV(v) {
   let err;
   for (const video of [v, {facingMode: 'user'}, true]) { try { return await gum({audio, video}); } catch (e) { err = e; if (e && e.name === 'NotAllowedError') break; } }
   const s = await gum({audio});
-  const n = err && err.name;
-  toast(n === 'NotReadableError' || n === 'AbortError' || n === 'TrackStartError' ? 'La caméra est déjà utilisée par un autre onglet ou une autre application : l’appel continue en audio. Fermez l’autre, puis touchez la caméra.'
-    : n === 'NotAllowedError' ? 'La caméra n’est pas autorisée pour Tam-Tam : l’appel continue en audio. Autorisez-la (icône à gauche de l’adresse), puis touchez la caméra.'
-    : 'Caméra introuvable : l’appel continue en audio.', 8000);
+  camWhy(err);
   return s;
+}
+// Ouvrir la caméra en cours d'appel (appel commencé sans image) : plusieurs essais, puis la raison si elle refuse.
+async function camTrack() {
+  let err;
+  for (const video of [{facingMode: 'user', width: {ideal: 1280}, height: {ideal: 720}}, {facingMode: 'user'}, true]) {
+    try { const t = (await navigator.mediaDevices.getUserMedia({video})).getVideoTracks()[0]; if (t) return t; } catch (e) { err = e; if (e && e.name === 'NotAllowedError') break; }
+  }
+  camWhy(err, true); return null;
+}
+function camWhy(err, mid) {
+  const n = err && err.name, busy = n === 'NotReadableError' || n === 'AbortError' || n === 'TrackStartError';
+  toast(mid
+    ? (busy ? 'La caméra est déjà utilisée par un autre onglet ou une autre application. Fermez-la, puis touchez à nouveau la caméra.'
+      : n === 'NotAllowedError' ? 'La caméra n’est pas autorisée pour Tam-Tam. Autorisez-la (icône à gauche de l’adresse), puis touchez à nouveau la caméra.'
+      : 'Caméra introuvable sur cet appareil.')
+    : (busy ? 'La caméra est déjà utilisée par un autre onglet ou une autre application : l’appel continue en audio. Fermez l’autre, puis touchez la caméra.'
+      : n === 'NotAllowedError' ? 'La caméra n’est pas autorisée pour Tam-Tam : l’appel continue en audio. Autorisez-la (icône à gauche de l’adresse), puis touchez la caméra.'
+      : 'Caméra introuvable : l’appel continue en audio.'), 8000);
 }
 // Redessiner l'écran d'appel sans recréer les vidéos : on garde les mêmes lecteurs (sinon l'image se fige ou clignote).
 function keepMedia(root, html) {

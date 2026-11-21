@@ -145,10 +145,16 @@ const GCall = {
   },
   lkMute(kind, on) { const c = this.c; if (!c || !c.room) return; c.room.localParticipant.trackPublications.forEach(pub => { if (pub.kind === kind && pub.track) (on ? pub.unmute() : pub.mute()).catch(() => {}); }); },
   toggleMic() { const c = this.c; if (!c) return; c.mic = !c.mic; c.local.getAudioTracks().forEach(t => { t.enabled = c.mic; }); this.lkMute('audio', c.mic); c.peers.forEach((p, uid) => this.sig(uid, 'media', {cam: c.cam, mic: c.mic})); this.render(); },
-  toggleCam() {
-    const c = this.c; if (!c) return; const v = c.local.getVideoTracks()[0];
-    if (!v) return toast('Pour la vidéo, quittez et rejoignez l’appel en vidéo.');
-    c.cam = !c.cam; v.enabled = c.cam; this.lkMute('video', c.cam); c.peers.forEach((p, uid) => this.sig(uid, 'media', {cam: c.cam, mic: c.mic})); this.render();
+  async toggleCam() {
+    const c = this.c; if (!c || c.camBusy) return; let v = c.local.getVideoTracks()[0];
+    if (!v) { // appel rejoint sans image (appel vocal, ou caméra occupée au départ) : on ajoute la caméra en cours d'appel
+      c.camBusy = true; const t = await camTrack(); c.camBusy = false;
+      if (!t || this.c !== c) { if (t) t.stop(); return; }
+      v = Beauty.track(t); c.local.addTrack(v); c.cam = true; this.render();
+      if (c.room && window.LivekitClient) { try { await c.room.localParticipant.publishTrack(v, {source: LivekitClient.Track.Source.Camera, simulcast: true, videoEncoding: {maxBitrate: 500_000, maxFramerate: 15}}); } catch {} }
+      for (const [uid, p] of c.peers) if (p.pc) { try { p.pc.addTrack(v, c.local); await p.pc.setLocalDescription(await p.pc.createOffer()); this.sig(uid, 'offer', p.pc.localDescription); } catch {} }
+    } else { c.cam = !c.cam; v.enabled = c.cam; this.lkMute('video', c.cam); }
+    c.peers.forEach((p, uid) => this.sig(uid, 'media', {cam: c.cam, mic: c.mic})); this.render();
   },
 
   /* ---------- ajouter quelqu'un pendant l'appel ---------- */
